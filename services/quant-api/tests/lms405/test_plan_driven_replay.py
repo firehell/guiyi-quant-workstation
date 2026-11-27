@@ -1,6 +1,7 @@
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
+import json
 
 import pytest
 
@@ -8,7 +9,8 @@ from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.handoff import HandoffConfirmation
 from guiyi_quant.lms405.portfolio_tasks import REQUIRED, Book, Intent
 from guiyi_quant.lms405.public_conditions import Condition
-from lms405_plan_driven_replay import Evaluation, PlanRevision, first_early_candidate, replay
+from lms405_plan_driven_replay import INPUT_VERSION, Evaluation, PlanRevision, first_early_candidate, replay, replay_input
+from lms_near405_replay import encoded
 
 START = datetime(2026, 10, 22, 12, tzinfo=UTC)
 SECOND = timedelta(seconds=1)
@@ -107,3 +109,31 @@ def test_early_protection_does_not_read_future_or_same_minute_contact():
     assert early == later and early["pre_touch_arm"] and early["segment_first_touch"] is None
     same_minute = candles[:2] + [replace(candles[2], high=Decimal(109))]
     assert first_early_candidate({1: same_minute}, start=START, cutoff=known + us, band=band) is None
+
+
+def test_json_tape_waits_for_exact_approval_and_requires_fixture_opt_in():
+    seed = Book("JM2701", "test-input", "SHORT", START)
+    current = plan("current", START, ("ENTER_TREND",))
+    event = proposal(seed, "ENTER_TREND", 20, current.id, START + SECOND)
+    request = event.request
+    tape = json.loads(encoded(dict(
+        version=INPUT_VERSION, cutoff=event.at + SECOND, seed=asdict(seed),
+        revisions=[asdict(current) | {"operations": ["ENTER_TREND"]}],
+        evaluations=[asdict(request) | dict(at=event.at, facts=[asdict(f) for f in event.facts])],
+    )))
+    with pytest.raises(ValueError, match="FIXTURE_FACT_DISABLED"):
+        replay_input(**tape)
+    pending = replay_input(**tape, allow_test_fixture=True)
+    assert pending["final"] == asdict(seed)
+    assert pending["events"][0]["pending_approval_scope"] == event.approval.scope
+    tape["evaluations"][0]["approval"] = json.loads(encoded(asdict(event.approval)))
+    assert replay_input(**tape, allow_test_fixture=True)["final"]["original"] == Decimal(20)
+    cutoff = tape | {"cutoff": event.at.isoformat()}
+    assert replay_input(**cutoff)["events"] == []
+    with pytest.raises(ValueError, match="DECIMAL_STRING_REQUIRED"):
+        replay_input(**(tape | {"seed": tape["seed"] | {"original": 0}}))
+    with pytest.raises(ValueError, match="OPERATION_LIST_REQUIRED"):
+        replay_input(**(tape | {"revisions": [tape["revisions"][0] | {"operations": {"ENTER_TREND": False}}]}))
+    approval_only = tape | {"revisions": [], "evaluations": [tape["evaluations"][0] | {"facts": []}]}
+    with pytest.raises(ValueError, match="FIXTURE_APPROVAL_DISABLED"):
+        replay_input(**approval_only)

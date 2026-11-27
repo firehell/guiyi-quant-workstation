@@ -5,6 +5,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 import argparse
+import json
 
 from guiyi_quant.lms405 import physical_contract, timestamp
 from guiyi_quant.lms405.handoff import HandoffConfirmation
@@ -28,6 +29,7 @@ from lms405_sh_protection_replacement import LIFECYCLE, LIFECYCLE_SHA
 from lms_near405_replay import encoded
 
 VERSION = "lms405-plan-driven-replay-v1"
+INPUT_VERSION = "lms405-plan-replay-input-v1"
 INDEPENDENT_PREFIX = "INDEPENDENT:"
 INDEPENDENT_MANAGEMENT = frozenset({"CLEAR_TREND", "EXIT_COUNTER_M"})
 
@@ -147,6 +149,94 @@ def report_rows(rows):
         approval=asdict(row["approval"]) if row["approval"] is not None else None,
         known_facts=[asdict(fact) for fact in row["known_facts"]],
     ) for row in rows]
+
+
+def unique_fields(pairs):
+    result = dict(pairs)
+    if len(result) != len(pairs):
+        raise ValueError("PLAN_REPLAY_DUPLICATE_INPUT_FIELD")
+    return result
+
+
+def decimal_text(value):
+    if not isinstance(value, str):
+        raise ValueError("PLAN_REPLAY_DECIMAL_STRING_REQUIRED")
+    return Decimal(value)
+
+
+def input_book(record):
+    values = record.copy()
+    values["known_at"] = datetime.fromisoformat(values["known_at"])
+    for name in ("original", "protection", "counter_m"):
+        values[name] = decimal_text(values[name])
+    return Book(**values)
+
+
+def input_revision(record):
+    values = record.copy()
+    for name in ("published_at", "known_at", "expires_at"):
+        if values.get(name) is not None:
+            values[name] = datetime.fromisoformat(values[name])
+    operations = values["operations"]
+    if (not isinstance(operations, list) or any(not isinstance(item, str) for item in operations)
+            or len(set(operations)) != len(operations)):
+        raise ValueError("PLAN_REPLAY_OPERATION_LIST_REQUIRED")
+    values["operations"] = frozenset(operations)
+    return PlanRevision(**values)
+
+
+def input_evaluation(*, at, before, operation, quantity, plan_id, expires_at, facts=(), approval=None,
+                     uses_public_plan=True):
+    request = Intent(input_book(before), operation, decimal_text(quantity), plan_id, datetime.fromisoformat(expires_at))
+    conditions = tuple(Condition(
+        **(row | {
+            "observed_at": datetime.fromisoformat(row["observed_at"]),
+            "known_at": datetime.fromisoformat(row["known_at"]),
+        }),
+    ) for row in facts)
+    confirmation = None if approval is None else HandoffConfirmation(**(approval | {
+        "decided_at": datetime.fromisoformat(approval["decided_at"]),
+        "known_at": datetime.fromisoformat(approval["known_at"]),
+    }))
+    return Evaluation(datetime.fromisoformat(at), request, conditions, confirmation, uses_public_plan)
+
+
+def replay_input(*, version, cutoff, seed, revisions, evaluations, allow_test_fixture=False):
+    if version != INPUT_VERSION:
+        raise ValueError("PLAN_REPLAY_INPUT_VERSION_UNSUPPORTED")
+    if not isinstance(revisions, list) or not isinstance(evaluations, list):
+        raise ValueError("PLAN_REPLAY_REVISION_AND_EVALUATION_LISTS_REQUIRED")
+    start = input_book(seed)
+    plans = tuple(input_revision(row) for row in revisions)
+    events = tuple(input_evaluation(**row) for row in evaluations)
+    as_of = datetime.fromisoformat(cutoff)
+    if not allow_test_fixture and any(
+        fact.source.startswith("TEST_FIXTURE") and fact.known_at < event.at
+        for event in events if event.at < as_of for fact in event.facts
+    ):
+        raise ValueError("PLAN_REPLAY_FIXTURE_FACT_DISABLED")
+    if not allow_test_fixture and any(
+        event.approval is not None and event.approval.record_kind == "TEST_FIXTURE"
+        and event.approval.known_at < event.at < as_of for event in events
+    ):
+        raise ValueError("PLAN_REPLAY_FIXTURE_APPROVAL_DISABLED")
+    rows, final = replay(start, events, plans, cutoff=as_of, allow_test_fixture=allow_test_fixture)
+    by_time = {event.at: event for event in events if event.at < as_of}
+    rendered = report_rows(rows)
+    for row, raw in zip(rendered, rows, strict=True):
+        request = by_time[raw["at"]].request
+        row["request"] = asdict(request)
+        if raw["unknown"] == ["SCOPED_APPROVAL"] and raw["status"] == "INDETERMINATE":
+            admitted = tuple(fact for fact in raw["known_facts"]
+                             if fact.time_kind == "EVENT_TIME" and raw["before"].known_at < fact.observed_at)
+            row["pending_approval_scope"] = request.confirmation_scope(admitted)
+    return dict(
+        version=VERSION, input_version=version, cutoff_exclusive=as_of,
+        seed=asdict(start) if start.known_at < as_of else None,
+        events=rendered, final=asdict(final) if final is not None else None,
+        test_fixture_allowed=allow_test_fixture, author_action_samples=0, author_match_rate=None,
+        executable=False, fills=None, pnl=None,
+    )
 
 
 SH_CANDIDATE_KEYS = ("shape_end", "confirmed_at", "available_at", "boundary", "close", "ibar", "pinbar")
@@ -370,16 +460,25 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--env-file", type=Path, help="Recompute candidates using local MDS and this environment file.")
-    parser.add_argument("--case", choices=("sh-oct27", "jm-oct23"), default="sh-oct27")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--case", choices=("sh-oct27", "jm-oct23"))
+    mode.add_argument("--input", type=Path, help="Replay a versioned JSON tape with supplied market facts and permissions.")
+    parser.add_argument("--allow-test-fixture", action="store_true", help="Allow fixture permissions in an input tape.")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PLAN_REPLAY_OUTPUT_EXISTS")
+    if (args.input is not None and args.env_file is not None) or (args.allow_test_fixture and args.input is None):
+        parser.error("PLAN_REPLAY_INPUT_MODE_CONFLICT")
     try:
-        case = sh_oct27_case if args.case == "sh-oct27" else jm_oct23_case
-        result = case() if args.env_file is None else local_market_case(args.env_file, case=case)
+        if args.input is not None:
+            tape = json.loads(args.input.read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
+            result = replay_input(**tape, allow_test_fixture=args.allow_test_fixture)
+        else:
+            case = jm_oct23_case if args.case == "jm-oct23" else sh_oct27_case
+            result = case() if args.env_file is None else local_market_case(args.env_file, case=case)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
-    except (KeyError, ValueError, OSError) as exc:
+    except (KeyError, ValueError, OSError, TypeError, AttributeError, ArithmeticError) as exc:
         code = str(exc)
         parser.exit(2, (code if code.isidentifier() and code.startswith("PLAN_REPLAY_")
                         else "PLAN_REPLAY_INPUT_UNVERIFIED") + "\n")

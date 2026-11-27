@@ -47,6 +47,30 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 两次MDS结果逐字节一致，与离线结果除行情来源标记外逐字段相同。报告 `output/lms405-plan-driven-jm-20261127/verified.json` 的SHA256为 `1823b6b0b881fa4bbd09813cbc5b491f92beaea125d0636c1530026ec2a89a9f`。LMS定向测试708通过、1跳过，独立复核通过。作者动作可评分样本仍为0。
 
+### 使用计划、信号与许可文件复算
+
+研究入口支持 `--input` 读取单个实月、单个仓位片段的JSON。计划、信号和许可由输入提供，内核在每个评估时点选择当时可知的有效修订，并核对请求所指的预期仓位和实际回放仓位。触发时间与确认周期由输入引用的证据负责。任一事实不足时保持原仓，报告给出对应状态及未知条件。
+
+| 字段 | 含义 |
+|---|---|
+| `version`、`cutoff`、`seed` | 版本使用 `lms405-plan-replay-input-v1`。截止为排他时刻。起点包含实月、片段身份、方向、可知时点、原仓、保护、M和尝试序号 |
+| `revisions` | 修订包含实月、ID、发布时间、可知时间、来源、允许动作数组和可选到期时间。空动作数组表示暂时无公开动作 |
+| `evaluations` | 每项包含评估时点、预期仓位 `before`、动作、数量、计划ID和请求到期，附 `facts` 及可选 `approval`。价格或手数的十进制输入用字符串，时间必须有时区 |
+| 输出 | 每步含请求身份、可知的计划和事实、许可及实际前后分腿。当前置事实已齐而许可缺失时，输出 `pending_approval_scope`，供外部确认记录引用 |
+
+可先运行空事实的请求取得 `request_scope`，再将它填入事实的 `case_id`。确认必须明确采用对应的许可作用域、决定时刻和可知时刻。计划变更、仓位变化、请求到期或条件替换都需要重新评估。默认要求实际研究许可的来源记录，带有测试标记的事实或许可只有显式启用测试选项才可使用。文件整体须满足格式要求，各次决策只消费严格早于评估的有效信息。
+
+本地保存两套由烧碱和焦煤已验证报告构建的输入样本，分别是 `output/lms405-plan-input-20261127/sh-input.json` 和 `output/lms405-plan-input-20261127/jm13-input.json`。烧碱走撤多与再保护，焦煤走保留旧多13手并换入7手、退出M和独立开夜空。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py \
+  --input output/lms405-plan-input-20261127/sh-input.json --allow-test-fixture \
+  --output /tmp/lms405-sh-file-replay-new.json
+```
+
+两案各运行两次，分别逐字节一致，动作、时间、许可、身份及前后仓位逐项与原报告一致。默认烧碱离线结果依然逐字节一致。文件入口的下一项是把已披露价带和完成K候选统一转换为可审查的外部事实，再评估纯行情近似。
+
 ## 菜油、纯碱与PTA的计划准入
 
 [三案准入对照](evidence/PORTFOLIO_REPLAY.md#菜油纯碱与pta的计划准入对照)复算仓位用途、跨交易日可见腿及公开价带暂停三类缺口。首个候选留出窗口预留为11月16日至20日交易日，待规则固定后再读取验证材料。焦煤、烧碱、玻璃、铁矿、PVC与橡胶的已见对照仍归开发证据。
