@@ -17,6 +17,7 @@ from urllib.parse import urlsplit
 from sqlalchemy.engine import URL
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
+from typing import TYPE_CHECKING
 
 from app.db.readonly import readonly_transaction
 from app.market_data.after_market import (
@@ -33,6 +34,9 @@ from app.market_data.newow.after_market_consumer_audit import catalog_revision
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.session_clock import SHANGHAI
 from app.services.newow_reference_mode import require_isolated_redis
+
+if TYPE_CHECKING:
+    from app.compute_runtime.canonical_publications import CanonicalPublicationCompute
 
 
 FREQUENCIES = tuple(frequency.value for frequency in BarFrequency)
@@ -321,6 +325,7 @@ def build_isolated_archive(
     redis_url: str, live_store: RedisLiveStore, rqdata_factory, sleep,
     products: tuple[str, ...] | None = None,
     now: Callable[[], datetime] = lambda: datetime.now(SHANGHAI),
+    canonical_compute: CanonicalPublicationCompute | None = None,
 ) -> AfterMarketUpdater:
     """Compose one explicit sandbox without notification, RQAlpha or Runtime state."""
     from app.market_data.composition import build_historical_data_manager
@@ -328,6 +333,10 @@ def build_isolated_archive(
     bind = manager.catalog.session.get_bind()
     canonical_root = manager.catalog.canonical_root
     sandbox = require_isolated_archive(bind.url, redis_url, canonical_root)
+    if canonical_compute is not None and (
+        canonical_compute.engine is not bind or canonical_compute.canonical_root != canonical_root
+    ):
+        raise ValueError("COMPUTE_CANONICAL_BINDING_MISMATCH")
     guard_root = sandbox / "live-recovery-guards"
     redis = live_store._redis
     expected = urlsplit(redis_url)
@@ -344,9 +353,14 @@ def build_isolated_archive(
             bind_market_redis(redis, sandbox, bind.url)
             yield
 
-    def refresh_reference(path, day):
+    def refresh_consumers(path, day):
         from app.market_data.newow.market_reference_after_close import run_receipt
 
+        if canonical_compute is not None:
+            try:
+                canonical_compute.accept(path, day)
+            except (OSError, RuntimeError, ValueError, SQLAlchemyError):
+                logging.getLogger(__name__).warning("market_archive_compute_pending")
         try:
             receipt = read_archive_receipt(path, now=now())
             if receipt.trading_day != day:
@@ -375,5 +389,5 @@ def build_isolated_archive(
             open_manager, products, day, publications,
         ),
         recovery_guard_factory=archive_guard,
-        research_update=refresh_reference,
+        research_update=refresh_consumers,
     )
