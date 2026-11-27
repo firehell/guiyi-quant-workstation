@@ -1,14 +1,16 @@
-"""Bound afternoon same-day short replacement from the two May JM2609 displays."""
+"""Bound same-day short or overnight long replacement in the May JM2609 displays."""
 
 import argparse
 import csv
 from datetime import datetime
 from decimal import Decimal
+from itertools import groupby
 from pathlib import Path
 
 from lms405_jm_may_leg_timing import (
     CONTRACT,
     INPUT_HASH,
+    LONG_AVERAGE,
     LOTS,
     MAY_INDEX,
     MAY_INDEX_HASH,
@@ -17,7 +19,7 @@ from lms405_jm_may_leg_timing import (
     frozen_minutes,
 )
 from lms405_portfolio_replay import ARCHIVE, input_sources
-from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds
+from lms405_protection_lot_timing import displayed_tick_totals, earlier_lot_counts, tick_bounds, verified_json
 from lms405_right_side_study import at
 from lms405_sh_protection_replacement import compatible_counts
 from lms405_trial_to_trend import frozen
@@ -29,6 +31,11 @@ LUNCH = at("2026-05-21T11:30")
 AFTERNOON_START = at("2026-05-21T13:30")
 CLOSE = at("2026-05-21T15:00")
 LEVELS = tuple(map(Decimal, ("1216", "1214.5", "1210.5", "1206", "1205.5", "1196.5")))
+MAY20_START = at("2026-05-19T21:00")
+MAY20_DAY_START = at("2026-05-20T09:00")
+MAY20_CLOSE = at("2026-05-20T15:00")
+MAY20_SETTLEMENT = Decimal("1211.00")
+SETTLEMENT_FACTS_SHA = "b15ec9ad682f0ce6f7d40749bc395f8bf2269935235c0900b50aa87316785d5e"
 
 
 def retention(old_ticks, replacement_ticks, totals):
@@ -38,6 +45,60 @@ def retention(old_ticks, replacement_ticks, totals):
     return dict(compatible_old_lots=counts, minimum_retained=min(counts), maximum_replaced=LOTS - min(counts),
                 unchanged_leg_compatible=LOTS in counts, complete_rebuild_compatible=0 in counts,
                 replacement_tick_envelope=replacement_ticks)
+
+
+def long_snapshot_bounds(prior_session, clocks, totals):
+    """Return compatible counts at hypothetical whole-minute screenshot clocks."""
+    results = []
+    for instant in clocks:
+        earlier = tick_bounds([bar for bar in prior_session if bar.end <= instant], TICK)
+        later = tick_bounds([bar for bar in prior_session if bar.end > instant], TICK)
+        allowed = [] if earlier is None else [retained for retained, _, _ in compatible_counts(
+            LOTS, totals, totals, earlier, later, None,
+        )]
+        results.append(dict(at=instant, compatible_old_lots=allowed))
+    return results
+
+
+def study_long(market_path, facts_path):
+    minutes = frozen_minutes(market_path)
+    source_rows = {row["id"]: row for row in csv.DictReader(frozen(MAY_INDEX, MAY_INDEX_HASH).decode().splitlines())}
+    prior, following = (source_rows[key] for key in ("G05", "G03"))
+    prior_post, later_post = (datetime.fromisoformat(row["published_at"]) for row in (prior, following))
+    if any(row["contract"] != CONTRACT for row in (prior, following)):
+        raise ValueError("JM_MAY_SNAPSHOT_CONTRACT_CHANGED")
+    if not MAY20_CLOSE < prior_post < SESSION_START < LUNCH < later_post < AFTERNOON_START:
+        raise ValueError("JM_MAY_SNAPSHOT_ORDER_CHANGED")
+    facts = verified_json(facts_path, SETTLEMENT_FACTS_SHA)
+    daily = {row["date"]: row for row in facts["contracts"][CONTRACT]["daily"]}
+    if facts["source"] != "rqdata" or (
+        Decimal(daily["2026-05-20"]["settlement"]) != MAY20_SETTLEMENT
+        or Decimal(daily["2026-05-21"]["prev_settlement"]) != MAY20_SETTLEMENT
+    ):
+        raise ValueError("JM_MAY_SETTLEMENT_UNVERIFIED")
+    # The next image reports zero today longs. A replacement on the next trading day cannot survive in that row.
+    prior_session = [bar for bar in minutes if MAY20_START < bar.end <= MAY20_CLOSE]
+    daytime_ends = [bar.end for bar in prior_session if bar.start >= MAY20_DAY_START]
+    if len(prior_session) != 345 or len(daytime_ends) != 225:
+        raise ValueError("JM_MAY_SNAPSHOT_WINDOW_INCOMPLETE")
+    totals = displayed_tick_totals(LONG_AVERAGE, LOTS, TICK)
+    clocks = long_snapshot_bounds(prior_session, [MAY20_DAY_START, *daytime_ends], totals)
+    ranges = []
+    for allowed, group in groupby(clocks, key=lambda row: row["compatible_old_lots"]):
+        rows = list(group)
+        ranges.append(dict(first=rows[0]["at"], last=rows[-1]["at"], clock_count=len(rows), compatible_old_lots=allowed))
+    return dict(
+        version="lms405-jm-may-long-continuity-v1", contract=CONTRACT, market_sha256=INPUT_HASH,
+        source_index_sha256=MAY_INDEX_HASH, settlement_facts_sha256=SETTLEMENT_FACTS_SHA,
+        position_sources={row["id"]: row for row in (prior, following)},
+        lots=LOTS, displayed_open_average=LONG_AVERAGE, displayed_sum_in_ticks=list(totals),
+        prior_settlement=MAY20_SETTLEMENT, next_displayed_position_average=MAY20_SETTLEMENT,
+        market_minutes=len(prior_session), clock_ranges=ranges,
+        assumptions=["SAME_ACCOUNT_AND_FILTER", "SURVIVING_LOT_OPEN_PRICES", "TRADING_DAY_TODAY_FIELD",
+                     "HALF_UP_CENT_DISPLAY", "CANDIDATE_CLOCK_AT_MINUTE_BOUNDARY"],
+        snapshot_times_verified=False, account_continuity=None, author_role_assignment=None,
+        author_action_at=None, admitted_author_actions=0, author_match_rate=None, executable=False, fills=None, pnl=None,
+    )
 
 
 def study(market_path):
@@ -94,11 +155,14 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--market", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--long-settlement-facts", type=Path,
+                        help="Use the overnight long comparison with the preserved RQData facts.")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("OUTPUT_EXISTS")
     try:
-        content = encoded(study(args.market))
+        result = study_long(args.market, args.long_settlement_facts) if args.long_settlement_facts else study(args.market)
+        content = encoded(result)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(content)
     except (KeyError, OSError, ValueError):

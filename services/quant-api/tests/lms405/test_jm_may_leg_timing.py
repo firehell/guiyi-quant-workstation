@@ -2,6 +2,7 @@ from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar
 from lms405_jm_may_leg_timing import CONTRACT, LONG_AVERAGE, LOTS, TICK, forecast_bound
+from lms405_jm_may_short_continuity import long_snapshot_bounds
 from lms405_protection_lot_timing import displayed_tick_totals
 from lms405_right_side_study import ONE, at
 
@@ -25,3 +26,14 @@ def test_rounded_average_separates_first_overlapping_minute_from_full_later_minu
     assert strict["first_post_window_minute_end"] == "2026-05-20T13:54+08:00"
     assert strict["prior_lots_min"] == 7
     assert strict["all_lots_possible_after"] is False
+
+
+def test_overnight_long_retention_requires_the_first_snapshot_to_be_feasible():
+    boundary = at("2026-05-20T14:30")
+    clocks = [boundary + i * ONE for i in (-1, 0, 1)]
+    bars = [
+        Bar(CONTRACT, end, price, price, price, price, start=end - ONE)
+        for end, price in zip(clocks, map(Decimal, ("1196.5", "1216", "1216")), strict=True)
+    ]
+    records = long_snapshot_bounds(bars, clocks, displayed_tick_totals(LONG_AVERAGE, LOTS, TICK))
+    assert [row["compatible_old_lots"] for row in records] == [[], list(range(11, 21)), [20]]
