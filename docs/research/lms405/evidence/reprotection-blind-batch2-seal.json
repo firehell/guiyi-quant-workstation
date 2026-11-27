@@ -1,0 +1,105 @@
+{
+  "admitted_for_blind_scoring": 0,
+  "cases": [
+    {
+      "as_of_exclusive": "2026-11-26T21:00:00+08:00",
+      "author_contract": null,
+      "author_plan": null,
+      "author_version": null,
+      "completed_market_snapshot": null,
+      "decisions": [
+        {
+          "action": "UNDETERMINED",
+          "candidate_id": "ALLOW_FRESH_PRE_TOUCH",
+          "confirmed_at": null,
+          "reason": "MISSING_PREDECISION_EVIDENCE",
+          "side": null,
+          "touched": null,
+          "wait": false
+        },
+        {
+          "action": "UNDETERMINED",
+          "candidate_id": "WAIT_FOR_COMPLETED_TOUCH",
+          "confirmed_at": null,
+          "reason": "MISSING_PREDECISION_EVIDENCE",
+          "side": null,
+          "touched": null,
+          "wait": false
+        }
+      ],
+      "disagreement": "UNTESTED",
+      "natural_session_date": "2026-11-26",
+      "original_and_protection_preimage": null,
+      "screening_id": "screen-sh2701-2026-11-26",
+      "status": "NOT_ADMITTED_FOR_BLIND_SCORING",
+      "target_physical_contract": "SH2701",
+      "trigger_scope_gaps": [
+        "AUTHOR_PRESESSION_PLAN_MISSING",
+        "EXACT_AUTHOR_CONTRACT_AND_VERSION_UNVERIFIED",
+        "SAME_ACCOUNT_POST_REMOVAL_POSITION_PREIMAGE_MISSING"
+      ]
+    },
+    {
+      "as_of_exclusive": "2026-11-24T21:00:00+08:00",
+      "author_contract": null,
+      "author_plan": null,
+      "author_version": null,
+      "completed_market_snapshot": null,
+      "decisions": [
+        {
+          "action": "UNDETERMINED",
+          "candidate_id": "ALLOW_FRESH_PRE_TOUCH",
+          "confirmed_at": null,
+          "reason": "MISSING_PREDECISION_EVIDENCE",
+          "side": null,
+          "touched": null,
+          "wait": false
+        },
+        {
+          "action": "UNDETERMINED",
+          "candidate_id": "WAIT_FOR_COMPLETED_TOUCH",
+          "confirmed_at": null,
+          "reason": "MISSING_PREDECISION_EVIDENCE",
+          "side": null,
+          "touched": null,
+          "wait": false
+        }
+      ],
+      "disagreement": "UNTESTED",
+      "natural_session_date": "2026-11-24",
+      "original_and_protection_preimage": null,
+      "screening_id": "screen-sh2701-2026-11-24",
+      "status": "NOT_ADMITTED_FOR_BLIND_SCORING",
+      "target_physical_contract": "SH2701",
+      "trigger_scope_gaps": [
+        "AUTHOR_PRESESSION_PLAN_MISSING",
+        "EXACT_AUTHOR_CONTRACT_AND_VERSION_UNVERIFIED",
+        "SAME_ACCOUNT_POST_REMOVAL_POSITION_PREIMAGE_MISSING"
+      ]
+    }
+  ],
+  "decision_base_commit": "7d96d5af28dd135ce3a24884f5cb4e1f7b9a5155",
+  "preregistration_sha256": "08a73604e4788ae8d6af2c26c05c54c1e6656499529e3b6e379b67f245b0130d",
+  "preregistration_text": "Second batch preselection. No author outcome text, images, filenames or notes are used before sealing.\nChoose the latest independently unused exact physical future contract/date with identifiable author pre-session plan and predecessor position evidence, and an independent later evaluation source discoverable by metadata only. Scope first SH, then other previously studied commodity products, using at most 3 unique windows. Freeze fallback coverage as blocked when a necessary element cannot be acquired. Exclude windows used in LMS research or batch 1, including the previous 2026-11-16 to 20 nine-contract holdout and already read images or commentary that disclose the author result. Select by date then alphabetic contract, not by either candidate's output.\nFirst gate: exact physical contract, active published plan with verifiable version/as-of, intended protective region and permitted direction, same-system prior original leg retained after protection has been removed. Then query completed history only up to each decision cut. Candidate A: fresh valid pre-touch opposite keybar, only if an independently known current plan permits it. Candidate B: same signal must be valid until first completed touch of the applicable protection region. Both require eligible position; with insufficient facts return UNDETERMINED, not WAIT. Cannot manufacture a permission.\nOnly after commit/hash of case identities, per-candidate verdicts and sources known by each cut, open suffix evidence. Exclude contaminated windows, retain unscorable denominators separately. If no admissible case can be located, freeze failed intake with reasons, then inspect only candidate-specific outcome-source availability.\n",
+  "prescreen": {
+    "archive_metadata_rows": 253,
+    "archive_post_oct27_vplus_plans": 0,
+    "chrome_connection": "TIMEOUT",
+    "earlier_development_rows_removed": true,
+    "first_batch_excluded": true,
+    "november_plan_leads_admitted": 0,
+    "opened_outcome_pages_before_seal": 0,
+    "prior_nine_product_holdout_excluded": [
+      "2026-11-16",
+      "2026-11-20"
+    ],
+    "searched_public_prerequisite_queries": 16,
+    "separate_date_marker_excluded": {
+      "contract": "SH2701",
+      "date": "2026-11-25",
+      "reason": "ONE_UNRESOLVED_TRACKED_DEVELOPMENT_REFERENCE"
+    }
+  },
+  "sealed_at": "2026-11-27T12:36:21+08:00",
+  "version": "lms405-reprotection-blind-batch2-seal-v1"
+}
