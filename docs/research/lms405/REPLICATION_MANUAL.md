@@ -1,5 +1,19 @@
 # L.M.S 4.0.5 复刻研究说明
 
+## P4独立价带生成、更新与作废
+
+沿用近似策略最近六根已完成5分钟K的价格区间，比较21:00前冻结与开盘后逐根重算。以同实月、开盘前已知且已生效的空头计划为对照。只有明确标为保护的作者价带参与数字比较。冻结区间的作废定义为完成K首次收在上沿或其上方，研究中作废后不恢复。该定义和滚动方式均为近似研究假设。
+
+九品种三晚共生成27个开盘区间，12个可与作者保护带配对。8个有交集或端点相接，两端完全一致为0。下沿、上沿绝对误差中位数分别为7.5和6个最小价位。开盘后35分钟共有133次端点变化，12个冻结区间触发空头上沿作废。烧碱10月27日夜盘生成1477–1496，作者保护带为1490–1501，生成上沿在21:30完成K后触发作废。保留六根K区间作为独立候选。观察到的误差和更新频率支持继续保留价带人工输入模式，作者生成及作废公式仍未知。 [作者计划与品种对照](evidence/PORTFOLIO_RECONSTRUCTION.md#九品种环境分类与盘后计划对照)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_environment_audit.py \
+  --compare-generated-ranges --env-file .env --output /tmp/lms405-generated-range-new.json
+```
+
+只读MDS复算逐字节一致。定稿 `output/lms405-p4-generated-range-20261127/report.json` 的SHA256为 `e269317cae655ab890ad212c07d0680f99e211f56d55bda627159d62da59edc9`。LMS定向测试714通过、1跳过。全批使用已见开发行情，作者动作评分分母为0。
+
 ## P4环境分类与降周期候选
 
 九品种沿用现有三晚开发窗口。19个作者明确盘整或空头标签用六个开盘判读点比较。滚动环境首点相容12/19、六点均相容2/19、有翻转17/19。沿用日盘环境为7/19、7/19、0/19。等连续两个同类开盘判读后切换为7/19、3/19、14/19。固定及两票口径降低翻转，但首点与归档说法相容的次数减少。作者并未逐时点标注环境，三组均保留为研究对照。 [九品种归档标签与时点](evidence/PORTFOLIO_RECONSTRUCTION.md#九品种环境分类与盘后计划对照)
