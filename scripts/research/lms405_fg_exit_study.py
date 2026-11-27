@@ -68,6 +68,35 @@ ORDER_BASELINE = Path("output/lms405-fg-order-window-20261126/checked-c.json")
 ORDER_BASELINE_SHA = "6fd0463441b614e10548155951ed09a1971a67b5e54574e8dc898daecb3dccde"
 PRESSURE_SHA = "dcde821a829910773c4dda7951ff787fb09123d8017f4215716ad4cd844fb1d4"
 SHORT_PLAN_ACTIONS = {"protection": "LOCK", "exit_original_short": "EXIT_SHORT"}
+FOLLOWUP_PLAN = "A5358686423089344"
+FOLLOWUP_RECAP = "S5359038701503531"
+
+
+def october_followup(session, market):
+    """Check the quoted extreme-M range against the full subsequent physical session."""
+    index = input_sources()
+    sources = {
+        key: index[key] | {"archive_sha256": sha((ARCHIVE.parent / index[key]["archive_path"]).read_bytes())}
+        for key in (FOLLOWUP_PLAN, FOLLOWUP_RECAP)
+    }
+    series = read_window(session, market, CONTRACT, date(2026, 10, 28))
+    minutes = series[1]
+    start, end = minutes[0].start, minutes[-1].end
+    if not stamp(sources[FOLLOWUP_PLAN]) + ONE < start < end < stamp(sources[FOLLOWUP_RECAP]):
+        raise ValueError("FG_OCTOBER_FOLLOWUP_SOURCE_OR_SESSION_ORDER_INVALID")
+    low, high = Decimal("854"), Decimal("857")
+    cutoff = end + 2 * US
+    return dict(
+        study="FG2701_EXTREME_M_FOLLOWUP", contract=CONTRACT, trading_day=end.date(), sources=sources,
+        start=start, end=end, high=max(row.high for row in minutes), close=minutes[-1].close,
+        market={f"{period}m": dict(count=len(rows), sha256=bar_digest(rows)) for period, rows in series.items()},
+        boundaries={str(edge): boundary_clocks(minutes, edge, "LONG") for edge in (low, high)},
+        new_two_close_runs={str(edge): pressure_timeline(minutes, edge) for edge in (low, high)},
+        geometry={f"{shape}m_to_{confirm}m": signals(series, shape, confirm, start=start, cut=cutoff, side="LONG")
+                  for shape, confirm in VARIANTS},
+        original_plan_revision_verified=False, author_version=None, author_action_samples=0,
+        author_match_rate=None, actual_action=None, fills=None, pnl=None,
+    )
 
 
 def fg_window(series, start, cutoff, side, *, after_report):
@@ -590,6 +619,7 @@ def main():
     group.add_argument("--september-clocks", action="store_true")
     group.add_argument("--order-window", action="store_true")
     group.add_argument("--pressure-contrast", action="store_true")
+    group.add_argument("--october-followup", action="store_true")
     group.add_argument("--plan-intents", type=Path, metavar="FROZEN_PRESSURE_REPORT")
     args = parser.parse_args()
     if args.output.exists():
@@ -619,6 +649,8 @@ def main():
                 run = compute_september_clocks
             elif args.pressure_contrast:
                 run = compare_exit_pressure
+            elif args.october_followup:
+                run = october_followup
             else:
                 run = order_window if args.order_window else compute
             result = run(session, build_market_data_service(session))
