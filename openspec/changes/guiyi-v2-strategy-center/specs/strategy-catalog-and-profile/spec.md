@@ -18,6 +18,16 @@ The Strategy Center SHALL register the four retained Newow identities, the HTDY 
 - **THEN** the retired identity is absent from the active strategy list
 - **AND** its historical records remain available only through their original audit/read paths
 
+### Requirement: Catalog keys do not replace domain identities
+
+Strategy Center strategy_id values SHALL be stable catalog keys only. They MUST NOT replace, rewrite, alias over, or migrate existing ProductIdentity, formula/rule IDs, stream IDs, account IDs, policy versions, Run IDs, Event IDs, or journal identities owned by existing domains.
+
+#### Scenario: A catalog key maps to an existing Newow identity
+
+- **WHEN** the catalog displays newow_trend
+- **THEN** it references the existing Newow strategy/product/formula identities
+- **AND** it does not rewrite any saved ReferenceTrading stream, revision, action, or trade identity
+
 ### Requirement: Strategy definitions are static, typed metadata rather than executable plugins
 
 The catalog SHALL define stable strategy identity, domain ownership, strategy type, formula/policy references, declared input requirements, supported uses, and result ownership. Definitions MUST NOT contain executable user code, dynamic imports, arbitrary Python expressions, or database-loaded strategy implementations.

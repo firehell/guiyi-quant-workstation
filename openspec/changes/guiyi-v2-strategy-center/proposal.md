@@ -12,6 +12,8 @@
 
 ## 当前策略目录基线
 
+以下 strategy_id 是 Strategy Center 的目录键，不替换 Newow ProductIdentity、公式/Rule ID、ReferenceTrading stream、HTDY 原生账户身份、SuBing Policy/Run ID 或任何既有事件身份。目录只建立稳定的管理层映射。
+
 ### Newow：四个策略身份
 
 | strategy_id | 类型 | 定位 | 领域结果所有者 |

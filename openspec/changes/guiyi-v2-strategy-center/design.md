@@ -90,7 +90,7 @@ flowchart TB
 - allowed_uses；
 - catalog_status。
 
-目录只描述身份和能力，不直接 import 或执行策略内核。Newow 每个策略/周期的实际公式身份从现有产品合同解析，不能把单个公式字符串硬编码成全周期版本。
+目录只描述身份和能力，不直接 import 或执行策略内核。这里的 strategy_id 是管理层目录键，不替换领域已有 ProductIdentity、公式/Rule ID、ReferenceTrading stream、账户、Policy、Run 或 Event 身份。Newow 每个策略/周期的实际公式身份从现有产品合同解析，不能把单个公式字符串硬编码成全周期版本。
 
 ### 4.2 StrategyVersionReference
 
@@ -157,7 +157,7 @@ Newow 领域继续拥有：
 - Product Service、ReferenceTradeProjector；
 - ReferenceTrading 的历史/前向记录及 checkpoint（只按其 active 合同）。
 
-Fusion 的依赖图为 Trend Result + Oscillation Result → Fusion Kernel。Fusion 有独立结果身份和状态，但不得重复运行两套基础内核。共享计算只按完整 FeatureIdentity/Input Identity 去重，不能跨物理合约、计算段、周期、revision 或参数身份共享。
+一次 Newow 决策推进中，Trend 与 Oscillation 基础内核各按同一 admitted input 计算一次，其 typed frame/result 交给 Fusion 规则；Fusion 保留独立身份和状态，但不得再次调用两套基础内核。共享计算只按完整 FeatureIdentity/Input Identity 去重，不能跨物理合约、计算段、周期、revision 或参数身份共享。
 
 Newow 的 BUILD/CLEAR 是策略主动作；Hint 是 quantity_effect=none 的辅助事实。ReferenceTrade 是研究投影，不是账户、订单、成交、持仓或 PnL。
 
@@ -190,7 +190,7 @@ HTDY AlertEvent 是独立 Alert Domain；不能由策略中心从图表 marker �
 
 持续模型和历史回放是同一组合的两种视图，不是两个策略身份。1m、30m、60m completed 输入按现有组合合同消费；1d、30m、60m 的历史前缀用于指标准备。实际端点顺序、同刻优先级和交易事实资格由现有 Portfolio Worker/Journal 合同决定。
 
-SuBing 领域继续拥有 Factors、DecisionModel、Portfolio、PortfolioJournal、Run、共享资金和组合风险。16 个品种的因子准备可以在纯计算层评估是否并行，但 Portfolio Decision 和 Journal commit 必须按原有时间与固定品种顺序串行，退出先于新增风险。不得把组合拆成 16 个独立账户或并行资金事务。
+SuBing 领域继续拥有 Factors、DecisionModel、Portfolio、PortfolioJournal、各生命周期 Run、共享资金和组合风险。每个持续运行生命周期只有一个共享 Portfolio Run，不为 16 个品种创建独立账户 Run；历史回放和历史 Run 仍保留各自原身份。16 个品种的因子准备可以在纯计算层评估是否并行，但 Portfolio Decision 和 Journal commit 必须按原有时间与固定品种顺序串行，退出先于新增风险。不得把组合拆成 16 个独立账户或并行资金事务。
 
 SuBing AlertEvent 和历史参考资产与共享 Paper 账本保持分离。
 

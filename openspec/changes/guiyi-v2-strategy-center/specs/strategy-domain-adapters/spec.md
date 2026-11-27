@@ -18,7 +18,7 @@ The Strategy Center SHALL use one read adapter per retained domain: Newow, HTDY/
 
 ### Requirement: Newow remains the owner of its four strategy identities and reference results
 
-Newow SHALL remain the authority for Trend, Oscillation, Main Rise, and Dual Fusion formulas, profiles, state, capability, and ReferenceTrading results. Dual Fusion MUST consume the existing Trend and Oscillation results and maintain its own fusion identity/state without recomputing the base kernels. Newow Action, Hint, and ReferenceTrade semantics MUST remain distinct.
+Newow SHALL remain the authority for Trend, Oscillation, Main Rise, and Dual Fusion formulas, profiles, state, capability, and ReferenceTrading results. During one admitted input evaluation, the Trend and Oscillation base outputs MUST each be produced once and passed to the Fusion rule; Fusion maintains its own identity/state without invoking the base kernels a second time. Newow Action, Hint, and ReferenceTrade semantics MUST remain distinct.
 
 #### Scenario: Dual Fusion is displayed
 
@@ -50,7 +50,7 @@ HTDY SHALL retain the original 60m formula, its repainting/observation-only clas
 
 ### Requirement: SuBing remains one shared 16-product Portfolio
 
-SuBing SHALL remain a single Portfolio strategy with one shared capital/risk state, one Run identity, and its existing PortfolioJournal authority. Its 16 products MUST NOT be converted into independent strategy accounts or independent capital ledgers. Continuous observation and historical replay SHALL remain distinct views of the same Portfolio identity.
+SuBing SHALL remain a single Portfolio strategy with one shared capital/risk state and its existing PortfolioJournal authority. Each continuous execution lifecycle SHALL have one portfolio-level Run; its 16 products MUST NOT be converted into independent strategy accounts, independent capital ledgers, or independent product Runs. Continuous observation and historical replay SHALL remain distinct views of the same Portfolio identity.
 
 #### Scenario: The SuBing portfolio is displayed
 
