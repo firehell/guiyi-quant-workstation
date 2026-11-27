@@ -12,6 +12,20 @@ from app.runtime_handover import _write
 from tests.test_runtime_cohort import Host, plan
 
 
+def typed_intake():
+    return {
+        "schema_version": 2,
+        "kind": "reference_receiving_liveness_v1",
+        "mode": "durable_receiving_caught_up_idle",
+        "calculation_ready": False,
+        "before_sha256": "a" * 64,
+        "after_sha256": "b" * 64,
+        "advanced_count": 0,
+        "remaining_count": 0,
+        "old_tail_reached": True,
+    }
+
+
 def fixture(tmp_path):
     host = Host(tmp_path)
     source = plan(host)
@@ -67,18 +81,17 @@ def fixture(tmp_path):
     host.resume_consumers = lambda *args: (
         host.calls.append("consumers") or {"resumed": True}
     )
-    host.await_consumers = lambda *args: (
-        host.calls.append("intake")
-        or {"kind": "typed_intake_liveness", "calculation_ready": False}
-    )
+    host.await_consumers = lambda *args: host.calls.append("intake") or typed_intake()
     host.resume_feed = lambda *args: host.calls.append("feed") or {"started": True}
-    host.verify_forward = lambda *args: (
-        host.calls.append("verified")
-        or {"identity": "matched", "calculation_ready": False}
-    )
-    host.forward_calendars = lambda *args: (
-        host.calls.append("calendars") or {"registered": True}
-    )
+    host.verify_forward = lambda *args: host.calls.append("verified") or {
+        "continuous_identity": "matched",
+        "calculation_ready": False,
+        "intake": typed_intake(),
+        "natural_acceptance": "pending",
+    }
+    host.forward_calendars = lambda *args: host.calls.append("calendars") or {
+        "calendar_registration_only": True, "identity": "matched",
+    }
     host.halt_unknown = lambda *args: host.calls.append("halt")
     host.monotonic = lambda: 0.0
     return host, source, path, directory, state, audit

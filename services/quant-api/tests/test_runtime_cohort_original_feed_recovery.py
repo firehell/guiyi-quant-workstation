@@ -110,7 +110,10 @@ def original_fixture(tmp_path, monkeypatch, *, new_ready_timeout=False):
         "drain": {
             "feed_close": {},
             "owners": {},
-            "progress": {name: {} for name in ("market-feed", "live", "alert")},
+            "progress": {
+                name: {"2026-10-25": {"cursor": "1-0", "tail": "1-0"}}
+                for name in ("market-feed", "live", "alert")
+            },
             "reference_receiving_handover": {},
         },
         "old_exited": {"old_pids_exited": True, "bootout_requests": {}},
@@ -405,8 +408,10 @@ def test_original_host_audit_requires_old_tail_and_current_complete_ack(
     host.recovery_window = lambda: {"window": "verified"}
     host._new_protected = {"scope": "new-frozen"}
     host.feed_close_intent = lambda *_args: intent
-    monkeypatch.setattr(recovery, "observation_progress", lambda _name: {})
-    monkeypatch.setattr(recovery, "progress_reached", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(
+        recovery, "observation_progress",
+        lambda _name: {"2026-10-25": {"cursor": "1-0", "tail": "1-0"}},
+    )
     monkeypatch.setattr(
         receiving_liveness, "receiving_context_identity", lambda _snapshot: "e" * 64
     )
