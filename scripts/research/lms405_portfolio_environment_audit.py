@@ -14,6 +14,7 @@ from lms405_managed_portfolio import BASELINE, BASELINE_SHA256
 from lms405_minute_recovery_context import study as study_minute_context
 from lms405_original_leg_study import verified_json
 from lms405_portfolio_replay import ARCHIVE, CONTRACTS, DAYS, FIVE, LOCAL, input_sources
+from lms405_protection_band_return_study import compare_band
 from lms405_portfolio_protection_gate import plan_rows
 from lms405_protection_shape_audit import price_digest
 from lms405_protection_timeframes import read_window
@@ -87,6 +88,23 @@ TRANSFER_EXCLUSIONS = {
 TRANSFER_SCOPE = frozenset({"I2701", "RB2701", "JM2701", "FG2701", "SA2701", "OI2701", "V2701",
                             "LH2701", "TA2701", "SH2701", "RU2701"})
 CHAPTER_ID = re.compile(r"(?:^|[。\n])\s*\|?(I|RB|JM|FG|SA|OI|V|LH|TA|SH|RU)(?:2701)?(?=[|\u4e00-\u9fff])")
+REVISION_REPORTS = (
+    ("protection_revision_progress", "protection-revision-progress.json",
+     "f8a3454a535cd2df9d0bd6b165c09d00fc1ef5d2e33331b9d45b39212fb98e32"),
+    ("protection_revision_transfer", "protection-revision-transfer.json",
+     "03a6958199742b776a5559ede8a071150f53a5bdfa777f3b066ba99a2d651824"),
+)
+PRIOR_RESISTANCE = {
+    "2026-10-21": {"FG2701": "839-841", "JM2701": "1393-1403.5", "LH2701": "9985-10025",
+                   "RU2701": "19470-19575", "SH2701": "1679-1684"},
+    "2026-10-22": {"FG2701": "827-829", "LH2701": "9785-9855", "RU2701": "19425-19530",
+                   "SH2701": "1596-1610"},
+    "2026-10-23": {"I2701": "664.5-667", "FG2701": "827-829", "RU2701": "19425-19530",
+                   "SH2701": "1579-1589"},
+    "2026-10-26": {"I2701": "664.5-667", "FG2701": "827-829", "RU2701": "19425-19530",
+                   "SH2701": "1511-1516"},
+}
+WEAK_EVENTS = ("first_range_overlap", "first_fresh_near_close", "first_fresh_far_close")
 
 
 def archive_case(index, source_id, session_date, contract, author_class):
@@ -440,6 +458,66 @@ def protection_revision_transfer(session, market, index):
                 candidate_development_dates_excluded=True, admitted_author_action_samples=0)
 
 
+def audited_weak_band(raw, cutoff, band):
+    bars = [bar for bar in raw if bar.bar_end + US < cutoff]
+    result = compare_band(bars, band=band, side="LONG")
+    for name in WEAK_EVENTS:
+        event = result[name]
+        if event is None:
+            continue
+        available = event["available_at"]
+        before = [bar for bar in bars if bar.bar_end + US < available]
+        through = [bar for bar in bars if bar.bar_end + US < available + US]
+        earlier = compare_band(before, band=band, side="LONG")[name] if before else None
+        if earlier is not None or compare_band(through, band=band, side="LONG")[name] != event:
+            raise ValueError("PROTECTION_REVISION_WEAK_PREFIX_CHANGED")
+    return result
+
+
+def weak_side_revisions(session, market):
+    root = Path("output/lms405-p4-generated-range-20261127")
+    cases, summaries = [], {}
+    for cohort, filename, digest in REVISION_REPORTS:
+        frozen = verified_json(root / filename, digest)[cohort]["cases"]
+        counts = {role: {event: Counter() for event in WEAK_EVENTS} for role in ("resistance", "protection")}
+        for case in frozen:
+            contract, day = case["contract"], date.fromisoformat(case["trading_day"])
+            prior, latest = case["prior"], case["next_plan"]
+            old_path, new_path = (ARCHIVE.parent / src["archive_path"] for src in (prior, latest))
+            if any(sha(path.read_bytes()) != src["archive_sha256"]
+                   for path, src in ((old_path, prior), (new_path, latest))):
+                raise ValueError("PROTECTION_REVISION_WEAK_SOURCE_CHANGED")
+            resistance = PRIOR_RESISTANCE[prior["published_at"][:10]][contract]
+            chapter = archived_chapter(old_path, contract)
+            if not re.search(rf"(?:抵抗{re.escape(resistance)}|{re.escape(resistance)}抵抗)", chapter):
+                raise ValueError("PROTECTION_REVISION_RESISTANCE_TEXT_CHANGED")
+            published, cutoff = (datetime.fromisoformat(src["published_at"]).replace(second=0, microsecond=0) + ONE
+                                 for src in (prior, latest))
+            bars = read_session_series(session, market, contract[:-4].lower(), contract, "1m", ONE, (day,))
+            actual_sha = sha(encoded([(bar.bar_end, *ohlc(bar)) for bar in bars]).encode())
+            if len(bars) != case["market_count"] or actual_sha != case["market_sha256"]:
+                raise ValueError("PROTECTION_REVISION_WEAK_MARKET_CHANGED")
+            if not published < bars[0].bar_end - ONE or not bars[-1].bar_end + US < cutoff:
+                raise ValueError("PROTECTION_REVISION_WEAK_KNOWLEDGE_WINDOW_CHANGED")
+            bands = {"resistance": resistance.split("-"), "protection": case["prior_protection"]}
+            weak = {role: audited_weak_band(bars, cutoff, tuple(Decimal(str(edge)) for edge in edges))
+                    for role, edges in bands.items()}
+            all_targets_met = all(band["events"]["far"]["first_reach"] is not None for band in case["target_progress"])
+            if not all_targets_met:
+                later = "changed" if case["published_band_changed"] else "kept"
+                for role, events in weak.items():
+                    for event in WEAK_EVENTS:
+                        observed = "present" if events[event] is not None else "absent"
+                        counts[role][event][f"{observed}_{later}"] += 1
+            cases.append(case | dict(cohort=cohort, prior_plan_known_after=published, next_plan_known_after=cutoff,
+                                     all_declared_far_reached=all_targets_met, weak_side=weak))
+        summaries[cohort] = counts
+    return dict(version="lms405-weak-side-protection-revision-v1", cases=cases,
+                diagnostics_only_when_strong_targets_incomplete=summaries,
+                author_action_samples=0, author_action_matches=None, executable=False,
+                historical_source_revisions_verified=False)
+
+
 def study(session, market, *, compare_admission=False, compare_ranges=False, compare_resistance=False,
           compare_revisions=False, transfer_revisions=False):
     reference = verified_json(BASELINE, BASELINE_SHA256)
@@ -508,9 +586,14 @@ def main():
     parser.add_argument("--compare-resistance-pivots", action="store_true")
     parser.add_argument("--compare-protection-revisions", action="store_true")
     parser.add_argument("--transfer-protection-revisions", action="store_true")
+    parser.add_argument("--compare-weak-side-revisions", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
+    if args.compare_weak_side_revisions and any((args.compare_admission, args.compare_generated_ranges,
+                                                 args.compare_resistance_pivots, args.compare_protection_revisions,
+                                                 args.transfer_protection_revisions)):
+        parser.error("WEAK_SIDE_REVISION_REQUIRES_STANDALONE_MODE")
     from dotenv import load_dotenv
     load_dotenv(args.env_file, override=False)
     from app.db.readonly import readonly_transaction
@@ -521,10 +604,14 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session), compare_admission=args.compare_admission,
-                           compare_ranges=args.compare_generated_ranges, compare_resistance=args.compare_resistance_pivots,
-                           compare_revisions=args.compare_protection_revisions,
-                           transfer_revisions=args.transfer_protection_revisions)
+            market = build_market_data_service(session)
+            if args.compare_weak_side_revisions:
+                report = weak_side_revisions(session, market)
+            else:
+                report = study(session, market, compare_admission=args.compare_admission,
+                               compare_ranges=args.compare_generated_ranges, compare_resistance=args.compare_resistance_pivots,
+                               compare_revisions=args.compare_protection_revisions,
+                               transfer_revisions=args.transfer_protection_revisions)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
