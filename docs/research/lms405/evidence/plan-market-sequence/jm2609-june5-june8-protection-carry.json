@@ -1,0 +1,78 @@
+{
+  "version": "lms405-plan-market-sequence-v1",
+  "seed": {
+    "contract": "JM2609",
+    "episode": "JM2609:2026-06-05:PUBLIC_BAND_CARRY_ASSUMPTION",
+    "direction": "LONG",
+    "known_at": "2026-06-05T14:07:00+08:00",
+    "original": "1",
+    "protection": "0",
+    "counter_m": "0",
+    "attempt": 1
+  },
+  "revisions": [
+    {
+      "contract": "JM2609",
+      "id": "S5306449299508533:STILL_APPLICABLE_HYPOTHESIS",
+      "published_at": "2026-06-05T14:06:00+08:00",
+      "known_at": "2026-06-05T14:07:00+08:00",
+      "source": "https://www.sina.cn/news/detail/5306449299508533.html",
+      "operations": ["PROTECT_EARLY", "PROTECT_REGULAR"]
+    }
+  ],
+  "cutoff": "2026-06-08T23:00:00.000002+08:00",
+  "steps": [
+    {
+      "id": "friday-afternoon-after-post",
+      "plan_id": "S5306449299508533:STILL_APPLICABLE_HYPOTHESIS",
+      "trading_day": "2026-06-05",
+      "start": "2026-06-05T14:07:00.000001+08:00",
+      "cutoff": "2026-06-05T15:00:00.000002+08:00",
+      "request_expires_at": "2026-06-05T15:00:00.000002+08:00",
+      "operation": "PROTECT_EARLY",
+      "band": ["1425", "1446"],
+      "quantity": "1",
+      "shape_period": 1,
+      "confirmation_period": 1
+    },
+    {
+      "id": "friday-night",
+      "plan_id": "S5306449299508533:STILL_APPLICABLE_HYPOTHESIS",
+      "trading_day": "2026-06-08",
+      "start": "2026-06-05T21:00:00+08:00",
+      "cutoff": "2026-06-05T23:00:00.000002+08:00",
+      "request_expires_at": "2026-06-05T23:00:00.000002+08:00",
+      "operation": "PROTECT_EARLY",
+      "band": ["1425", "1446"],
+      "quantity": "1",
+      "shape_period": 1,
+      "confirmation_period": 1
+    },
+    {
+      "id": "monday-day",
+      "plan_id": "S5306449299508533:STILL_APPLICABLE_HYPOTHESIS",
+      "trading_day": "2026-06-08",
+      "start": "2026-06-08T09:00:00+08:00",
+      "cutoff": "2026-06-08T15:00:00.000002+08:00",
+      "request_expires_at": "2026-06-08T15:00:00.000002+08:00",
+      "operation": "PROTECT_EARLY",
+      "band": ["1425", "1446"],
+      "quantity": "1",
+      "shape_period": 15,
+      "confirmation_period": 15
+    },
+    {
+      "id": "monday-night",
+      "plan_id": "S5306449299508533:STILL_APPLICABLE_HYPOTHESIS",
+      "trading_day": "2026-06-09",
+      "start": "2026-06-08T21:00:00+08:00",
+      "cutoff": "2026-06-08T23:00:00.000002+08:00",
+      "request_expires_at": "2026-06-08T23:00:00.000002+08:00",
+      "operation": "PROTECT_REGULAR",
+      "band": ["1425", "1446"],
+      "quantity": "1",
+      "shape_period": 1,
+      "confirmation_period": 1
+    }
+  ]
+}

@@ -253,6 +253,35 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 若需复算测试确认，先用 `jq --slurpfile approvals <同名.fixtures.json> '. + {approvals: $approvals[0]}' <输入文件>` 生成一份含测试记录的输入，再显式增加 `--allow-test-fixture`，并使用新的输出路径。两案均连续复算两次逐字节一致，四次测试许可的作用域逐项核对。无许可与测试许可报告在 `output/lms405-plan-market-sequence-20261127/`。
 
+### 焦煤周末前后的保护许可与仓位延续
+
+JM2609 的6月5日14:06公开帖给出原多保护参考1425–1446。本轮复查作者及合约、价带、日期、持仓与VPLUS等关键词，并查看新浪作者列表。Chrome连接超时，仍未取得6月8日的1446–1464事前原件或带时钟持仓。6月9日作者将4.0.5已锁和5.0前夜止盈分述。两组价带已各自做过行情对照。 [6月5日公开帖](https://www.sina.cn/news/detail/5306449299508533.html) · [6月9日复盘](https://www.sina.cn/news/detail/5307830937850724.html) · [两档候选比较](evidence/PORTFOLIO_REPLAY.md#焦煤保护区迁移与旧区用途)
+
+本试验用 **1425–1446持续适用至6月8日夜盘收盘** 作为显式条件，按最早14:07之后可知，初始多一单位、保护空零。6月5日原帖未明确子版本和该范围是否持续有效。6月9日回述及1446–1464均不进入重放。沿既有规则和先前几何结果使用指定周期。四个窗口只是候选条件试验。
+
+|按自然日的行情窗口（上海时间）|交易日|当前口径首个候选|从此窗口独立许可后的结果|
+|---|---|---|---|
+|6月5日周五盘中发表后|6月5日|14:52，1→1，收1460，区前|加一单位保护空，后续三个窗口不再给首锁|
+|6月5日周五夜盘|6月8日|21:19，1→1，收1473，区前|此前保持未锁时，加一单位保护空，周一继续持有两腿|
+|6月8日周一日盘|6月8日|09:45，15→15，收1464，区前|此前保持未锁时，加一单位保护空，夜盘继续持有两腿|
+|6月8日周一夜盘|6月9日|21:03，1→1，收1430，区内|只有此前仍未锁且本窗口授权才首次建立保护|
+
+四个窗口都没有许可时，维持一多零空。四份测试许可同时提供时，只接受最早的一份。周五14:52候选的许可若直到下一根分钟可知才到，按过期拒绝；其作用域也无法转用于周一夜盘，夜盘自己的新许可仍可独立使用。周五保护若已按假设成交，连续到周一是**已有保护的仓位延续**，不能计为周一又一次锁定。作者原文无法把该单位投影识别为真实路径。
+
+```sh
+case_dir=docs/research/lms405/evidence/plan-market-sequence
+case_name=jm2609-june5-june8-protection-carry
+jq --slurpfile approvals "$case_dir/$case_name.fixtures.json" \
+  '. + {approvals: ($approvals[0] | {"monday-day"})}' \
+  "$case_dir/$case_name.json" > /tmp/lms405-jm-june-day-approval.json
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-sequence /tmp/lms405-jm-june-day-approval.json --allow-test-fixture \
+  --output /tmp/lms405-jm-june-day-approval-result.json
+```
+
+可直接用[无许可输入](evidence/plan-market-sequence/jm2609-june5-june8-protection-carry.json)运行无许可版本；[测试许可](evidence/plan-market-sequence/jm2609-june5-june8-protection-carry.fixtures.json)按窗口独立。两次复算对账一致，验证集合报告SHA256 `e358518a9df41ff36ec5777617c54ca314d7e4fbe0dad6bfdac8f8eb0ae1d83e`。新增作者可评分动作0，原基线保留。
+
 ### 抓M部分退出后承接同一个目标
 
 研究序列 `lms405-plan-market-sequence-v2` 可在 `EXIT_COUNTER_M` 的 `DIRECTIONAL_TARGET` 路径显式声明 `inherit_observed_target: true`。只有同一序列先完成获准的部分退出、仍有同一短线仓剩余时，才保存目标已达的分钟。下一步须绑定当时的剩余仓位、同一实月交易日、完整价带和计划修订。若确认前像变动且无法沿用、计划换版或目标K线改变，则停止继承。继承只提供已达目标这项信息，仍要等待剩余仓位可知后全新形成的反向确认及独立许可。全平后丢弃承接信息。`v1`和独立基线继续使用原有口径。
