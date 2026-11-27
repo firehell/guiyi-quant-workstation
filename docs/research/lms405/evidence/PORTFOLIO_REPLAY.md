@@ -2151,3 +2151,27 @@ services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_combined_c
   --compare-protection-clocks --compare-coal-first-lock --compare-continuous-legs \
   --env-file .env --output /tmp/lms405-nine-continuous-legs-new.json
 ```
+
+### 铁矿与PVC撤保护的条件对照
+
+沿用已有验证的铁矿持仓链和PVC近沿回放。铁矿10月27日收盘显示双腿各16手，夜图仅见今0、开均682.50的空16手。夜图10行合计246手，与表尾相符。在仅核对可见空腿时，下面六条路径全部与31个报价标签相容。按同账户、同一完整展示范围、仓位与报价同期的假设，结果才出现分歧。 [铁矿三图和表尾](I2701_OCT_CASE.md#铁矿夜图范围和撤保护回放)
+
+| 铁矿 I2701 研究条件 | 同表范围下的严格报价相容 | 对照含义 |
+|---|---:|---|
+| 保留双腿、只有快形态但无撤腿许可、远沿未达 | 各0/31 | 三条路径仍保留保护多16 |
+| 快确认后给测试撤腿许可 | 31/31 | 投影保留原空16，撤多16 |
+| 慢确认后给测试撤腿许可、近沿后给测试撤腿许可 | 各30/31 | 两条路径也保留原空16，撤多16 |
+
+三条已投影撤腿路径里，以撤后价格建立整条同开均663.34的保护多均无解。夜图未列多腿仍无法确认真实账户是否撤仓。快、慢、近沿三种触发也缺少作者披露的当次许可和时点。
+
+PVC V2609在4月27日的三个候选于北京时间09:33、11:00、11:09确认。三个均通过近沿严格收过、穿越先于形态、确认仍在近沿外的价格子集。逐项带回冻结输入检查后，单独加计划用途或单独加计划时序约束，均为0/3。用途缺口是5226–5262当前证据仅支持目标区。时序缺口是收盘复述不能补成盘中已经可知的恢复计划。作者当日明确仍未解锁，4月28日仅复述两个目标区完成，未披露恢复动作。原始VPLUS历史前像仍缺。 [4月27日作者说明](https://www.sina.cn/news/detail/5292358960155373.html) · [4月28日作者说明](https://www.sina.cn/news/detail/5292720017903146.html) · [PVC跨日回放](V_TA_CASE.md#pvc-405未解锁与锁定pta双系统退出)
+
+共同可复用的是当前的原仓及保护腿身份、计划用途、先于信号的可知时序和当次撤腿许可。铁矿的快慢时钟和PVC的远沿数值继续按各自计划对待。用于下一批计划驱动回放时，缺计划、触发或许可的动作等待补证，持仓缺行只影响观察对照。当前作者动作可评分样本仍为0。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_pvc_portfolio_lifecycle.py \
+  --compare-releases --output /tmp/lms405-iron-pvc-release-new.json
+```
+
+两次冻结输入复算逐字节一致，原命令结果与已验证的PVC报告逐字节一致。本地报告 `output/lms405-iron-pvc-release-contrast-20261127/report.json` 的SHA256为 `c4c2d809445c847251c362055e37fb49749456b8556024b09898b1f2701ca439`。

@@ -126,7 +126,44 @@ def october_recipe(refs):
     return tuple(seeds), tuple(attempts), (zone,), price_cases
 
 
-def study():
+def release_contrast(iron, pvc_negative):
+    """Compare price-only and scoped release evidence without promoting test permissions."""
+    branches = iron["branches"]
+    price_checks = ("strict_near_close", "break_known_before_shape", "confirmation_still_beyond_near")
+    timing_checks = ("plan_known_before_shape", "break_started_under_plan_and_lock")
+    pvc = []
+    for row in pvc_negative:
+        checks = row["result"]["checks"]
+        price = all(checks[key] is True for key in price_checks)
+        timing = all(checks[key] is True for key in timing_checks)
+        role = checks["explicit_near_role"] is True
+        pvc.append(dict(
+            confirmed_at=row["confirmed_at"], price_only=price,
+            price_with_role=price and role, price_with_plan_timing=price and timing,
+            scoped_status=row["result"]["status"], failed=row["result"]["failed"],
+        ))
+    iron_paths = {}
+    for label, row in branches.items():
+        matches = row["compatible_if_same_complete_table_scope_and_quote_sync_before_quote"]
+        rebuild = row["same_average_rebuild_price_sensitivity"]
+        iron_paths[label] = dict(
+            trigger_known_at=row["clock"], protection_ending_quantity=row["ending"]["protected_long"],
+            original_short_ending_quantity=row["ending"]["position"]["short"],
+            quote_count=len(row["quotes"]), compatible_by_visible_short_only=row["compatible_visible_short_before_quote"],
+            compatible_if_same_complete_table_and_sync=matches,
+            same_open_average_full_rebuild_compatible_quotes=None if rebuild is None else sum(rebuild.values()),
+            test_permission_supplied=row["test_permission_supplied"],
+        )
+    return dict(
+        iron=dict(contract="I2701", paths=iron_paths, actual_release_at=iron["actual_release_at"],
+                  same_account_and_scope_verified=iron["close_to_night_same_scope_verified"]),
+        pvc=dict(contract="V2609", author_reported_no_unlock=True, candidate_rows=pvc,
+                 checks_describe_research_input_scope=True, original_plan_revision_verified=False),
+        author_actions_scored=0, author_match_rate=None,
+    )
+
+
+def study(*, compare_releases=False):
     refs = {key: verified_json(Path("output") / path, digest) for key, (path, digest) in REFS.items()}
     base, exit_report = refs["portfolio"], refs["exit"]
     if base["bases"]["iron"] != IRON_MARKET_SHA or CONTRACT not in base["contracts"]:
@@ -169,6 +206,7 @@ def study():
         *(row | dict(mode="PVC_PUBLIC_PROJECTION") for row in public),
         *(row | dict(mode="PVC_TEST_FIXTURE") for row in fixture),
     ], key=lambda row: (datetime.fromisoformat(str(row["at"])), row["mode"], row.get("episode", "")))
+    extra = {"release_contrast": release_contrast(base["iron"], negatives)} if compare_releases else {}
     return dict(
         version=VERSION, timeline=timeline,
         contracts=base["contracts"] | {CONTRACT: base["contracts"][CONTRACT] | dict(
@@ -186,18 +224,19 @@ def study():
             restart_checks=dict(public=public_prefixes, fixture=fixture_prefixes),
         ),
         references={key: ref[1] for key, ref in REFS.items()},
-        author_actions_scored=0, author_match_rate=None, executable=False, fills=None, pnl=None,
+        author_actions_scored=0, author_match_rate=None, executable=False, fills=None, pnl=None, **extra,
     )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--compare-releases", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PVC_LIFECYCLE_OUTPUT_EXISTS")
     try:
-        report = study()
+        report = study(compare_releases=args.compare_releases)
         with args.output.open("x", encoding="utf-8") as output:
             output.write(encoded(report))
     except (KeyError, ValueError, OSError) as exc:
