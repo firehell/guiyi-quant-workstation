@@ -1,6 +1,7 @@
 """Compare zone contact before shape against an in-zone confirming close."""
 
 import argparse
+from collections import Counter
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 import json
@@ -31,7 +32,7 @@ def price_band_status(price, bounds):
     return "INSIDE"
 
 
-def zone_order(minutes, events, *, bounds, shape_minutes, start, as_of):
+def zone_order(minutes, events, *, bounds, shape_minutes, start, as_of, confirmation_minutes=None):
     """Require contact knowledge before the shape starts and keep restarts explicit."""
     if bounds is not None and bounds[0] >= bounds[1]:
         raise ValueError("INVALID_PROTECTION_BAND")
@@ -61,11 +62,28 @@ def zone_order(minutes, events, *, bounds, shape_minutes, start, as_of):
         earlier = next((end for end in reversed(contacts) if end + US < shape_start), None)
         prior_same_run = earlier is not None and segment[earlier] == segment[shape_end]
         status = price_band_status(event["close"], bounds)
+        timing = {}
+        if confirmation_minutes is not None:
+            confirm_start = confirmation - timedelta(minutes=confirmation_minutes)
+            first = next((end for end in contacts if end <= confirmation and segment[end] == segment[confirmation]),
+                         None)
+            phase = "NO_CONTACT_BY_CONFIRMATION"
+            if first is not None:
+                if first + US < confirm_start:
+                    phase = "BEFORE_CONFIRMATION"
+                elif first == confirm_start:
+                    phase = "AT_CONFIRMATION_START"
+                elif first < confirmation:
+                    phase = "DURING_CONFIRMATION"
+                else:
+                    phase = "AT_CONFIRMATION_END"
+            timing = dict(first_contact_at=first, first_contact_known_at=first + US if first is not None else None,
+                          confirmation_start=confirm_start, contact_phase=phase)
         results.append(event | dict(
             shape_start=shape_start, prior_contact_at=earlier, prior_contact_same_run=prior_same_run,
             contact_ending_at_shape_start=shape_start in contacts, confirmation_close_relation=status,
             before_shape_policy=prior_same_run, close_inside_policy=status == "INSIDE",
-        ))
+        ) | timing)
     return results, contacts
 
 
@@ -114,18 +132,32 @@ def compare_display(tables, name, contract, cutoff, minutes, variants):
     )
 
 
-def case(series, *, start, as_of, side, band, split):
+def confirmation_window(series, events, shape, *, side):
+    shapes = series[shape]
+    consecutive = {current.end for previous, current in zip(shapes, shapes[1:]) if previous.end == current.start}
+    eligible = []
+    for event in events:
+        if event["shape_end"] in consecutive:
+            eligible.append(event | {"shape_admission": "CONTIGUOUS_MOTHER"})
+        elif event["pinbar"] == side:
+            eligible.append((event | {"shape_admission": "STANDALONE_PINBAR", "ibar": False}))
+    return eligible
+
+
+def case(series, *, start, as_of, side, band, split, compare_confirmation=False):
     bounds = tuple(map(Decimal, band)) if band is not None else None
     results, contacts = {}, []
     for shape, confirmation in VARIANTS:
         args = dict(start=start, side=side)
         raw = geometry_events(series, shape, confirmation, as_of=as_of, **args)
-        events, contacts = zone_order(series[1], raw, bounds=bounds, shape_minutes=shape, start=start, as_of=as_of)
+        timing = confirmation if compare_confirmation and bounds is not None else None
+        order_args = dict(bounds=bounds, shape_minutes=shape, start=start, confirmation_minutes=timing)
+        events, contacts = zone_order(series[1], raw, as_of=as_of, **order_args)
         prefix_raw = geometry_events(series, shape, confirmation, as_of=split, **args)
-        prefix, _ = zone_order(series[1], prefix_raw, bounds=bounds, shape_minutes=shape, start=start, as_of=split)
+        prefix, _ = zone_order(series[1], prefix_raw, as_of=split, **order_args)
         if prefix != [row for row in events if row["available_at"] < split]:
             raise ValueError("ZONE_ORDER_PREFIX_DIVERGED")
-        results[f"{shape}m_to_{confirmation}m"] = dict(
+        result = results[f"{shape}m_to_{confirmation}m"] = dict(
             candidates=len(events),
             before_shape_pass=sum(row["before_shape_policy"] is True for row in events) if bounds is not None else None,
             close_inside_pass=sum(row["close_inside_policy"] is True for row in events) if bounds is not None else None,
@@ -133,6 +165,12 @@ def case(series, *, start, as_of, side, band, split):
                           for row in events) if bounds is not None else None,
             events=events,
         )
+        if timing is not None:
+            comparison = confirmation_window(series, events, shape, side=side)
+            eligible = [row for row in comparison if row["close_inside_policy"]]
+            result["confirmation_window_comparison"] = dict(
+                counts=Counter(row["contact_phase"] for row in eligible), in_band_events=eligible,
+            )
     return dict(
         first_contact=contacts[0] if contacts else None, contact_minutes=len(contacts) if bounds is not None else None,
         variants=results, prefix_verified=True,
@@ -141,7 +179,7 @@ def case(series, *, start, as_of, side, band, split):
     )
 
 
-def study(session, market, geometry, volatility, bands, exposure):
+def study(session, market, geometry, volatility, bands, exposure, *, compare_confirmation=False):
     prior_bands = bands["opening_average_bands"]
     additions = tuple(
         (contract[:-4].lower() + "_first_night", contract, *FIRST_NIGHT,
@@ -155,7 +193,9 @@ def study(session, market, geometry, volatility, bands, exposure):
     results = {}
     for name, contract, trading_day, start, cutoff, side, band, source, milestones in (*WINDOWS, *additions, RU_CASE):
         series = read_window(session, market, contract, date.fromisoformat(trading_day))
-        output = case(series, start=at(start), as_of=at(cutoff), side=side, band=band, split=at(milestones[0]))
+        stop = at(cutoff)
+        output = case(series, start=at(start), as_of=stop, side=side, band=band, split=at(milestones[0]),
+                      compare_confirmation=compare_confirmation)
         output.update(contract=contract, trading_day=trading_day, start=start, cutoff=cutoff,
                       plan_band=band, source_id=source, side=side)
         if name in geometry["cases"]:
@@ -171,11 +211,19 @@ def study(session, market, geometry, volatility, bands, exposure):
                     event["atr_context_known_before_shape"] = point["known_before_shape"]
         if name in ("sh", "ru_before_m") or name.endswith("_first_night"):
             output["display_comparison"] = compare_display(
-                tables, name, contract, at(cutoff), series[1], output["variants"],
+                tables, name, contract, stop, series[1], output["variants"],
             )
+            if compare_confirmation:
+                average = Decimal(output["display_comparison"]["visible_leg"]["opening_average"])
+                for variant in output["variants"].values():
+                    for row in variant["confirmation_window_comparison"]["in_band_events"]:
+                        row["after_confirming_close_known"] = after_confirmation_bounds(
+                            series[1], after=row["available_at"], cutoff=stop, average=average,
+                        )
         results[name] = output
     return dict(
-        version="lms405-protection-zone-order-v1", cases=results,
+        version="lms405-protection-confirmation-window-v1" if compare_confirmation else "lms405-protection-zone-order-v1",
+        cases=results,
         policy_before_shape="LATEST_COMPLETED_CONTACT_STRICTLY_KNOWN_BEFORE_SHAPE_IN_SAME_CONTIGUOUS_RUN",
         policy_close_inside="CONFIRMATION_CLOSE_WITHIN_INCLUSIVE_PLAN_BAND",
         source_text_timing="RETROSPECTIVE_ARCHIVE_HISTORY_NOT_VERIFIED",
@@ -189,6 +237,7 @@ def main():
     parser.add_argument("--geometry", type=Path, required=True)
     parser.add_argument("--volatility", type=Path, required=True)
     parser.add_argument("--exposure", type=Path, required=True)
+    parser.add_argument("--confirmation-window", action="store_true")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
@@ -209,7 +258,8 @@ def main():
         if tuple(map(sha, documents)) != tuple(expected.values()):
             raise ValueError("FROZEN_ZONE_ORDER_REPORT_CHANGED")
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            result = study(session, build_market_data_service(session), *map(json.loads, documents))
+            result = study(session, build_market_data_service(session), *map(json.loads, documents),
+                           compare_confirmation=args.confirmation_window)
         result["input_sha256"] = expected
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))

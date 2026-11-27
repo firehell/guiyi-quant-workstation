@@ -38,6 +38,22 @@ def test_already_touched_and_confirmation_inside_can_disagree_at_same_minute_bou
     assert row["close_inside_policy"]
 
 
+@pytest.mark.parametrize(("contact", "phase"), (
+    (4, "BEFORE_CONFIRMATION"), (5, "AT_CONFIRMATION_START"), (8, "DURING_CONFIRMATION"),
+    (10, "AT_CONFIRMATION_END"), (11, "NO_CONTACT_BY_CONFIRMATION"),
+))
+def test_first_contact_is_known_only_after_its_minute_completes(contact, phase):
+    minutes = [bar(n, 10170, 10180 if n == contact else 10174, 10172) for n in range(1, 13)]
+    start, confirm = minutes[0].start, minutes[9].end
+    event = dict(shape_end=minutes[4].end, confirmed_at=confirm, available_at=confirm + US,
+                 close=minutes[9].close)
+    options = dict(bounds=(Decimal(10175), Decimal(10197)), shape_minutes=5, confirmation_minutes=5, start=start)
+    (row,), _ = zone_order(minutes, [event], as_of=minutes[-1].end + 2 * US, **options)
+    (earlier,), _ = zone_order(minutes[:10], [event], as_of=confirm + 2 * US, **options)
+    assert row == earlier and row["contact_phase"] == phase
+    assert row["first_contact_known_at"] == (minutes[contact - 1].end + US if contact <= 10 else None)
+
+
 def test_same_session_touch_and_close_outside_and_absent_zone():
     touched = bar(1, 10170, 10193, 10188)
     missed = bar(2, 10166, 10173, 10171)
