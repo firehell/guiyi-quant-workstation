@@ -413,31 +413,37 @@ def test_market_sequence_uses_only_confirmed_books_and_rechecks_the_active_plan(
     assert run(revisions=shorter_plans)["steps"][0]["cutoff_exclusive"] == short_end
 
 
-def test_partial_counter_m_exit_carries_same_target_but_requires_fresh_signal_and_approval(monkeypatch):
+@pytest.mark.parametrize("original_side", ["SHORT", "LONG"])
+def test_partial_counter_m_exit_carries_same_target_but_requires_fresh_signal_and_approval(
+        monkeypatch, original_side):
     minute, us = timedelta(minutes=1), timedelta(microseconds=1)
+
+    def price(value):
+        return Decimal(value if original_side == "SHORT" else 200 - value)
+
     bars = []
     for index in range(9):
         bar_start = START + index * minute
-        high = Decimal(110) if index == 0 else Decimal(105)
-        bars.append(Bar("JM2701", bar_start + minute, Decimal(101), high, Decimal(99), Decimal(100), start=bar_start))
+        low, high = sorted((price(99), price(110 if index == 0 else 105)))
+        bars.append(Bar("JM2701", bar_start + minute, price(101), high, low, price(100), start=bar_start))
 
     def mock_signals(series, shape, confirmation, *, side, start, cut):
-        assert side == "SHORT" and (shape, confirmation) == (1, 1)
+        assert side == original_side and (shape, confirmation) == (1, 1)
         result = []
         for shape_end, confirmed in ((bars[2].end, bars[3].end), (bars[6].end, bars[7].end)):
             if start <= shape_end - minute and confirmed + us < cut:
                 result.append(dict(shape_end=shape_end, confirmed_at=confirmed, available_at=confirmed + us,
-                                   close=Decimal(100), boundary=Decimal(101)))
+                                   close=price(100), boundary=price(101)))
         return result
 
     monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
     monkeypatch.setattr(plan_replay, "signals", mock_signals)
-    seed = Book("JM2701", "partial-exit", "SHORT", START - minute, Decimal(20), Decimal(20), Decimal(2), 1)
+    seed = Book("JM2701", "partial-exit", original_side, START - minute, Decimal(20), Decimal(20), Decimal(2), 1)
     active = plan("same-target", START - minute, ("EXIT_COUNTER_M",))
     final = bars[-1].end + 2 * us
     middle = START + 5 * minute
     shared = dict(plan_id=active.id, trading_day="2026-10-22", operation="EXIT_COUNTER_M", quantity="1",
-                  shape_period=1, confirmation_period=1, band=["110", "110"], exit_role="DIRECTIONAL_TARGET")
+                  shape_period=1, confirmation_period=1, band=[str(price(110))] * 2, exit_role="DIRECTIONAL_TARGET")
     first = shared | dict(id="part", start=START.isoformat(), cutoff=middle.isoformat(),
                           request_expires_at=middle.isoformat())
     second = shared | dict(id="rest", start=middle.isoformat(), cutoff=final.isoformat(),
@@ -467,6 +473,8 @@ def test_partial_counter_m_exit_carries_same_target_but_requires_fresh_signal_an
     partial_step, next_step = partial["steps"]
     assert partial_step["status"] == "CONDITIONAL_ACTION"
     assert next_step["status"] == "INDETERMINATE"
+    assert next_step["market"]["exit"]["managed_side"] != original_side
+    assert next_step["market"]["exit"]["edge"] == price(110)
     assert next_step["market"]["exit"]["target_known_at"] == bars[0].end + us
     assert next_step["market"]["exit"]["target_bar_sha256"] == partial_step["market"]["exit"]["target_bar_sha256"]
     assert next_step["market"]["candidate"]["confirmed_at"] == bars[7].end
@@ -484,14 +492,16 @@ def test_partial_counter_m_exit_carries_same_target_but_requires_fresh_signal_an
                  approvals={"part": approval(legacy_public["steps"][0])})
     assert legacy["steps"][1]["market"]["exit"]["status"] == "TARGET_NOT_TOUCHED"
     assert legacy["final"]["counter_m"] == 1
-    for change in ({"band": ["109", "110"]}, {"trading_day": "2026-10-23"}):
+    changed_band = list(map(str, sorted((price(109), price(110)))))
+    for change in ({"band": changed_band}, {"trading_day": "2026-10-23"}):
         assert approved(steps=[first, second | change])["steps"][1]["status"] == "COUNTER_M_TARGET_NOT_CARRIED"
     new_plan = replace(active, id="revised", published_at=middle - us, known_at=middle - us)
     revisions = definition["revisions"] + json.loads(encoded([plan_replay.revision_record(new_plan)]))
     diverged = approved(revisions=revisions, steps=[first, second | {"plan_id": new_plan.id}])
     assert diverged["steps"][1]["status"] == "COUNTER_M_TARGET_NOT_CARRIED"
 
-    revised_bar = replace(bars[0], high=Decimal(111))  # Same target and timestamp, different market fact.
+    revised_extreme = {"high": price(111)} if original_side == "SHORT" else {"low": price(111)}
+    revised_bar = replace(bars[0], **revised_extreme)  # Same target and timestamp, different market fact.
     reading = iter((bars, [revised_bar, *bars[1:]]))
     monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: next(reading)})
     with pytest.raises(ValueError, match="COUNTER_M_TARGET_MARKET_MISMATCH"):

@@ -269,6 +269,8 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 公开、部分和完整确认以及旧版比较两次复算一致。CLI定稿 `output/lms405-counter-m-target-carry-20261128/cli-verified.json`，SHA256 `22aba5e4c3bb1e9f410124dac9b0b145b983a3e01a3be7897101f9b53e924ccc`。原烧碱与焦煤计划结果逐字节一致，可评分作者动作0。
 
+验证空向抓M可将上面命令的输入换成[菜油 OI2609 反向空候选](evidence/counter-m-target-carry-oi2609.json)，并使用新输出路径。案例使用6月5日盘后参考区，只读取6月8日行情；13:52接触下沿，13:56及14:45有新的逆向1→1确认。两张测试许可驱动假设短线空2→1→0，无许可为2。作者当日实际持仓及退出均未知。 [菜油与焦煤对照](evidence/COUNTER_M_STUDY.md#菜油空向m在触及远沿后的两次退出候选)
+
 ### 焦煤抓M证据与夜盘行情持续回放
 
 同一连续回放可混用外部证据窗口和本地行情窗口。外部窗口声明 `evidence.at` 及 `facts`。每条已知事实须绑定当前合约、动作、仓位前像和请求标识，并以 `RESEARCH_EXTERNAL_EVIDENCE:<计划修订SHA256>:<来源标记>` 或测试用的 `TEST_FIXTURE_EXTERNAL_EVIDENCE:<计划修订SHA256>:<来源标记>` 锁定修订内容。同ID换来源或改计划字段，旧事实与许可无法沿用。确认必须严格早于该步骤固定评估时刻，迟到不能改变它。行情窗口继续自动查完成K并为下一步传入确认后的仓位。

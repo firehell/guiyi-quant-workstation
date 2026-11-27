@@ -1,0 +1,75 @@
+{
+  "cutoff": "2026-06-08T14:55:00+08:00",
+  "revisions": [
+    {
+      "contract": "OI2609",
+      "id": "WR2IUYCQHj",
+      "known_at": "2026-06-05T17:01:00+08:00",
+      "operations": [
+        "EXIT_COUNTER_M"
+      ],
+      "published_at": "2026-06-05T17:00:00+08:00",
+      "source": "https://www.sina.cn/news/detail/5306493249259037.html"
+    }
+  ],
+  "seed": {
+    "attempt": 1,
+    "contract": "OI2609",
+    "counter_m": "2",
+    "direction": "LONG",
+    "episode": "OI2609:COUNTER_M_SHORT_REMAINDER:TEST",
+    "known_at": "2026-06-08T13:45:00.000001+08:00",
+    "original": "0",
+    "protection": "0"
+  },
+  "steps": [
+    {
+      "band": ["9924", "9952"],
+      "confirmation_period": 1,
+      "cutoff": "2026-06-08T14:00:00+08:00",
+      "exit_role": "DIRECTIONAL_TARGET",
+      "id": "part",
+      "operation": "EXIT_COUNTER_M",
+      "plan_id": "WR2IUYCQHj",
+      "quantity": "1",
+      "request_expires_at": "2026-06-08T14:00:00+08:00",
+      "shape_period": 1,
+      "start": "2026-06-08T13:46:00+08:00",
+      "trading_day": "2026-06-08"
+    },
+    {
+      "band": ["9924", "9952"],
+      "confirmation_period": 1,
+      "cutoff": "2026-06-08T14:55:00+08:00",
+      "exit_role": "DIRECTIONAL_TARGET",
+      "id": "rest",
+      "inherit_observed_target": true,
+      "operation": "EXIT_COUNTER_M",
+      "plan_id": "WR2IUYCQHj",
+      "quantity": "1",
+      "request_expires_at": "2026-06-08T14:55:00+08:00",
+      "shape_period": 1,
+      "start": "2026-06-08T14:00:00+08:00",
+      "trading_day": "2026-06-08"
+    }
+  ],
+  "version": "lms405-plan-market-sequence-v2",
+  "approvals": {
+    "part": {
+      "accepted": true,
+      "decided_at": "2026-06-08T05:56:00.000002+00:00",
+      "id": "part",
+      "known_at": "2026-06-08T05:56:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "e027c83137a636c2912728346902ca51692a9cd5d21912e63609c5f0a5346369"
+    },
+    "rest": {
+      "accepted": true,
+      "decided_at": "2026-06-08T06:45:00.000002+00:00",
+      "id": "rest",
+      "known_at": "2026-06-08T06:45:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "6660bc65196f9f4283464754ac3f5deb2cc651879240c5446853f2be1e3f9d87"
+    }
+  }
+}
