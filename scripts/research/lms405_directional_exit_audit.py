@@ -5,11 +5,14 @@ from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 
+from lms405_jm_oct_recovery_clock import window_signals
 from lms405_original_leg_study import verified_json
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_timeframes import PERIODS, VARIANTS, geometry_events, read_window
+from lms405_public_plan_roles import load_source
 from lms405_replay import ohlc
 from lms405_right_side_study import ONE, US, at
+from lms405_sh_lock_lifecycle import completed, digest
 from lms405_v_zone_progress import observations
 from lms_near405_replay import encoded, sha
 
@@ -26,6 +29,12 @@ NEXT_NIGHT = at("2025-11-11T21:00")
 NEXT_CUTOFF = at("2025-11-12T15:00:00.000002")
 BASE_ZONE = (Decimal("1213"), Decimal("1224"))
 EXTENSION_ZONE = (Decimal("1233"), Decimal("1244"))
+OIL_CASES = (
+    ("2026-06-04", "16:51", "S5306128623993006", "TEMPORARY_LOCK_REPORTED", "SHORT",
+     (("protection_near", 10315), ("protection_far", 10273)), (10230, 10416)),
+    ("2026-08-10", "16:50", "S5330408260502071", "LONG_TAKE_PROFIT_REPORTED", "LONG",
+     (("target_near", 10169), ("obstacle", 10186), ("target_far", 10209)), (None, 10190)),
+)
 
 
 def later_extension(minutes, base_edge, target_edge):
@@ -132,10 +141,68 @@ def study(session, market, references):
     )
 
 
+def oil_price_anchor(minutes, signals, side, level):
+    """Separate directional reach, closes and a fresh opposite shape after reach."""
+    def first(bars, predicate):
+        return next((bar for bar in bars if predicate(bar)), None)
+
+    reach = first(minutes, lambda bar: bar.high >= level if side == "LONG" else bar.low <= level)
+    strict = first(minutes, lambda bar: bar.close > level if side == "LONG" else bar.close < level)
+    reset = first(minutes, lambda bar: strict is not None and strict.end < bar.end
+                  and (bar.close <= level if side == "LONG" else bar.close >= level))
+    return dict(
+        level=level, first_reach_bar_end=reach.end if reach else None,
+        first_strict_close_bar_end=strict.end if strict else None,
+        first_strict_close_price=strict.close if strict else None,
+        first_reset_after_strict_close_bar_end=reset.end if reset else None,
+        first_reset_after_strict_close_price=reset.close if reset else None,
+        first_short_geometry_after_reach={clock: next((row for row in rows if reach is not None
+                                                     and reach.end + US < row["shape_start"]), None)
+                                          for clock, rows in signals.items()},
+    )
+
+
+def oil_exit_study(session, market):
+    index = input_sources()
+    cases = {}
+    for day, time, source_id, action, side, levels, expected_extremes in OIL_CASES:
+        source = load_source(index, source_id)
+        published = datetime.fromisoformat(source["published_at"])
+        session_close = at(f"{day}T15:00")
+        if published != at(f"{day}T{time}") or session_close + US >= published:
+            raise ValueError("OIL_EXIT_PUBLICATION_TIME_CHANGED")
+        series = read_window(session, market, "OI2609", date.fromisoformat(day))
+        cutoff = session_close + 2 * US
+        start = series[1][0].start
+        minutes = completed(series[1], start, cutoff)
+        if not minutes or minutes[-1].end != session_close:
+            raise ValueError("OIL_EXIT_CLOSE_MISSING")
+        low, high = min(bar.low for bar in minutes), max(bar.high for bar in minutes)
+        if any(expected is not None and actual != expected
+               for expected, actual in zip(expected_extremes, (low, high))):
+            raise ValueError("OIL_EXIT_SOURCE_EXTREME_MISMATCH")
+        signals, checks = window_signals(series, start, cutoff, "SHORT")
+        cases[day] = dict(
+            source=source, author_reported_action=action, purpose="PROTECTION" if side == "SHORT" else "TARGET",
+            market={f"{p}m": dict(count=len(rows), sha256=digest(rows)) for p, rows in series.items()},
+            low=low, high=high, close=minutes[-1].close,
+            start=start, cutoff_exclusive=cutoff, geometry_prefix_checks=checks,
+            anchors={key: oil_price_anchor(minutes, signals, side, Decimal(level)) for key, level in levels},
+            originally_published_plan=None, signal_at=None, action_at=None, position_after=None,
+        )
+    return dict(
+        version="lms405-oi-exit-versus-lock-v1", contract="OI2609", author_strategy_version="4.0.5",
+        information_scope="RETROSPECTIVE_ONLY", cases=cases, admitted_author_action_samples=0,
+        author_match_rate=None, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--oil-exit-versus-lock", action="store_true",
+                        help="Compare OI2609's attributed 4.0.5 lock and take-profit reports.")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -148,9 +215,13 @@ def main():
     from sqlalchemy.exc import OperationalError
 
     try:
-        references = {name: verified_json(path, digest) for name, (path, digest) in REFERENCES.items()}
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            result = study(session, build_market_data_service(session), references)
+            market = build_market_data_service(session)
+            if args.oil_exit_versus_lock:
+                result = oil_exit_study(session, market)
+            else:
+                references = {name: verified_json(path, checksum) for name, (path, checksum) in REFERENCES.items()}
+                result = study(session, market, references)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except MarketDataError as exc:
