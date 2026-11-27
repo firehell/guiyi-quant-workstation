@@ -404,14 +404,14 @@ class CohortHost(FaultRecoveryHost):
         require(self.session_proof() == plan["window"], "COHORT_SESSION_CHANGED")
 
     @staticmethod
-    def _candidate_sources(value, root, tag):
+    def _candidate_sources(value, root, tag, *, core_package=None):
         try:
             sources = value["source_roots"]
             if sources["project_root"] != str(root) or sources["version"] != tag[1:]:
                 return False
             for name, package in (
                 ("app", root / "services/quant-api/app"),
-                ("core", root / "packages/quant-core/guiyi_quant"),
+                ("core", core_package or root / "packages/quant-core/guiyi_quant"),
             ):
                 path = Path(sources[name])
                 if (

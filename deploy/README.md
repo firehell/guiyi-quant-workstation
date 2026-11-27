@@ -565,3 +565,21 @@ M4、M6、M7 的自然证据和 M9 的正式 Tick 切换各自验收。目标为
 Tick 次日元数据准备使用独立状态文件。旧范围在同一交易日存在未决提交时，先核实原任务结果。
 正式 Canonical Compute 的订阅跳过退役品种，并使用新版进度文件保留旧范围的计算水位。
 旧范围的盘后状态、成功凭证和迟到处理记录随切换前像留存，新范围的盘后水位从自身首份凭证开始。旧盘后提交结果未明时阻断切换。
+
+### V2 直接首启
+
+在精确应用发布树使用 `install-local-services.sh --plan-market-direct-start --candidate-root <absolute-release-root> --tag <application-tag> --commit <commit> --trading-day YYYY-MM-DD`。
+计划验证正式品种在开盘前的 Session 与 rank1、现有 Catalog schema、已安装 Core/Chart 和独占空 Tick Redis。
+新服务从私有 `market-tick.env` 读取 Market 配置。计划用现有 `project.env` 复核同一 Catalog 和 Canonical，以独立 Redis 服务新源。
+
+用 `--apply-market-direct-start --plan <private-plan>` 执行。部署锁下校验原 registry 字节、确认旧注册服务空闲并停驻其 launchd 定义，
+保留 registry 和安装前像，在空 Tick Redis 建立新代次和水位，再原子更新服务绑定。启用 API、Web、Feed、Live、Reference 和盘后。
+迟到恢复、周审计及日志轮转沿用原启用设置。Alert、首页投影、快期和苏冰账户不进入本次启动。
+旧工作树、旧 Redis 游标和原账户水位不参与首启。旧观察、账本及行情资产继续留在原处。
+共用 Catalog 的未决提交和同日元数据写入保护继续有效。
+
+中断后用 `--read-market-direct-start --plan <private-plan>` 读回 registry 和 Redis。Redis 已精确初始化或 registry 已提交时，
+对原计划显式使用 `--apply-market-direct-start --resume --plan <private-plan>`。开盘窗口过后只核验已经在运行的行情服务，
+允许补注册空闲的既有日历任务。旧 registry 字节仍匹配且目标 Redis 可证为空或匹配未使用的初始基线时，可用
+`--cancel-uncommitted-market-direct-start --plan <private-plan>` 关闭该次尝试。取消保留已停驻的旧服务、安装前像和已初始化的目标 Redis。
+若目标已初始化，新计划须使用另一个可证为空的目标实例。

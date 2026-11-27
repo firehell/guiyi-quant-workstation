@@ -315,6 +315,7 @@ class FaultRecoveryHost:
                 "GUIYI_RUNTIME_HANDOVER_ENABLED",
                 "GUIYI_OBSERVATION_STREAM_ENABLED",
                 "GUIYI_ALERT_NOTIFICATION_CONFIG_PATH",
+                "GUIYI_RUNTIME_ENV",
             },
             "FAULT_RECOVERY_PLIST_PRIVATE_CONFIG_FORBIDDEN",
         )
@@ -334,7 +335,8 @@ class FaultRecoveryHost:
                     "GUIYI_RUNTIME_HANDOVER_ENABLED": "1",
                     "GUIYI_OBSERVATION_STREAM_ENABLED": "1",
                 }.items()
-            ),
+            )
+            and env.get("GUIYI_RUNTIME_ENV") in (None, str(self.directory / "market-tick.env")),
             "FAULT_RECOVERY_PLIST_IDENTITY_INVALID",
         )
         if binding.service in CALENDARS:
@@ -435,14 +437,19 @@ class FaultRecoveryHost:
         )
 
     @contextmanager
-    def owner_guards(self, old):
-        from app.runtime_cohort import continuous_services
+    def owner_guards(self, old, *, create_missing=False):
+        from app.runtime_cohort import OPTIONAL_CONTINUOUS, continuous_services
 
         descriptors = []
+        names = continuous_services(old)
+        if create_missing:
+            names += tuple(sorted((old.services.keys() & OPTIONAL_CONTINUOUS) - set(names)))
         try:
-            for name in continuous_services(old):
+            for name in names:
                 path = self.directory / f"{name}.owner.lock"
-                fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK)
+                flags = os.O_RDWR | os.O_NOFOLLOW | os.O_NONBLOCK
+                fd = os.open(path, flags | (os.O_CREAT if create_missing else 0), 0o600)
+                descriptors.append(fd)
                 info = os.fstat(fd)
                 require(
                     stat.S_ISREG(info.st_mode)
@@ -452,7 +459,6 @@ class FaultRecoveryHost:
                     "FAULT_RECOVERY_LOCK_INVALID",
                 )
                 fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                descriptors.append(fd)
             yield
         finally:
             for fd in reversed(descriptors):

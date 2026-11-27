@@ -29,6 +29,10 @@ case "$MODE" in
   --recover-market-source-forward) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-market-forward "$@" ;;
   --read-market-source-accounts) shift; exec "$PYTHON_BIN" -m app.runtime_market_macos cohort-market-accounts "$@" ;;
   --read-market-source-first-completed) shift; exec "$PYTHON_BIN" -m app.runtime_market_macos cohort-market-first-completed "$@" ;;
+  --plan-market-direct-start) shift; exec "$PYTHON_BIN" -m app.runtime_market_direct_start plan "$@" ;;
+  --apply-market-direct-start) shift; exec "$PYTHON_BIN" -m app.runtime_market_direct_start apply "$@" ;;
+  --read-market-direct-start) shift; exec "$PYTHON_BIN" -m app.runtime_market_direct_start read "$@" ;;
+  --cancel-uncommitted-market-direct-start) shift; exec "$PYTHON_BIN" -m app.runtime_market_direct_start cancel-uncommitted "$@" ;;
   --plan-cohort) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-plan "$@" ;;
   --apply-cohort-plan) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-apply "$@" ;;
   --resolve-cohort-restored) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-resolve "$@" ;;

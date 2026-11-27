@@ -258,7 +258,7 @@ def present_saved_chart(
             "comparator_status": "not_materialized"}
 
 
-def warmup_formal_receipts() -> dict:
+def warmup_formal_receipts(*, archive_root: Path | None = None) -> dict:
     """Prove the formal receipt source without calculating or polling Live."""
     from app.db.session import engine
     from app.market_data.composition import canonical_root
@@ -269,7 +269,9 @@ def warmup_formal_receipts() -> dict:
 
     with get_redis_connection() as redis:
         binding = require_formal_tick_binding(redis, engine.url, canonical_root())
-    receipt = current_retained_receipt(formal_archive_root(), now=datetime.now(UTC))
+    receipt = current_retained_receipt(
+        formal_archive_root() if archive_root is None else archive_root, now=datetime.now(UTC),
+    )
     if receipt is not None and set(receipt.revisions) != set(load_operational_products()):
         raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
     return {"receipt_only": True, "binding": binding,

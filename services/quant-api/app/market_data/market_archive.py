@@ -294,9 +294,13 @@ def formal_after_market_status_path() -> Path:
 
 def formal_archive_root() -> Path:
     """Receipt files, acknowledgements and saved sections survive release rotation."""
+    formal_after_market_status_path()
+    return formal_archive_directory()
+
+
+def formal_archive_directory() -> Path:
     from app.runtime_handover import runtime_directory
 
-    formal_after_market_status_path()
     root = runtime_directory() / "market-foundation"
     if not root.is_absolute() or root.resolve() != root:
         raise ValueError("MARKET_FORMAL_ARCHIVE_ROOT_INVALID")
