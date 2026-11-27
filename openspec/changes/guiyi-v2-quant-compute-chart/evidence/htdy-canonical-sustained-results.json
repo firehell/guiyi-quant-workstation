@@ -1,0 +1,556 @@
+{
+  "checked_date_asia_shanghai": "2026-11-27",
+  "checkout_base": "8df2ee992189450ffa4841d3c844511654eb5f50",
+  "host": "Apple M4, 10 logical CPUs, 16 GB RAM",
+  "core_import": "checkout_source",
+  "core_distribution_metadata_version": "0.4.0",
+  "run_order": [
+    "s1",
+    "b1",
+    "b2",
+    "s2",
+    "s3",
+    "b3"
+  ],
+  "fixture": {
+    "market": "controlled Tick replay through Feed, completed Redis journal and PortfolioMarket",
+    "market_terminal": "2026-11-26 11:00 Asia/Shanghai, after reopening from 10:00",
+    "canonical": "one separate worker rotates 2 revised physical-contract windows per retained receipt, out of 8 warm scopes; shared disposable PostgreSQL with separate schemas and Parquet roots",
+    "canonical_1m_bars_per_window": 2160,
+    "canonical_features": [
+      "ema10",
+      "ema21",
+      "macd",
+      "atr"
+    ]
+  },
+  "method": {
+    "latency": "monotonic wall time from completed Redis H1 batch publish returning to each native SQLite H1 commit returning; includes fixture readback and serialized ledger writes",
+    "percentiles": "pooled per-product values from three H1 batches in each mode, linear interpolation",
+    "coverage": "the running revision, publish, readback and compute loop starts before completed H1 publication returns; the 16th SQLite commit signals stop and the worker finishes the open receipt",
+    "accept_overlap": "union of first accept execution intervals overlapping the measured H1 window; excludes revision publication and duplicate accepts",
+    "worker_overlap": "monotonic intersections of the actual Live and Canonical worker callbacks",
+    "handoff": "outer loop handoff from one revision cycle ending to the next starting; includes the nonblocking stop check and excludes within-cycle I/O",
+    "source_backlog": "Redis source entries after the actual Live cursor; sampled before each publisher poll and at test end",
+    "receipt_backlog": "retained revised receipts minus accepted receipts after draining, verified from the isolated receipt directory"
+  },
+  "summary": {
+    "baseline": {
+      "batches": 3,
+      "samples": 48,
+      "p50_ms": 1875.481,
+      "p95_ms": 2027.999,
+      "max_ms": 2031.549
+    },
+    "sustained": {
+      "batches": 3,
+      "samples": 48,
+      "p50_ms": 2183.244,
+      "p95_ms": 2596.389,
+      "max_ms": 2599.365
+    },
+    "sustained_delta_p95_ms": 568.39,
+    "sustained_delta_p95_percent": 28.03,
+    "sustained_delta_max_ms": 567.816,
+    "sustained_delta_max_percent": 27.95
+  },
+  "verified_sqlite_watermarks_in_every_batch": {
+    "JM": {
+      "contract": "JM2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "LC": {
+      "contract": "LC2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "RB": {
+      "contract": "RB2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "SA": {
+      "contract": "SA2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "FG": {
+      "contract": "FG2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "MA": {
+      "contract": "MA2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "EC": {
+      "contract": "EC2702",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "V": {
+      "contract": "V2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "PR": {
+      "contract": "PR2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "TA": {
+      "contract": "TA2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "UR": {
+      "contract": "UR2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "SH": {
+      "contract": "SH2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "SC": {
+      "contract": "SC2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "CJ": {
+      "contract": "CJ2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "OI": {
+      "contract": "OI2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    },
+    "I": {
+      "contract": "I2701",
+      "bar_end": "2026-11-26T03:00:00+00:00"
+    }
+  },
+  "trials": {
+    "s1": {
+      "mode": "sustained",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2176.023,
+        "EC": 2177.103,
+        "FG": 2178.138,
+        "I": 2179.087,
+        "JM": 2180.079,
+        "LC": 2181.029,
+        "MA": 2181.913,
+        "OI": 2182.832,
+        "PR": 2183.655,
+        "RB": 2184.513,
+        "SA": 2185.457,
+        "SC": 2186.311,
+        "SH": 2187.28,
+        "TA": 2188.131,
+        "UR": 2189.078,
+        "V": 2190.066
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "canonical": {
+        "receipts": [
+          {
+            "identity": "9239fc2c6729861fa01b252541e15033fc15a20982b6d2c6ad0e37af9ab21acd",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 178.76,
+            "overlap_with_h1_ms": 82.566
+          },
+          {
+            "identity": "b29e4ec1d8f54b7c7c63ab2b9ede60fc3020bca16fe0dc3588aad1b01ada003c",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 171.372,
+            "overlap_with_h1_ms": 171.372
+          },
+          {
+            "identity": "3b3ae4ed46fe995fc58ffd98c5e1632ba311e8946516d420f2c36f544b2fbc2e",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 281.623,
+            "overlap_with_h1_ms": 281.623
+          },
+          {
+            "identity": "5494eff261da6babae218967375b610d3df492bc07c90935d6c13e90373610d4",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 198.26,
+            "overlap_with_h1_ms": 198.26
+          },
+          {
+            "identity": "fcf9b5ef47081c7bdb87238efe581ff225a740f4e39b59caf7c51e02a20a941c",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 212.147,
+            "overlap_with_h1_ms": 212.147
+          },
+          {
+            "identity": "062b3b472d2bf82cbc02bf071c146d9528e8c85f8a24844a71efc7f181c21d42",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 180.588,
+            "overlap_with_h1_ms": 180.588
+          },
+          {
+            "identity": "4a4941866882c7d3be6e0aedffe680c4e62500e41ed1470dd2fa2881b44d9c49",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 192.0,
+            "overlap_with_h1_ms": 21.429
+          }
+        ],
+        "published_receipts": 7,
+        "accepted_receipts": 7,
+        "receipt_backlog": 0,
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "workload_overlap_ms": 2190.066,
+        "accept_overlap_ms": 1147.985,
+        "max_inter_receipt_handoff_ms": 0.068,
+        "receipts_overlapping_h1": 7,
+        "worker_overlap_by_live_product_ms": {
+          "MA": 9.247,
+          "SH": 6.908
+        }
+      },
+      "verified_watermarks": 16
+    },
+    "b1": {
+      "mode": "baseline",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2009.902,
+        "EC": 2010.861,
+        "FG": 2012.204,
+        "I": 2013.084,
+        "JM": 2013.993,
+        "LC": 2014.99,
+        "MA": 2015.879,
+        "OI": 2017.639,
+        "PR": 2020.918,
+        "RB": 2022.462,
+        "SA": 2023.787,
+        "SC": 2024.88,
+        "SH": 2026.043,
+        "TA": 2029.052,
+        "UR": 2030.482,
+        "V": 2031.549
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "verified_watermarks": 16
+    },
+    "b2": {
+      "mode": "baseline",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 1867.676,
+        "EC": 1869.041,
+        "FG": 1870.109,
+        "I": 1870.966,
+        "JM": 1871.926,
+        "LC": 1872.79,
+        "MA": 1873.638,
+        "OI": 1875.021,
+        "PR": 1875.942,
+        "RB": 1877.354,
+        "SA": 1878.311,
+        "SC": 1879.312,
+        "SH": 1880.253,
+        "TA": 1881.781,
+        "UR": 1882.847,
+        "V": 1883.814
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "verified_watermarks": 16
+    },
+    "s2": {
+      "mode": "sustained",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2581.314,
+        "EC": 2582.426,
+        "FG": 2583.362,
+        "I": 2584.789,
+        "JM": 2586.12,
+        "LC": 2587.129,
+        "MA": 2588.46,
+        "OI": 2589.704,
+        "PR": 2590.949,
+        "RB": 2592.645,
+        "SA": 2593.673,
+        "SC": 2594.713,
+        "SH": 2595.686,
+        "TA": 2596.767,
+        "UR": 2597.984,
+        "V": 2599.365
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "canonical": {
+        "receipts": [
+          {
+            "identity": "f91cf4521cf0456678726a083b75f0b309daee4e28b08e1f3ef8f46301a5802b",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 240.976,
+            "overlap_with_h1_ms": 80.027
+          },
+          {
+            "identity": "c19b0a4dde8803eeff116f9bb83f016d15053ae195f971aa9e31fa4fd00752a5",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 213.878,
+            "overlap_with_h1_ms": 213.878
+          },
+          {
+            "identity": "454b0de7cd50d7010301f79171d20c88197c6982595d948a9c23070a72fcce37",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 284.288,
+            "overlap_with_h1_ms": 284.288
+          },
+          {
+            "identity": "f6105cbe73f472b821285745c80cf2da34dd45a923b97cc75a69d51f42efc88c",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 184.737,
+            "overlap_with_h1_ms": 184.737
+          },
+          {
+            "identity": "533ee407601c7244e293273cc671dc87b97522ba152efab2768faea2605470e4",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 196.239,
+            "overlap_with_h1_ms": 196.239
+          },
+          {
+            "identity": "025b8a05439debf70d54cbb367f9fcea87feb5ef11da1c58a57f532e0e99db7e",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 202.485,
+            "overlap_with_h1_ms": 202.485
+          },
+          {
+            "identity": "45e0d85c3ef13efe2658b333ec030cedccaa8edf756ccfb01f5eb758d725c028",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 207.714,
+            "overlap_with_h1_ms": 207.714
+          },
+          {
+            "identity": "cbdcb0f0e14cc3fcdd511df01ffa82371b8b9812664f06ab6a21865a24ca6a06",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 221.784,
+            "overlap_with_h1_ms": 0.0
+          }
+        ],
+        "published_receipts": 8,
+        "accepted_receipts": 8,
+        "receipt_backlog": 0,
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "workload_overlap_ms": 2599.365,
+        "accept_overlap_ms": 1369.369,
+        "max_inter_receipt_handoff_ms": 0.077,
+        "receipts_overlapping_h1": 7,
+        "worker_overlap_by_live_product_ms": {
+          "SC": 2.585,
+          "TA": 7.056,
+          "V": 5.167
+        }
+      },
+      "verified_watermarks": 16
+    },
+    "s3": {
+      "mode": "sustained",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2140.027,
+        "EC": 2141.627,
+        "FG": 2143.869,
+        "I": 2145.002,
+        "JM": 2145.924,
+        "LC": 2146.759,
+        "MA": 2147.587,
+        "OI": 2148.453,
+        "PR": 2149.341,
+        "RB": 2150.173,
+        "SA": 2151.015,
+        "SC": 2151.856,
+        "SH": 2153.032,
+        "TA": 2154.09,
+        "UR": 2155.148,
+        "V": 2156.407
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "canonical": {
+        "receipts": [
+          {
+            "identity": "2917a978d7abada33c9a1f1195f9a15dfc934af3ee5575cca8d58b72cf03962f",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 207.446,
+            "overlap_with_h1_ms": 69.173
+          },
+          {
+            "identity": "637bec2ce647e23f05e776f619960ad30611e07165fc652fe89b28d1f5f1d53e",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 203.401,
+            "overlap_with_h1_ms": 203.401
+          },
+          {
+            "identity": "2a996ce9ae0f56d12ff9bcb313427e9ee5ea68ae470f4434b78a74b3812b2997",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 243.04,
+            "overlap_with_h1_ms": 243.04
+          },
+          {
+            "identity": "23ce5df2aab45d2102f95a5268249f2f5790d61bb40af192ff5dc3fd45ee4241",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 180.666,
+            "overlap_with_h1_ms": 180.666
+          },
+          {
+            "identity": "cea713462d40c43ada895a88ab77d3de1e79b03a99c04c914e6eb1bf86b38b29",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 176.101,
+            "overlap_with_h1_ms": 176.101
+          },
+          {
+            "identity": "47cef1ddda9b9bb73a51112f62b473653b3b9d0c372e89eb7459287c9bb48e52",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 184.525,
+            "overlap_with_h1_ms": 184.525
+          },
+          {
+            "identity": "31d46495359f544584665e63d8964a7c4f9a1185adaa99671cceb8597ad4e5d0",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 182.828,
+            "overlap_with_h1_ms": 143.286
+          }
+        ],
+        "published_receipts": 7,
+        "accepted_receipts": 7,
+        "receipt_backlog": 0,
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "workload_overlap_ms": 2156.407,
+        "accept_overlap_ms": 1200.193,
+        "max_inter_receipt_handoff_ms": 0.071,
+        "receipts_overlapping_h1": 7,
+        "worker_overlap_by_live_product_ms": {
+          "CJ": 7.956,
+          "I": 6.969,
+          "MA": 1.737,
+          "V": 6.823
+        }
+      },
+      "verified_watermarks": 16
+    },
+    "b3": {
+      "mode": "baseline",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 1583.927,
+        "EC": 1584.896,
+        "FG": 1585.819,
+        "I": 1586.719,
+        "JM": 1587.553,
+        "LC": 1588.395,
+        "MA": 1589.283,
+        "OI": 1590.205,
+        "PR": 1591.114,
+        "RB": 1592.194,
+        "SA": 1593.155,
+        "SC": 1594.039,
+        "SH": 1594.947,
+        "TA": 1595.794,
+        "UR": 1596.659,
+        "V": 1597.519
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "verified_watermarks": 16
+    }
+  }
+}
