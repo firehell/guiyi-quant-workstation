@@ -16,8 +16,9 @@ import multiprocessing
 import os
 from pathlib import Path
 from platform import machine
+import resource
 from tempfile import TemporaryDirectory
-from time import monotonic_ns
+from time import monotonic_ns, sleep
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -66,14 +67,16 @@ def isolated_database():
 
 
 def receipt(engine, root, instant):
+    formal = bool(os.environ.get("GUIYI_C6_DURABLE_CANONICAL"))
     with Session(engine) as db:
-        revisions = {product: reference_catalog_revision(db, product, DAY) for product in CANONICAL_PRODUCTS}
+        revisions = {product: reference_catalog_revision(db, product, DAY, archive_scope=formal)
+                     for product in CANONICAL_PRODUCTS}
     status = _status(finished=instant)
     status["last_run"]["products"] = list(CANONICAL_PRODUCTS)
     status["last_run"]["live_evidence"].update(
         scope_sha256=_evidence_hash(list(CANONICAL_PRODUCTS)), canonical_readback=revisions,
     )
-    path = retain_archive_status(status, now=instant, archive_root=root.parent, formal=False)
+    path = retain_archive_status(status, now=instant, archive_root=root.parent, formal=formal)
     assert path is not None
     return path
 
@@ -124,7 +127,10 @@ def canonical_worker(root, connection, sustained):
             ComputeScope("canonical_research", p, contract, f"contract:{contract}", "1m", FEATURES), FIRST, LAST,
         ) for p, contract, _ in scope)
         instant = FINISHED
-        with CanonicalPublicationCompute(scoped, root, targets, now=lambda: instant) as compute:
+        durable = bool(os.environ.get("GUIYI_C6_DURABLE_CANONICAL"))
+        with CanonicalPublicationCompute(
+            scoped, root, targets, now=lambda: instant, archive_root=root.parent if durable else None,
+        ) as compute:
             initial_receipt = receipt(scoped, root, instant)
             previous = indexed(compute.accept(initial_receipt, DAY))
             assert len(previous) == len(targets) * len(FEATURES)
@@ -189,7 +195,8 @@ def canonical_worker(root, connection, sustained):
         assert accepted <= retained
         connection.send({"workload_ns": (started, finished), "receipts": cycles,
                          "published_receipts": len(retained), "accepted_receipts": len(accepted),
-                         "receipt_backlog": len(retained - accepted), "queue": runtime.queue_load()["incremental"]})
+                         "receipt_backlog": len(retained - accepted), "queue": runtime.queue_load()["incremental"],
+                         "worker_resources": resources(), "durable_progress": durable})
     finally:
         with engine.begin() as db:
             db.exec_driver_sql(f'DROP SCHEMA "{schema}" CASCADE')
@@ -238,6 +245,8 @@ class Measure:
                 assert len(live_batch) == 16 and self.publish_ns is None
                 self.publish_ns = monotonic_ns()
                 self.publisher = publisher
+                if barrier := os.environ.get("GUIYI_C6_PAPER_BARRIER"):
+                    Path(barrier).with_suffix(".go").touch(exist_ok=False)
             return result
 
         def ledger(store, key, command, **kwargs):
@@ -300,6 +309,12 @@ class Measure:
 def source_backlog(stream):
     cursor = stream.cursor("live", DAY)
     return len(stream.redis.xrange(stream.key(DAY), min="(" + cursor))
+
+
+def resources():
+    measured = resource.getrusage(resource.RUSAGE_SELF)
+    return {"user_cpu_s": measured.ru_utime, "system_cpu_s": measured.ru_stime,
+            "max_rss_macos_bytes": measured.ru_maxrss}
 
 
 def milliseconds(nanoseconds):
@@ -369,17 +384,26 @@ def measure(mode):
             if connection is not None:
                 assert connection.poll(90) and connection.recv() == "ready"
             probe = Measure(connection, sustained)
+            if barrier := os.environ.get("GUIYI_C6_PAPER_BARRIER"):
+                deadline = monotonic_ns() + 30_000_000_000
+                while not Path(barrier).with_suffix(".ready").exists():
+                    assert monotonic_ns() < deadline
+                    sleep(0.01)
             assert pytest.main(["-q", "-p", "no:cacheprovider", "--tb=short", TEST], plugins=[probe]) == 0
             result = probe.result()
             if connection is not None:
                 assert connection.poll(35)
                 result["canonical"] = canonical_result(connection.recv(), probe)
+                if os.environ.get("GUIYI_C6_PAPER_BARRIER"):
+                    result["htdy_publish_return_ns"] = probe.publish_ns
+                    result["htdy_last_commit_return_ns"] = max(probe.ledger_ns.values())
                 worker.join(15)
                 assert worker.exitcode == 0
             core_path = Path(core_compute.__file__).resolve()
             return {"mode": mode, "architecture": machine(), "logical_cpus": os.cpu_count(),
                     "core_import": "checkout_source" if core_path.is_relative_to(Path.cwd()) else "installed",
-                    "core_distribution_metadata_version": version("guiyi-quant-core"), **result}
+                    "core_distribution_metadata_version": version("guiyi-quant-core"),
+                    "htdy_resources": resources(), **result}
         finally:
             if connection is not None:
                 connection.close()

@@ -76,3 +76,23 @@ def test_owned_live_queue_budget_applies_while_first_job_is_running():
         finally:
             release.set()
         assert first.result(timeout=3).result is True
+
+
+def test_htdy_admits_only_a_proved_owner_per_product_and_day():
+    from app.compute_runtime.htdy_live import HTDYLiveCompute
+
+    compute = HTDYLiveCompute(("rb",))
+    try:
+        owner = object()
+        scope = OwnedLiveScope("htdy_simulation", "rb", "RB2701", "60m", START.date())
+        commit = _commit(scope)
+        assert compute.submit_owned_live(commit, owner=owner, run=lambda: 1).result().result == 1
+        assert compute.submit_owned_live(commit, owner=owner, run=lambda: 2).result().duplicate
+        with pytest.raises(ValueError, match="COMPUTE_OWNED_LIVE_OWNER_CONFLICT"):
+            compute.submit_owned_live(
+                replace(commit, scope=replace(scope, contract="RB2705")), owner=owner, run=pytest.fail,
+            )
+        with pytest.raises(ValueError, match="HTDY_LIVE_SCOPE_UNPROVEN"):
+            compute.submit_owned_live(_commit(M30), owner=owner, run=pytest.fail)
+    finally:
+        compute.close()

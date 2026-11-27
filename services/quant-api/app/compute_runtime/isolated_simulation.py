@@ -1,4 +1,4 @@
-"""Attach owned Live computation to the isolated simulation composition."""
+"""Bind the native Paper factors to owned Live computation."""
 
 from collections.abc import Mapping
 from datetime import date, datetime
@@ -114,6 +114,10 @@ def bind_paper_live_factors(
     """Wrap factor calls only. The native worker still owns the journal and its cursor."""
     require_isolated_database(journal.store.engine.url, database="guiyi_subing_development_test")
     require_isolated_market_binding(market_url, stream.redis, canonical_root)
+    return bind_completed_paper_factors(runtime, stream, journal, day, contexts, factors)
+
+
+def bind_completed_paper_factors(runtime, stream, journal, day, contexts, factors):
     if stream.kind != "completed" or set(journal.products) != set(contexts) or set(factors) != set(contexts):
         raise ValueError("PAPER_LIVE_SCOPE_MISMATCH")
     return {product: PaperLiveFactors(runtime, stream, factors[product], context, day, product)

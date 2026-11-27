@@ -1,0 +1,867 @@
+{
+  "date_shanghai": "2026-11-27",
+  "hardware": "Mac mini M4 / 16 GiB",
+  "workload": "Controlled Tick and retained archive receipts on disposable PostgreSQL, Redis and Parquet",
+  "resource_scope": "Per-process CPU seconds and peak RSS over the whole fixture, including data preparation",
+  "method": "H1 and Paper from Redis publisher return to original SQLite and PostgreSQL commit returns. P95 is per H1 batch across sixteen products, linear interpolation. Each run has one H1 batch.",
+  "samples": [
+    {
+      "mode": "baseline",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "installed",
+      "core_distribution_metadata_version": "0.4.1",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 1773.363,
+        "EC": 1774.485,
+        "FG": 1775.501,
+        "I": 1776.521,
+        "JM": 1777.438,
+        "LC": 1778.377,
+        "MA": 1779.237,
+        "OI": 1780.087,
+        "PR": 1780.99,
+        "RB": 1781.869,
+        "SA": 1782.707,
+        "SC": 1783.548,
+        "SH": 1784.395,
+        "TA": 1785.27,
+        "UR": 1786.134,
+        "V": 1786.988
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "watermarks": {
+        "JM": {
+          "contract": "JM2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "LC": {
+          "contract": "LC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "RB": {
+          "contract": "RB2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SA": {
+          "contract": "SA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "FG": {
+          "contract": "FG2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "MA": {
+          "contract": "MA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "EC": {
+          "contract": "EC2702",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "V": {
+          "contract": "V2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "PR": {
+          "contract": "PR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "TA": {
+          "contract": "TA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "UR": {
+          "contract": "UR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SH": {
+          "contract": "SH2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SC": {
+          "contract": "SC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "CJ": {
+          "contract": "CJ2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "OI": {
+          "contract": "OI2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "I": {
+          "contract": "I2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        }
+      },
+      "develop_base": "e948a3eac7c6e2591ba3828652a031394f92f38d",
+      "batch": "formal-baseline",
+      "p50_ms": 1780.539,
+      "p95_ms": 1786.348,
+      "maximum_ms": 1786.988,
+      "htdy_resources": {
+        "user_cpu_s": 7.52,
+        "system_cpu_s": 0.94,
+        "max_rss_macos_bytes": 220332032
+      }
+    },
+    {
+      "mode": "sustained",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "installed",
+      "core_distribution_metadata_version": "0.4.1",
+      "htdy_resources": {
+        "user_cpu_s": 7.719206,
+        "system_cpu_s": 0.839893,
+        "max_rss_macos_bytes": 211533824
+      },
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2174.943,
+        "EC": 2175.926,
+        "FG": 2176.797,
+        "I": 2177.705,
+        "JM": 2178.855,
+        "LC": 2179.732,
+        "MA": 2180.622,
+        "OI": 2181.5,
+        "PR": 2182.473,
+        "RB": 2183.385,
+        "SA": 2184.289,
+        "SC": 2185.194,
+        "SH": 2186.113,
+        "TA": 2186.982,
+        "UR": 2187.905,
+        "V": 2189.171
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "watermarks": {
+        "JM": {
+          "contract": "JM2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "LC": {
+          "contract": "LC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "RB": {
+          "contract": "RB2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SA": {
+          "contract": "SA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "FG": {
+          "contract": "FG2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "MA": {
+          "contract": "MA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "EC": {
+          "contract": "EC2702",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "V": {
+          "contract": "V2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "PR": {
+          "contract": "PR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "TA": {
+          "contract": "TA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "UR": {
+          "contract": "UR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SH": {
+          "contract": "SH2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SC": {
+          "contract": "SC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "CJ": {
+          "contract": "CJ2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "OI": {
+          "contract": "OI2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "I": {
+          "contract": "I2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        }
+      },
+      "canonical": {
+        "receipts": [
+          {
+            "identity": "19907bc9522e5c0c4ab83cf5f81da9b029885819eb0805b444caf9e2f4eb86bc",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 198.884,
+            "overlap_with_h1_ms": 91.673
+          },
+          {
+            "identity": "9216e6139f4c75d675ea8a8a3e7de3f0c1e2ddd958006cedff54db96b93a8757",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 200.173,
+            "overlap_with_h1_ms": 200.173
+          },
+          {
+            "identity": "059ad970a7a26bb7bb0af4975d4f7d0d6ae541cc9f9b62d2c5938a15b56bb65b",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 251.348,
+            "overlap_with_h1_ms": 251.348
+          },
+          {
+            "identity": "8c982f622f0b11235facf07619444f209e3b0fb2696d3fd78c93e165cb80ce18",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 205.081,
+            "overlap_with_h1_ms": 205.081
+          },
+          {
+            "identity": "f55fb256500c62499930ecd4524bfae1da4ce50505a4d252bc91f333ae883ee1",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 172.795,
+            "overlap_with_h1_ms": 172.795
+          },
+          {
+            "identity": "22795f707643cc0c62dd99cbc4042aefc01403c7dd1c46cf1a27b44adc40e35d",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 176.867,
+            "overlap_with_h1_ms": 176.867
+          },
+          {
+            "identity": "ca83d68c15026554ee025b514a06a5cb01dda00750cfff41a5f98ce99b62b8a9",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 184.083,
+            "overlap_with_h1_ms": 85.494
+          }
+        ],
+        "published_receipts": 7,
+        "accepted_receipts": 7,
+        "receipt_backlog": 0,
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "worker_resources": {
+          "user_cpu_s": 3.620603,
+          "system_cpu_s": 0.302873,
+          "max_rss_macos_bytes": 253394944
+        },
+        "durable_progress": true,
+        "workload_overlap_ms": 2189.171,
+        "accept_overlap_ms": 1183.432,
+        "max_inter_receipt_handoff_ms": 0.046,
+        "receipts_overlapping_h1": 7,
+        "worker_overlap_by_live_product_ms": {
+          "CJ": 7.646,
+          "UR": 3.935
+        }
+      },
+      "develop_base": "e948a3eac7c6e2591ba3828652a031394f92f38d",
+      "batch": "combo-1",
+      "p50_ms": 2181.986,
+      "p95_ms": 2188.222,
+      "maximum_ms": 2189.171,
+      "paper": {
+        "observations": 48,
+        "products": 16,
+        "same_run_and_prefix": true,
+        "duplicate_commands": 0,
+        "sequence": [
+          2,
+          3,
+          4
+        ],
+        "completed_publish_return_to_postgres_commit_return_ms": 193.754875,
+        "user_cpu_s": 1.835266,
+        "system_cpu_s": 0.39707,
+        "max_rss_macos_bytes": 212336640,
+        "commit_window_overlap_with_htdy_ms": 193.755
+      }
+    },
+    {
+      "mode": "sustained",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "installed",
+      "core_distribution_metadata_version": "0.4.1",
+      "htdy_resources": {
+        "user_cpu_s": 8.609395,
+        "system_cpu_s": 0.9671339999999999,
+        "max_rss_macos_bytes": 208715776
+      },
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2237.593,
+        "EC": 2238.711,
+        "FG": 2239.586,
+        "I": 2240.599,
+        "JM": 2241.594,
+        "LC": 2242.574,
+        "MA": 2243.663,
+        "OI": 2244.601,
+        "PR": 2245.66,
+        "RB": 2246.648,
+        "SA": 2247.995,
+        "SC": 2249.139,
+        "SH": 2250.253,
+        "TA": 2251.224,
+        "UR": 2252.183,
+        "V": 2253.147
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "watermarks": {
+        "JM": {
+          "contract": "JM2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "LC": {
+          "contract": "LC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "RB": {
+          "contract": "RB2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SA": {
+          "contract": "SA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "FG": {
+          "contract": "FG2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "MA": {
+          "contract": "MA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "EC": {
+          "contract": "EC2702",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "V": {
+          "contract": "V2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "PR": {
+          "contract": "PR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "TA": {
+          "contract": "TA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "UR": {
+          "contract": "UR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SH": {
+          "contract": "SH2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SC": {
+          "contract": "SC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "CJ": {
+          "contract": "CJ2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "OI": {
+          "contract": "OI2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "I": {
+          "contract": "I2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        }
+      },
+      "canonical": {
+        "receipts": [
+          {
+            "identity": "dc3b370cccde9a18bc16b87f920234e240989eae2b34db4721511e1eddc549b0",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 200.593,
+            "overlap_with_h1_ms": 95.638
+          },
+          {
+            "identity": "b37dab4d6418054db2e8d27e60df78a4860c251036d9b65fb756bdd9a24092dc",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 206.796,
+            "overlap_with_h1_ms": 206.796
+          },
+          {
+            "identity": "4cbd624c2493dc6f6578de7cd8e482a0303231290c2ace8244ee2b9613fe9d08",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 289.539,
+            "overlap_with_h1_ms": 289.539
+          },
+          {
+            "identity": "f23fbe9bf8c8fe8913b222e6215cb6c7642d90ea89514bd2d09d3b05b651dd69",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 217.71,
+            "overlap_with_h1_ms": 217.71
+          },
+          {
+            "identity": "76bb89c4ceb76b70ea83fde7ddd02b4bb4278663f8f1e1665dbdf0ea123f2489",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 208.997,
+            "overlap_with_h1_ms": 208.997
+          },
+          {
+            "identity": "448d7274af6403df5483e812047c2c61b9fe42012aa4807370f2f063d84b6ca4",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 178.031,
+            "overlap_with_h1_ms": 178.031
+          },
+          {
+            "identity": "2e20ac1950ebba88b80e844011e5708cd8b116b38b00ab3de37aa021ca8c3d38",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 185.289,
+            "overlap_with_h1_ms": 77.296
+          }
+        ],
+        "published_receipts": 7,
+        "accepted_receipts": 7,
+        "receipt_backlog": 0,
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "worker_resources": {
+          "user_cpu_s": 3.749477,
+          "system_cpu_s": 0.367156,
+          "max_rss_macos_bytes": 246349824
+        },
+        "durable_progress": true,
+        "workload_overlap_ms": 2253.147,
+        "accept_overlap_ms": 1274.007,
+        "max_inter_receipt_handoff_ms": 0.072,
+        "receipts_overlapping_h1": 7,
+        "worker_overlap_by_live_product_ms": {
+          "CJ": 2.698,
+          "UR": 1.706,
+          "V": 6.605
+        }
+      },
+      "develop_base": "e948a3eac7c6e2591ba3828652a031394f92f38d",
+      "batch": "combo-2",
+      "p50_ms": 2245.131,
+      "p95_ms": 2252.424,
+      "maximum_ms": 2253.147,
+      "paper": {
+        "observations": 48,
+        "products": 16,
+        "same_run_and_prefix": true,
+        "duplicate_commands": 0,
+        "sequence": [
+          2,
+          3,
+          4
+        ],
+        "completed_publish_return_to_postgres_commit_return_ms": 177.5295,
+        "user_cpu_s": 1.943265,
+        "system_cpu_s": 0.45089999999999997,
+        "max_rss_macos_bytes": 201703424,
+        "commit_window_overlap_with_htdy_ms": 177.53
+      }
+    },
+    {
+      "mode": "sustained",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "installed",
+      "core_distribution_metadata_version": "0.4.1",
+      "htdy_resources": {
+        "user_cpu_s": 10.290961,
+        "system_cpu_s": 1.401608,
+        "max_rss_macos_bytes": 200179712
+      },
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 4286.513,
+        "EC": 4288.074,
+        "FG": 4289.817,
+        "I": 4291.002,
+        "JM": 4292.213,
+        "LC": 4293.452,
+        "MA": 4294.77,
+        "OI": 4296.092,
+        "PR": 4297.709,
+        "RB": 4299.3,
+        "SA": 4300.453,
+        "SC": 4301.554,
+        "SH": 4302.632,
+        "TA": 4303.876,
+        "UR": 4304.975,
+        "V": 4307.314
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "watermarks": {
+        "JM": {
+          "contract": "JM2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "LC": {
+          "contract": "LC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "RB": {
+          "contract": "RB2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SA": {
+          "contract": "SA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "FG": {
+          "contract": "FG2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "MA": {
+          "contract": "MA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "EC": {
+          "contract": "EC2702",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "V": {
+          "contract": "V2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "PR": {
+          "contract": "PR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "TA": {
+          "contract": "TA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "UR": {
+          "contract": "UR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SH": {
+          "contract": "SH2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SC": {
+          "contract": "SC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "CJ": {
+          "contract": "CJ2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "OI": {
+          "contract": "OI2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "I": {
+          "contract": "I2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        }
+      },
+      "canonical": {
+        "receipts": [
+          {
+            "identity": "2117333f5491bcaba7d17a5e202ac2910471aa32421d3b680697a69db27f89ed",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 379.42,
+            "overlap_with_h1_ms": 181.342
+          },
+          {
+            "identity": "019e123c360e8b3fc60ae62c333797fba8d45f40b0cc7b3599b72fbdc1523fc8",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 298.998,
+            "overlap_with_h1_ms": 298.998
+          },
+          {
+            "identity": "80d65746ccf6f9133739bd2d7f4aff0ad174edf545f649b6d81b5a1d3d2f94c6",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 460.117,
+            "overlap_with_h1_ms": 460.117
+          },
+          {
+            "identity": "357a5b407113d0ef4741e935db5cb94914dda1cb9a973793d7448a55fbabbdf2",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 505.166,
+            "overlap_with_h1_ms": 505.166
+          },
+          {
+            "identity": "38e62feb69d6052b356267852f0806baa62d6a9c277667407421a4f4597299e3",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 240.22,
+            "overlap_with_h1_ms": 240.22
+          },
+          {
+            "identity": "2b04cf900e6f7c5796b040d045d4d61581ca0627a93c5f9ca2c78709657e8237",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 274.521,
+            "overlap_with_h1_ms": 274.521
+          },
+          {
+            "identity": "a80119c9f376f3d07b8211eb2e315f2117860ece3107e4086466563e3fdab2e1",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 262.391,
+            "overlap_with_h1_ms": 262.391
+          },
+          {
+            "identity": "e69d2ac77a412e51000ba0e4031d330857bd648052d025d09e49dd7ad696b510",
+            "updates": 8,
+            "replayed_updates": 0,
+            "queued_jobs": 2,
+            "accept_ms": 355.093,
+            "overlap_with_h1_ms": 229.202
+          }
+        ],
+        "published_receipts": 8,
+        "accepted_receipts": 8,
+        "receipt_backlog": 0,
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "worker_resources": {
+          "user_cpu_s": 4.623267,
+          "system_cpu_s": 0.466354,
+          "max_rss_macos_bytes": 251658240
+        },
+        "durable_progress": true,
+        "workload_overlap_ms": 4307.314,
+        "accept_overlap_ms": 2451.957,
+        "max_inter_receipt_handoff_ms": 1.228,
+        "receipts_overlapping_h1": 8,
+        "worker_overlap_by_live_product_ms": {
+          "LC": 7.56,
+          "PR": 6.939
+        }
+      },
+      "develop_base": "a0ecee24fcbb72c127ca2bf5a7d8e94ef5480815",
+      "batch": "combo-3",
+      "p50_ms": 4296.9,
+      "p95_ms": 4305.56,
+      "maximum_ms": 4307.314,
+      "paper": {
+        "observations": 48,
+        "products": 16,
+        "same_run_and_prefix": true,
+        "duplicate_commands": 0,
+        "sequence": [
+          2,
+          3,
+          4
+        ],
+        "completed_publish_return_to_postgres_commit_return_ms": 370.182917,
+        "user_cpu_s": 2.632712,
+        "system_cpu_s": 0.683786,
+        "max_rss_macos_bytes": 196640768,
+        "commit_window_overlap_with_htdy_ms": 370.183
+      }
+    },
+    {
+      "mode": "baseline",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "installed",
+      "core_distribution_metadata_version": "0.4.1",
+      "htdy_resources": {
+        "user_cpu_s": 9.54677,
+        "system_cpu_s": 1.188001,
+        "max_rss_macos_bytes": 202784768
+      },
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2615.726,
+        "EC": 2617.636,
+        "FG": 2618.549,
+        "I": 2619.508,
+        "JM": 2620.722,
+        "LC": 2621.821,
+        "MA": 2622.858,
+        "OI": 2623.751,
+        "PR": 2624.803,
+        "RB": 2626.352,
+        "SA": 2627.322,
+        "SC": 2628.492,
+        "SH": 2629.947,
+        "TA": 2630.983,
+        "UR": 2632.933,
+        "V": 2634.025
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "source_peak_before_poll": 16,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "watermarks": {
+        "JM": {
+          "contract": "JM2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "LC": {
+          "contract": "LC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "RB": {
+          "contract": "RB2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SA": {
+          "contract": "SA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "FG": {
+          "contract": "FG2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "MA": {
+          "contract": "MA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "EC": {
+          "contract": "EC2702",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "V": {
+          "contract": "V2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "PR": {
+          "contract": "PR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "TA": {
+          "contract": "TA2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "UR": {
+          "contract": "UR2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SH": {
+          "contract": "SH2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "SC": {
+          "contract": "SC2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "CJ": {
+          "contract": "CJ2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "OI": {
+          "contract": "OI2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        },
+        "I": {
+          "contract": "I2701",
+          "bar_end": "2026-11-26T03:00:00+00:00"
+        }
+      },
+      "develop_base": "a0ecee24fcbb72c127ca2bf5a7d8e94ef5480815",
+      "batch": "formal-baseline-2",
+      "p50_ms": 2624.277,
+      "p95_ms": 2633.206,
+      "maximum_ms": 2634.025
+    }
+  ]
+}

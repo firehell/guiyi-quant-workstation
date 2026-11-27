@@ -1,6 +1,6 @@
 """HTDY read-only admission of exact Tick-origin minutes and H1 on disposable services."""
 
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime, time, timedelta
 from decimal import Decimal
 import json
@@ -48,19 +48,32 @@ CUTOFF = OPEN + timedelta(hours=1)
 
 @pytest.fixture
 def disposable_market():
-    pg_target = os.environ.get("GUIYI_MARKET_FOUNDATION_TEST_DATABASE_URL")
-    redis_port = os.environ.get("GUIYI_TEST_REDIS_PORT")
+    yield from _disposable_market(os.environ.get("GUIYI_MARKET_FOUNDATION_TEST_DATABASE_URL"),
+                                  os.environ.get("GUIYI_TEST_REDIS_PORT"), formal=False)
+
+
+@pytest.fixture
+def disposable_htdy_market():
+    formal = os.environ.get("GUIYI_C6_FORMAL_MARKET_TEST_DATABASE_URL")
+    if formal:
+        yield from _disposable_market(formal, os.environ.get("GUIYI_C6_FORMAL_MARKET_REDIS_PORT"), formal=True)
+    else:
+        yield from disposable_market.__wrapped__()
+
+
+def _disposable_market(pg_target, redis_port, *, formal):
     if not pg_target or not redis_port:
         pytest.skip("requires explicit disposable Market Foundation PostgreSQL and Redis")
     url = make_url(pg_target)
     assert url.get_backend_name() == "postgresql" and not url.query
     assert url.host in {"127.0.0.1", "localhost", "::1"}
-    assert url.database == "guiyi_market_foundation" and url.port and url.port != 5432
+    assert url.database == ("guiyi_quant" if formal else "guiyi_market_foundation")
+    assert url.port and url.port != 5432
     assert 1024 <= int(redis_port) <= 65535 and int(redis_port) != 6379
 
     engine = create_engine(url)
     schema = "tick_htdy_test_" + uuid4().hex
-    redis = Redis(host="127.0.0.1", port=int(redis_port), db=12, decode_responses=True)
+    redis = Redis(host="127.0.0.1", port=int(redis_port), db=0 if formal else 12, decode_responses=True)
     assert redis.dbsize() == 0, "dedicated Redis DB 12 must be empty"
     with engine.begin() as connection:
         assert connection.scalar(text("SELECT current_database()")) == url.database
@@ -433,7 +446,7 @@ def _assert_recovery_fence(redis, store, inlet, recovery_key, clock):
         redis.delete(recovery_key)
 
 
-def test_isolated_htdy_live_restarts_all_trading_products(disposable_market, tmp_path, monkeypatch):
+def test_isolated_htdy_live_restarts_all_trading_products(disposable_htdy_market, tmp_path, monkeypatch):
     from app.simnow_controlled_market import MarketBridge
     from guiyi_quant import htdy_account_execution as account_api, htdy_execution as execution
     from guiyi_quant.htdy_account_execution.model import TqKqObservedSignalV1
@@ -450,11 +463,22 @@ def test_isolated_htdy_live_restarts_all_trading_products(disposable_market, tmp
     contracts = {product: product.upper() + ("2702" if product == "ec" else "2701") for product in TRADING_PRODUCTS}
     scope = tuple((product, contracts[product], exchanges[product]) for product in TRADING_PRODUCTS)
     topics = tuple(f"live:bar:{product}:60m" for product in TRADING_PRODUCTS)
-    engine, redis = disposable_market
+    engine, redis = disposable_htdy_market
     root = tmp_path / "canonical"
     root.mkdir()
     _seed_history(engine, root, scope)
-    bind_market_redis(redis, tmp_path, engine.url)
+    formal = engine.url.database == "guiyi_quant"
+    if formal:
+        from app.market_data.market_foundation_scope import formal_tick_fingerprint
+
+        redis.set("live:market-foundation:formal-binding", formal_tick_fingerprint(redis, engine.url, root))
+        monkeypatch.setenv("GUIYI_MARKET_SOURCE", "rqdata_tick")
+        monkeypatch.setenv("GUIYI_CANONICAL_DATA_ROOT", str(root))
+        monkeypatch.setattr("app.market_data.market_archive.formal_after_market_status_path",
+                            lambda: tmp_path / "after-market-status.json")
+        monkeypatch.setattr("app.redis_connections.get_redis_connection", lambda: redis)
+    else:
+        bind_market_redis(redis, tmp_path, engine.url)
     bind_tick_source(redis)
     store = RedisLiveStore(redis)
     store.set_subscriptions(DAY, contracts)
@@ -513,13 +537,24 @@ def test_isolated_htdy_live_restarts_all_trading_products(disposable_market, tmp
             signals.extend(market.poll(clock(), watermarks))
         return tuple(signals)
 
-    def inlet(runtime):
-        return PortfolioMarket(
-            products, redis=redis, session_factory=lambda: Session(engine), receipt_clock=clock,
-            require_completed_journal=True, isolated_live_compute=runtime, isolated_canonical_root=root,
-        )
+    @contextmanager
+    def inlet():
+        if formal:
+            from app.tq_simulation_market import compose_market
 
-    scopes = tuple(OwnedLiveScope("htdy_simulation", p, c, "60m", DAY) for p, c, _ in scope)
+            with compose_market(products, session_factory=lambda: Session(engine), receipt_clock=clock) as market:
+                yield market, lambda: next(iter(market._views.values())).owned_live_compute._days[DAY]
+        else:
+            scopes = tuple(OwnedLiveScope("htdy_simulation", p, c, "60m", DAY) for p, c, _ in scope)
+            with ComputeRuntime(REGISTRY, owned_live_scopes=scopes) as runtime:
+                market = PortfolioMarket(
+                    products, redis=redis, session_factory=lambda: Session(engine), receipt_clock=clock,
+                    require_completed_journal=True, isolated_live_compute=runtime, isolated_canonical_root=root,
+                )
+                try:
+                    yield market, lambda: runtime
+                finally:
+                    market.close()
 
     def originals(end):
         events = tuple(completed.read_original(DAY, f"{DAY}:{contract}:60m:{end.isoformat()}")
@@ -573,8 +608,7 @@ def test_isolated_htdy_live_restarts_all_trading_products(disposable_market, tmp
     native_identity = "TQKQ:simnow-test:htdy_tqkq_v1"
     initial = account_api.start("simnow-test", products, OPEN, readback(OPEN))
     assert feed.poll(OPEN) is None and publisher.poll(OPEN) is None
-    with ComputeRuntime(REGISTRY, owned_live_scopes=scopes) as runtime:
-        market = inlet(runtime)
+    with inlet() as (market, compute_runtime):
         try:
             _wait_for_subscriber(redis, topics)
             market.activate(clock())
@@ -582,7 +616,7 @@ def test_isolated_htdy_live_restarts_all_trading_products(disposable_market, tmp
             first_originals = originals(CUTOFF)
             assert market.issues == {}
             verify_signals(first, CUTOFF)
-            assert runtime.queue_load()["live"]["peak_pending"] == 1
+            assert compute_runtime().queue_load()["live"]["peak_pending"] == 1
         finally:
             market.close()
 
@@ -600,8 +634,7 @@ def test_isolated_htdy_live_restarts_all_trading_products(disposable_market, tmp
     settled = account_api.LocalStore.inspect_tip(account)
     assert floors(settled) == dict.fromkeys(products, CUTOFF)
     clock_now = CUTOFF + timedelta(seconds=4)
-    with ComputeRuntime(REGISTRY, owned_live_scopes=scopes) as runtime:
-        market = inlet(runtime)
+    with inlet() as (market, compute_runtime):
         ledger = account_api.LocalStore(account, execution_identity=native_identity)
         try:
             _wait_for_subscriber(redis, topics)
@@ -642,7 +675,7 @@ def test_isolated_htdy_live_restarts_all_trading_products(disposable_market, tmp
             for signal in following:
                 duplicate = ledger.execute("tq-signal:" + signal.source_id, command(signal))
                 assert duplicate.duplicate and duplicate.sequence == recovered.sequence + 16
-            assert ledger.current() == finished and runtime.queue_load()["live"]["peak_pending"] == 1
+            assert ledger.current() == finished and compute_runtime().queue_load()["live"]["peak_pending"] == 1
         finally:
             ledger.close()
             market.close()

@@ -478,7 +478,15 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
     from app.compute_runtime.isolated_simulation import bind_paper_live_factors, paper_live_scopes
     from app.market_data.live_market import _bar_payload
     from app.market_data.market_foundation_scope import bind_market_redis, bind_tick_source
+    import sys
     from app.market_data.observation_stream import ObservationStream
+
+    target_module = sys.modules.get("app.market_data.compute_target_observations")
+    target_stream = target_module.ObservationStream if target_module is not None else ObservationStream
+    target_envelope = target_module.ObservationEnvelope if target_module is not None else ObservationEnvelope
+    formal_market = os.getenv("GUIYI_C6_FORMAL_PAPER_MARKET_URL")
+    if target_module is not None:
+        assert formal_market, "the frozen loader needs the formal fixture binding"
     from app.runtime_cohort_errors import CohortError
     from app.runtime_market_account_readback import paper_watermark
     from guiyi_quant.compute import REGISTRY
@@ -502,7 +510,7 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
     heartbeat = tmp_path / "heartbeat.json"
     canonical_root = tmp_path / "canonical"
     canonical_root.mkdir()
-    market_url = make_url(market_url)
+    market_url = make_url(formal_market or market_url)
     run_id = "market-worker-handoff-" + uuid.uuid4().hex
     clock = [observed]
     factor_calls = []
@@ -521,13 +529,30 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
     monkeypatch.setattr(worker, "HEARTBEAT", heartbeat)
     monkeypatch.setattr(worker.Factors, "step", record_step)
     with Redis(host="127.0.0.1", port=ports[0], db=13) as old_redis, Redis(
-        host="127.0.0.1", port=ports[1], db=13,
+        host="127.0.0.1", port=ports[1], db=0 if formal_market else 13,
     ) as target_redis:
         # Limit all writes to the isolated instances allocated for this test.
         assert old_redis.dbsize() == target_redis.dbsize() == 0
-        old = ObservationStream(old_redis, kind="completed")
-        target = ObservationStream(target_redis, kind="completed")
-        bind_market_redis(target_redis, tmp_path, market_url)
+        old = target_stream(old_redis, kind="completed")
+        target = target_stream(target_redis, kind="completed")
+        if formal_market:
+            from app.market_data.market_foundation_scope import formal_tick_fingerprint
+            from app.private_settings import runtime_dependency_settings
+
+            target_redis.set("live:market-foundation:formal-binding",
+                             formal_tick_fingerprint(target_redis, market_url, canonical_root))
+            config = tmp_path / "project.env"
+            content = (
+                f"DATABASE_URL={formal_market}\n"
+                f"GUIYI_CANONICAL_DATA_ROOT={canonical_root}\n"
+                f"REDIS_URL=redis://127.0.0.1:{ports[1]}/0\n"
+                "# guiyi-market-source: rqdata_tick\n"
+            ).encode()
+            config.write_bytes(content)
+            config.chmod(0o600)
+            settings = runtime_dependency_settings(content)
+        else:
+            bind_market_redis(target_redis, tmp_path, market_url)
         bind_tick_source(target_redis)
         store = ModelStore(url, test_only=True)
         try:
@@ -577,7 +602,8 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
                     data = _bar_payload(worker.bar(row.envelope.data), contract=contract)
                     for frequency in ("60m", "30m", "1m"):
                         identifiers.append(target.append(replace(
-                            row.envelope, stream_id="", channel=live_bar_channel(product, frequency), data=data,
+                            target_envelope.from_json(row.envelope.to_json()),
+                            stream_id="", channel=live_bar_channel(product, frequency), data=data,
                             observation_id=f"{new_day}:{contract}:{frequency}:{data['bar_end']}",
                             source_observed_at=end, raw_received_at=end + timedelta(milliseconds=10),
                             source_generation=None if frequency == legacy_period else generation + "1",
@@ -587,6 +613,19 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
             def consume(stream, *, check_duplicate=False):
                 restored = PortfolioJournal.restore(store, run_id)
                 factors = {product: worker.Factors(row["contract"]) for product, row in contexts.items()}
+                if formal_market:
+                    from app.compute_runtime.paper_consumer import continue_frozen_paper
+
+                    def run_native_day():
+                        _, bound = worker.settings_and_redis()
+                        native_stream = ObservationStream(bound, kind="completed")
+                        worker.consume_day(restored, new_day, contexts, factors, native_stream, tmp_path, once=True)
+
+                    with monkeypatch.context() as patch:
+                        patch.setattr(worker, "settings_and_redis", lambda: (settings, stream.redis))
+                        patch.setattr(worker, "main", run_native_day)
+                        continue_frozen_paper(worker, stream_class=target_stream, private_config=config)
+                    return
                 with ComputeRuntime(REGISTRY, owned_live_scopes=paper_live_scopes(new_day, contexts)) as compute:
                     wrapped = bind_paper_live_factors(
                         compute, stream, restored, new_day, contexts, factors,
@@ -600,7 +639,8 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
                         assert len(factor_calls) == calls
                         assert compute.queue_load()["live"]["peak_pending"] == 1
 
-            with pytest.raises(ValueError, match="COMPUTE_LIVE_ISOLATION_REQUIRED"):
+            wrong_source = "MARKET_FORMAL_BINDING_INVALID" if formal_market else "COMPUTE_LIVE_ISOLATION_REQUIRED"
+            with pytest.raises(ValueError, match=wrong_source):
                 consume(old)
             assert not factor_calls and store.load(run_id) == (old_head, old_events)
             for legacy_period in ("30m", "1m"):
@@ -610,7 +650,28 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
                 assert store.load(run_id) == (old_head, old_events)
                 target_redis.delete(target.key(new_day), target.identity_key(new_day))
                 factor_calls.clear()
+            if barrier := os.environ.get("GUIYI_C6_PAPER_BARRIER"):
+                from time import monotonic_ns, sleep
+
+                commit_return = []
+                native_submit = PortfolioJournal.submit
+
+                def measured_submit(*args, **kwargs):
+                    result = native_submit(*args, **kwargs)
+                    if result:
+                        commit_return.append(monotonic_ns())
+                    return result
+
+                monkeypatch.setattr(PortfolioJournal, "submit", measured_submit)
+                barrier = Path(barrier)
+                barrier.with_suffix(".ready").touch(exist_ok=False)
+                deadline = monotonic_ns() + 80_000_000_000
+                while not barrier.with_suffix(".go").exists():
+                    assert monotonic_ns() < deadline
+                    sleep(0.001)
             originals = append_batch(upcoming)
+            if barrier:
+                published_ns = monotonic_ns()
             consume(target, check_duplicate=True)
             assert len(factor_calls) == 2 * len(contexts)
             expected = {product: (row["contract"], at) for product, row in contexts.items()}
@@ -640,8 +701,24 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
                 paper_watermark(store, run_id, target, new_day, next_expected, generation_prefix=generation,
                                 prefix=[before["sequence"], "a" * 64])
             assert json.loads(heartbeat.read_text())["status"] == "SESSION_COMPLETE"
+            if barrier:
+                import resource
+
+                usage = resource.getrusage(resource.RUSAGE_SELF)
+                barrier.with_suffix(".json").write_text(json.dumps({
+                    "observations": len(originals), "products": len(contexts),
+                    "same_run_and_prefix": True, "duplicate_commands": 0,
+                    "sequence": [old_head["sequence"], new_head["sequence"], final_head["sequence"]],
+                    "completed_publish_return_to_postgres_commit_return_ms": (
+                        commit_return[0] - published_ns
+                    ) / 1_000_000,
+                    "publish_return_ns": published_ns, "first_commit_return_ns": commit_return[0],
+                    "user_cpu_s": usage.ru_utime, "system_cpu_s": usage.ru_stime,
+                    "max_rss_macos_bytes": usage.ru_maxrss,
+                }))
         finally:
             store.engine.dispose()
             for stream, day in ((old, old_day), (target, new_day)):
                 stream.redis.delete(stream.key(day), stream.identity_key(day))
-            target_redis.delete("live:market-foundation:binding", "live:market-foundation:source")
+            target_redis.delete("live:market-foundation:binding", "live:market-foundation:source",
+                                "live:market-foundation:formal-binding")

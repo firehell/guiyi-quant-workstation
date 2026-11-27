@@ -267,6 +267,7 @@ def serve_formal_receipts(ownership, *, stop_requested):
     """Supervised, receipt-only Reference role. No Live subscription or transport."""
     from time import sleep
 
+    from app.compute_runtime.formal_publications import FormalCanonicalPublications
     from app.db.session import SessionLocal, engine
     from app.market_data.composition import canonical_root
     from app.market_data.market_archive import current_retained_receipt, formal_archive_root
@@ -294,7 +295,8 @@ def serve_formal_receipts(ownership, *, stop_requested):
             heartbeat_at = monotonic()
         return False
 
-    with get_redis_connection() as redis:
+    with (get_redis_connection() as redis,
+          FormalCanonicalPublications(engine, canonical, now=lambda: datetime.now(UTC)) as compute):
         while not check_owner():
             try:
                 require_formal_tick_binding(redis, engine.url, canonical)
@@ -312,12 +314,24 @@ def serve_formal_receipts(ownership, *, stop_requested):
                         if str(error) != "LIVE_RECOVERY_BUSY":
                             raise
                         result = {"status": "pending"}
+                    except (OSError, ValueError, SQLAlchemyError):
+                        result = {"status": "unavailable"}
                     if (result["status"] in {"completed", "already_consumed"}
                             and result.get("sections", {}).get("status") == "completed"):
                         completed_receipt = receipt.identity
                     else:
-                        status = "pending"
-                ownership.mark_ready({"reference_receipts": status})
+                        status = "unavailable" if result["status"] == "unavailable" else "pending"
+                try:
+                    compute_status = compute.poll(root, receipt, stop_requested=check_owner)
+                except (OSError, ValueError, RuntimeError, SQLAlchemyError):
+                    compute_status = "pending"
+                if stopping():
+                    break
+                health = {"reference_receipts": status, "canonical_compute": compute_status}
+                if status == "unavailable":
+                    ownership.mark_not_ready({**health, "failure_code": "MARKET_REFERENCE_RECEIPT_UNAVAILABLE"})
+                else:
+                    ownership.mark_ready(health)
             except (OSError, ValueError, RedisError, SQLAlchemyError):
                 ownership.mark_not_ready({"reference_receipts": "unavailable",
                                           "failure_code": "MARKET_REFERENCE_RECEIPT_UNAVAILABLE"})

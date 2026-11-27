@@ -1,4 +1,5 @@
 from dataclasses import replace
+import json
 from datetime import date, time, timedelta
 from types import SimpleNamespace
 
@@ -7,15 +8,17 @@ from sqlalchemy.orm import Session
 
 from app.compute_runtime import ComputeScope
 from app.compute_runtime.canonical_publications import CanonicalPublicationCompute, CanonicalResearchWindow
+from app.compute_runtime.formal_publications import FormalCanonicalPublications, configured_windows
 from app.market_data.after_market import AfterMarketResult, _atomic_write_status
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import DatasetKey
 from app.market_data.live_market import RedisLiveStore
 from app.market_data.market_archive import (
-    build_isolated_archive, reference_catalog_revision, retain_archive_receipt,
+    build_isolated_archive, current_retained_receipt, reference_catalog_revision, retain_archive_receipt,
+    retain_archive_status,
 )
 from app.market_data.storage import CanonicalMonthlyStore
-from app.models import Contract, Exchange, Instrument, TradingSession
+from app.models import Contract, Exchange, Instrument, MainContractMap, TradingSession
 from guiyi_quant.compute import FeatureRequest
 from tests.data_foundation.test_market_archive import DAY, FINISHED, _status
 from tests.data_foundation.test_market_pagination import _bar, _publish
@@ -57,6 +60,8 @@ def test_committed_archive_drives_only_changed_scopes(
             contract_code=target.scope.physical_contract, instrument_symbol="jm", exchange_code="DCE",
             listed_date=target.since, expired_date=DAY + timedelta(days=1),
         ) for target in (old, other))
+        seed.add_all(MainContractMap(symbol="jm", trade_date=target.since, contract_code=target.scope.physical_contract)
+                     for target in (old, other))
         seed.add(TradingSession(
             exchange_code="DCE", instrument_symbol="jm", session_name="day",
             start_time=time(9), end_time=time(15), effective_from=date(DAY.year, DAY.month, 1),
@@ -176,3 +181,65 @@ def test_committed_archive_drives_only_changed_scopes(
         assert recovered.point.values == {"value": 114}
         assert recovered.point.available_at == clock[0]
         assert compute.latest_result(other) is unaffected
+
+
+    # The prepared subscriber uses the formal archive hash mode and retains
+    # the accepted result/cursor outside the Market and application trees.
+    archive = tmp_path / "formal-archive"
+    archive.mkdir(mode=0o700)
+    (archive / "canonical-compute-windows.json").write_text(json.dumps([
+        {"product": "jm", "contract": row.scope.physical_contract, "frequency": "1d",
+         "features": ["ema10"], "since": row.since.isoformat(), "through": row.through.isoformat()}
+        for row in (old, other)
+    ]))
+
+    def formal_receipt(day):
+        clock[0] += timedelta(minutes=1)
+        with Session(engine) as proof:
+            digest = reference_catalog_revision(proof, "jm", day, archive_scope=True)
+        status = _status(finished=clock[0], digest=digest)
+        status["last_successful_trading_day"] = day.isoformat()
+        status["last_run"]["trading_day"] = day.isoformat()
+        status["last_run"]["live_evidence"]["trading_day"] = day.isoformat()
+        return retain_archive_status(status, now=clock[0], archive_root=archive, formal=True)
+
+    def current():
+        return current_retained_receipt(archive, now=clock[0])
+
+    assert configured_windows(archive) == (old, other)
+    with FormalCanonicalPublications(engine, root, now=lambda: clock[0]) as service:
+        assert service.poll(archive, None) == "waiting_archive"
+        first_path = formal_receipt(DAY)
+        assert service.poll(archive, current()) == "current"
+
+    with CanonicalPublicationCompute(engine, root, (old, other), now=lambda: clock[0], archive_root=archive) as restarted:
+        prior = restarted.latest_result(old)
+        other_prior = restarted.latest_result(other)
+        assert prior and prior[0].point.values == {"value": 114}
+        submit = restarted._runtime.submit_canonical
+        monkeypatch.setattr(restarted._runtime, "submit_canonical", lambda *a, **kw: pytest.fail("duplicate job"))
+        assert restarted.accept(first_path, DAY) == ()
+        late_day = DAY - timedelta(days=1)
+        late_path = formal_receipt(late_day)
+        assert restarted.accept(late_path, late_day) == ()
+        assert restarted.latest_result(old) == prior and current().identity == first_path.stem
+        monkeypatch.setattr(restarted._runtime, "submit_canonical", submit)
+
+        publish(old, 100, revised=(15, 188))
+        second = formal_receipt(DAY)
+        with pytest.raises(RuntimeError, match="COMPUTE_CANONICAL_DRAINING"):
+            restarted.accept(second, DAY, stop_requested=lambda: True)
+        assert restarted.latest_result(old) == prior
+        publish(old, 100, revised=(15, 199))
+        with pytest.raises(ValueError, match="MARKET_ARCHIVE_SOURCE_CHANGED"):
+            restarted.accept(second, DAY)
+        assert restarted.latest_result(old) == prior
+        latest = formal_receipt(DAY)
+        revised, = restarted.accept(latest, DAY)
+        assert revised.point.values == {"value": 118}
+        assert restarted.latest_result(other) == other_prior
+
+    with CanonicalPublicationCompute(engine, root, (old, other), now=lambda: clock[0], archive_root=archive) as recovered:
+        assert recovered.latest_result(old) == (revised,)
+        assert recovered.latest_result(other) == other_prior
+        assert recovered.accept(latest, DAY) == ()

@@ -87,6 +87,9 @@ class ComputeRuntime:
         """Advance only explicitly subscribed simulation features on a completed commit."""
         return self._state.submit_live(consumer, commit, load=load, checkpoints=checkpoints)
 
+    def admit_htdy_scope(self, scope: OwnedLiveScope) -> None:
+        self._state.admit_htdy_scope(scope)
+
     def submit_owned_live[T](
         self, commit: OwnedLiveCommit, *, owner: object, run: Callable[[], T],
     ) -> Future[OwnedLiveUpdate[T]]:

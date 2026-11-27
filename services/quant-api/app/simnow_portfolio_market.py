@@ -42,7 +42,7 @@ class PortfolioMarket:
     def __init__(
         self, products, *, redis=None, session_factory=None, receipt_clock=None,
         record_closed_tails=False, require_completed_journal=False, isolated_live_compute=None,
-        isolated_canonical_root: Path | None = None,
+        isolated_canonical_root: Path | None = None, formal_live_compute=None, completed_journal_redis=None,
     ):
         operational = set(load_operational_products())
         chosen = tuple(product.upper() for product in products)
@@ -65,6 +65,10 @@ class PortfolioMarket:
                 require_isolated_market_binding(db.get_bind().url, redis, isolated_canonical_root)
         elif isolated_canonical_root is not None:
             raise ValueError("COMPUTE_LIVE_ISOLATION_REQUIRED")
+        if formal_live_compute is not None and (
+            isolated_live_compute is not None or not require_completed_journal or completed_journal_redis is None
+        ):
+            raise ValueError("COMPUTE_LIVE_BINDING_INVALID")
         self._isolated_canonical_root = isolated_canonical_root
         self.redis = redis if redis is not None else get_redis_connection()
         self.pubsub = self.redis.pubsub(ignore_subscribe_messages=True)
@@ -77,11 +81,12 @@ class PortfolioMarket:
         # These views allocate no Redis clients or subscriptions. They only reuse
         # the existing single-product authority, recovery and signal proofs.
         self._views: dict[str, MarketBridge] = {}
-        journal = ObservationStream(self.redis, kind="completed") if require_completed_journal else None
+        journal_redis = completed_journal_redis if completed_journal_redis is not None else self.redis
+        journal = ObservationStream(journal_redis, kind="completed") if require_completed_journal else None
         for product in chosen:
             view = self._authority_view(product)
             view.completed_observations = journal
-            view.isolated_live_compute = isolated_live_compute
+            view.owned_live_compute = formal_live_compute or isolated_live_compute
             if record_closed_tails:
                 view.closed_tails = self.closed_tails
             self._views[product] = view

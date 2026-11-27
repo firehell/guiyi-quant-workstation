@@ -249,11 +249,26 @@ class StateUpdates:
             key, lambda _: self._run_live(commit, requests, nodes, load, ordered_checkpoints),
         ))
 
+    def admit_htdy_scope(self, scope: OwnedLiveScope) -> None:
+        """Admit an H1 route already proved by the native Market inlet."""
+        if scope.consumer != "htdy_simulation":
+            raise ValueError("COMPUTE_OWNED_LIVE_SCOPE_INVALID")
+        with self._lock:
+            if scope in self._owned_live.scopes:
+                return
+            if any(current.product == scope.product and current.trading_day == scope.trading_day
+                   for current in self._owned_live.scopes):
+                raise ValueError("COMPUTE_OWNED_LIVE_OWNER_CONFLICT")
+            if sum(map(len, self._live_scopes.values())) + len(self._owned_live.scopes) >= self._max_checkpoints:
+                raise ValueError("COMPUTE_LIVE_SCOPE_LIMIT")
+            self._owned_live.scopes.add(scope)
+
     def submit_owned_live[T](
         self, commit: OwnedLiveCommit, *, owner: object, run: Callable[[], T],
     ) -> Future[OwnedLiveUpdate[T]]:
-        if not isinstance(commit, OwnedLiveCommit) or commit.scope not in self._owned_live.scopes:
-            raise ValueError("COMPUTE_SCOPE_NOT_ENABLED")
+        with self._lock:
+            if not isinstance(commit, OwnedLiveCommit) or commit.scope not in self._owned_live.scopes:
+                raise ValueError("COMPUTE_SCOPE_NOT_ENABLED")
         # Do not coalesce concurrent callers. The second caller must receive
         # duplicate=True only after the first really advanced the owner state.
         return cast(Future[OwnedLiveUpdate[T]], self._live.submit(

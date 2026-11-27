@@ -6,6 +6,8 @@ from datetime import date, datetime
 from hashlib import sha256
 from pathlib import Path
 from threading import RLock
+from time import monotonic
+from contextlib import nullcontext
 
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -22,6 +24,7 @@ from app.market_data.market_data_service import MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore
 
 from .contracts import ComputeScope, ComputeWindow, FeatureUpdate
+from .publication_progress import PublicationProgress
 from .runtime import ComputeRuntime
 
 
@@ -56,17 +59,20 @@ class _PublicationState:
 
 
 class CanonicalPublicationCompute:
-    """One receipt subscriber for the lifetime of an isolated research consumer."""
+    """A subscribed consumer of authoritative Canonical publication receipts."""
 
     def __init__(
         self, engine: Engine, canonical_root: Path, windows: tuple[CanonicalResearchWindow, ...],
-        *, now: Callable[[], datetime],
+        *, now: Callable[[], datetime], archive_root: Path | None = None,
     ) -> None:
         if not 1 <= len(windows) <= 32:
             raise ValueError("COMPUTE_CANONICAL_SCOPE_LIMIT")
         self.engine = engine
         self.canonical_root = canonical_root
         self._now = now
+        self._archive_root = archive_root or canonical_root.parent
+        self._formal = archive_root is not None
+        self._progress = PublicationProgress(archive_root, windows) if archive_root is not None else None
         self._windows = windows
         self._completed: dict[int, _PublicationState] = {}
         self._lock = RLock()
@@ -75,24 +81,30 @@ class CanonicalPublicationCompute:
     def latest_result(self, target: CanonicalResearchWindow) -> tuple[FeatureUpdate, ...] | None:
         """Read this scope's most recent accepted result with its original identity."""
         with self._lock:
+            self._restore()
             for index, window in enumerate(self._windows):
                 if target == window and (state := self._completed.get(index)) is not None:
                     return state.updates
         return None
 
-    def accept(self, path: Path, day: date) -> tuple[FeatureUpdate, ...]:
+    def accept(
+        self, path: Path, day: date, *, stop_requested: Callable[[], bool] = lambda: False,
+    ) -> tuple[FeatureUpdate, ...]:
         """Read the retained receipt, then publish changed results to the caller."""
-        if path.parent != self.canonical_root.parent / RECEIPT_DIRECTORY:
+        if path.parent != self._archive_root / RECEIPT_DIRECTORY:
             raise ValueError("COMPUTE_CANONICAL_RECEIPT_PATH_INVALID")
         receipt = read_archive_receipt(path, now=self._now())
         if receipt.trading_day != day:
             raise ValueError("COMPUTE_CANONICAL_RECEIPT_DAY_MISMATCH")
         order = (receipt.trading_day, receipt.finished_at)
 
-        with self._lock:
+        guard = self._progress.guard() if self._progress is not None else nullcontext()
+        with self._lock, guard:
+            self._restore()
             staged: dict[int, _PublicationState] = {}
             results = []
             for index, target in enumerate(self._windows):
+                _require_running(stop_requested)
                 product = target.scope.product
                 if product not in receipt.revisions or receipt.trading_day < target.since:
                     continue
@@ -114,9 +126,10 @@ class CanonicalPublicationCompute:
                         window = ComputeWindow.from_series(series, as_of=receipt.finished_at)
                         if window.bar_count != len(series.bars):
                             raise ValueError("COMPUTE_CANONICAL_WINDOW_UNAVAILABLE")
-                        computed = self._runtime.submit_canonical(
+                        job = self._runtime.submit_canonical(
                             receipt, window, consumer=target.scope.consumer, load=lambda source=series: source,
-                        ).result(timeout=30)
+                        )
+                        computed = _wait_for_result(job, stop_requested)
                         # The revised value is first knowable from this receipt.
                         # Preserve the original Bar ends and the internal prefix.
                         updates = tuple(
@@ -128,12 +141,37 @@ class CanonicalPublicationCompute:
                                                  through, digest, updates)
 
             if staged:
-                # Check current pointers after queued jobs, in a fresh transaction.
-                with Session(self.engine) as session, readonly_transaction(session, timeout_seconds=30):
-                    for product in sorted({self._windows[index].scope.product for index in staged}):
-                        _require_revision(session, receipt, product)
-                self._completed.update(staged)
+                self._commit(receipt, staged, stop_requested)
             return tuple(results)
+
+    def _commit(self, receipt: MarketArchiveReceipt, staged: dict[int, _PublicationState],
+                stop_requested: Callable[[], bool]) -> None:
+        # Hold the Market maintenance lease only across readback and the
+        # atomic local publication, after the queued compute has finished.
+        with Session(self.engine) as session:
+            lease = None
+            if self._formal:
+                lease = MarketCatalog(session, self.canonical_root).acquire_maintenance_lock(
+                    caller="canonical-compute-readback",
+                )
+                if lease is None:
+                    raise ValueError("COMPUTE_CANONICAL_CATALOG_BUSY")
+            try:
+                with readonly_transaction(session, timeout_seconds=30):
+                    for product in sorted({self._windows[index].scope.product for index in staged}):
+                        _require_running(stop_requested)
+                        _require_revision(session, receipt, product, formal=self._formal)
+                    _require_running(stop_requested)
+                    if self._progress is not None:
+                        self._progress.store(self._completed | staged)
+            finally:
+                if lease is not None:
+                    lease.release()
+        self._completed.update(staged)
+
+    def _restore(self) -> None:
+        if self._progress is not None:
+            self._completed = self._progress.load(_PublicationState)
 
     def _load(
         self, receipt: MarketArchiveReceipt, target: CanonicalResearchWindow, *, through: date,
@@ -143,9 +181,14 @@ class CanonicalPublicationCompute:
             scope.product, scope.physical_contract, BarFrequency(scope.frequency), target.since, through,
         )
         with Session(self.engine) as session, readonly_transaction(session, timeout_seconds=30):
-            _require_revision(session, receipt, scope.product)
-            market = MarketDataService(MarketCatalog(session, self.canonical_root),
-                                       CanonicalMonthlyStore(self.canonical_root))
+            _require_revision(session, receipt, scope.product, formal=self._formal)
+            catalog = MarketCatalog(session, self.canonical_root)
+            if self._formal and not any(
+                row.contract == scope.physical_contract
+                for row in catalog.main_map(scope.product, target.since, through)
+            ):
+                raise ValueError("COMPUTE_CANONICAL_ARCHIVE_SCOPE_UNPROVEN")
+            market = MarketDataService(catalog, CanonicalMonthlyStore(self.canonical_root))
             page = market.query_contract_trading_days(query)
             if page.requested_trading_day_window != (target.since, through) or not page.bars:
                 raise ValueError("COMPUTE_CANONICAL_WINDOW_UNAVAILABLE")
@@ -173,6 +216,28 @@ class CanonicalPublicationCompute:
             self._runtime.close()
 
 
-def _require_revision(session: Session, receipt: MarketArchiveReceipt, product: str) -> None:
-    if reference_catalog_revision(session, product, receipt.trading_day) != receipt.revisions[product]:
+def _require_running(stop_requested):
+    if stop_requested():
+        raise RuntimeError("COMPUTE_CANONICAL_DRAINING")
+
+
+def _wait_for_result(job, stop_requested):
+    deadline = monotonic() + 30
+    try:
+        while (remaining := deadline - monotonic()) > 0:
+            _require_running(stop_requested)
+            try:
+                return job.result(timeout=min(2, remaining))
+            except TimeoutError:
+                if job.done():
+                    return job.result()
+        raise TimeoutError("COMPUTE_CANONICAL_TIMEOUT")
+    except Exception:
+        job.cancel()
+        raise
+
+
+def _require_revision(session: Session, receipt: MarketArchiveReceipt, product: str, *, formal: bool) -> None:
+    actual = reference_catalog_revision(session, product, receipt.trading_day, archive_scope=formal)
+    if actual != receipt.revisions[product]:
         raise ValueError("MARKET_ARCHIVE_SOURCE_CHANGED")

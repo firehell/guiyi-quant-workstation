@@ -1,5 +1,6 @@
 """Private stdio authority bridge: RQData/MDS only, no broker or mutations."""
 
+from contextlib import contextmanager
 from datetime import datetime, UTC, timedelta
 from dataclasses import asdict
 import json
@@ -90,14 +91,60 @@ def authority(market, product, now, contract=None, trading_day=None):
         }
 
 
+@contextmanager
+def compose_market(products, *, session_factory=None, receipt_clock=None):
+    from app.market_data.market_foundation_scope import (
+        FormalMarketReadRedis, formal_tick_requested, require_bar_writer_namespace, require_formal_tick_binding,
+    )
+    from app.redis_connections import get_redis_connection
+
+    if not formal_tick_requested():
+        with get_redis_connection() as redis:
+            require_bar_writer_namespace(redis)
+            market = PortfolioMarket(products, redis=redis, record_closed_tails=True, require_completed_journal=True)
+            try:
+                yield market
+            finally:
+                market.close()
+        return
+
+    from app.compute_runtime.artifact import require_locked_core
+    from app.compute_runtime.htdy_live import HTDYLiveCompute
+    from app.market_data.composition import canonical_root
+
+    require_locked_core()
+    root = canonical_root()
+
+    session_factory = session_factory or SessionLocal
+    with session_factory() as db:
+        url = db.get_bind().url
+    # Pub/Sub is a wake-up. All originals, windows and signals are still
+    # checked by the native H1 inlet against the bound Market store.
+    with get_redis_connection() as redis:
+        require_formal_tick_binding(redis, url, root)
+        compute = HTDYLiveCompute(products)
+        bound = FormalMarketReadRedis(redis, url, root)
+        market = PortfolioMarket(
+            products, redis=redis, record_closed_tails=True, completed_journal_redis=bound,
+            require_completed_journal=True, formal_live_compute=compute,
+            session_factory=session_factory, receipt_clock=receipt_clock,
+        )
+        try:
+            yield market
+        finally:
+            try:
+                market.close()
+            finally:
+                compute.close()
+
+
 def main():
     products = tuple(p.upper() for p in TRADING_PRODUCTS)
     if set(TRADING_PRODUCTS) - set(load_operational_products()):
         raise ValueError("TQ_TRADING_SCOPE_NOT_OPERATIONAL")
-    market = PortfolioMarket(products, record_closed_tails=True, require_completed_journal=True)
-    market.activate(datetime.now(UTC))
     recovery_cursor = 0
-    try:
+    with compose_market(products) as market:
+        market.activate(datetime.now(UTC))
         while True:
             line = sys.stdin.buffer.readline(MAX_REQUEST + 1)
             if not line:
@@ -202,8 +249,6 @@ def main():
                     ),
                     flush=True,
                 )
-    finally:
-        market.close()
 
 
 if __name__ == "__main__":

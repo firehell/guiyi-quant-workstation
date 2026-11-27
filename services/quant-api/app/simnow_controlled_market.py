@@ -231,7 +231,7 @@ class MarketBridge:
             if (journal := getattr(self, "completed_observations", None)) is not None:
                 original = self._verify_completed_original(journal, trigger, window.contract, observed_at)
             source_id = "simnow-natural:" + digest((trigger.symbol, trigger.bar.bar_end, snapshot.contract))
-            runtime = getattr(self, "isolated_live_compute", None)
+            runtime = getattr(self, "owned_live_compute", None)
             if runtime is None:
                 result = signal_from_window(reader, window, source_id=source_id, observed_at=observed_at)
         if runtime is not None:

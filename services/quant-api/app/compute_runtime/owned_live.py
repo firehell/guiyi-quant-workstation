@@ -91,7 +91,7 @@ class OwnedLiveState:
     """Owned kernels run serially on the same Live executor as generic features."""
 
     def __init__(self, scopes: tuple[OwnedLiveScope, ...]) -> None:
-        self.scopes = frozenset(scopes)
+        self.scopes = set(scopes)
         if len(self.scopes) != len(scopes):
             raise ValueError("COMPUTE_OWNED_LIVE_SCOPE_DUPLICATE")
         self._heads: dict[OwnedLiveScope, tuple[object, OwnedLiveCommit, object]] = {}

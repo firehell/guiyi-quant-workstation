@@ -49,6 +49,14 @@ def install(record, consumer_lock, python):
         raise ValueError("QUANT_CORE_CONSUMER_LOCK_INCOMPATIBLE")
     expected_version = pin["version"]
     wheel = verified_wheel(record, expected_version=expected_version, expected_sha256=pin["wheel_sha256"])
+    if "sdist_sha256" in pin:
+        artifacts = json.loads(record.read_text())["artifacts"]
+        name = f"guiyi_quant_core-{expected_version}.tar.gz"
+        proof = artifacts.get(name, {})
+        source = record.parent / name
+        if (proof != {"type": "sdist", "sha256": pin["sdist_sha256"]}
+                or not source.is_file() or _digest(source) != pin["sdist_sha256"]):
+            raise ValueError("QUANT_CORE_SDIST_HASH_MISMATCH")
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     _run("uv", "pip", "install", "--no-deps", "--python", python, str(wheel), cwd=record.parent, env=env)
