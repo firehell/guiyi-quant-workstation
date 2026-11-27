@@ -36,6 +36,14 @@ VERSION_SCOPE_CASES = (
     APRIL_DIVIDER,
     JUNE_M,
 )
+STRENGTH_CASES = (
+    ("RU2701", "2026-09-03", None, "S5339102461563120",
+     (("divider_up", "LONG", 18675, 18735), ("divider_down", "SHORT", 18675, 18735))),
+    ("RU2701", "2026-09-07", None, "S5340553994833054",
+     (("target_1", "LONG", 18730, 18825), ("target_2", "LONG", 18845, 18950),
+      ("target_3", "LONG", 19040, 19105))),
+    *CASES[-3:],
+)
 # These labels describe what the source says. None of them identifies a position lot or fill.
 VERSION_DISCOURSE = {
     "2026-04-21": dict(two_unnamed_systems="PRIOR_M_PARTICIPATION_REPORTED", known_version=None,
@@ -83,10 +91,14 @@ def compare_band(series, start, cutoff, side, band):
     )
 
 
-def study(session, market, *, version_scope=False):
+def study(session, market, *, version_scope=False, strength_scope=False):
     index = input_sources()
     cases = {}
-    selected_cases = VERSION_SCOPE_CASES if version_scope else CASES
+    selected_cases, version = CASES, "lms405-rubber-m-classification-v1"
+    if version_scope:
+        selected_cases, version = VERSION_SCOPE_CASES, "lms405-rubber-version-scope-v1"
+    elif strength_scope:
+        selected_cases, version = STRENGTH_CASES, "lms405-rubber-strength-scope-v1"
     for contract, day, plan_id, label_id, zones in selected_cases:
         raw, series = read_pair(session, market, contract, (date.fromisoformat(day),))
         minutes = series[1]
@@ -116,7 +128,6 @@ def study(session, market, *, version_scope=False):
         )
         if version_scope:
             cases[day].update(author_disclosure=VERSION_DISCOURSE[day], author_position=None, author_action_at=None)
-    version = "lms405-rubber-version-scope-v1" if version_scope else "lms405-rubber-m-classification-v1"
     return dict(version=version, cases=cases, historical_text_versions_verified=False,
                 author_action_samples=0, author_match_rate=None, executable=False, fills=None, pnl=None)
 
@@ -125,7 +136,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--version-scope", action="store_true", help="Compare disclosures with and without named versions.")
+    scope = parser.add_mutually_exclusive_group()
+    scope.add_argument("--version-scope", action="store_true", help="Compare disclosures with and without named versions.")
+    scope.add_argument("--strength-scope", action="store_true", help="Compare rubber divider, targets, and trend recovery.")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -140,7 +153,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            report = study(session, build_market_data_service(session), version_scope=args.version_scope)
+            report = study(session, build_market_data_service(session), version_scope=args.version_scope,
+                           strength_scope=args.strength_scope)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
