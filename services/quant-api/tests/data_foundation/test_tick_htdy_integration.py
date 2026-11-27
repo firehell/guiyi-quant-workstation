@@ -53,7 +53,7 @@ def disposable_market():
     if not pg_target or not redis_port:
         pytest.skip("requires explicit disposable Market Foundation PostgreSQL and Redis")
     url = make_url(pg_target)
-    assert url.get_backend_name() == "postgresql"
+    assert url.get_backend_name() == "postgresql" and not url.query
     assert url.host in {"127.0.0.1", "localhost", "::1"}
     assert url.database == "guiyi_market_foundation" and url.port and url.port != 5432
     assert 1024 <= int(redis_port) <= 65535 and int(redis_port) != 6379
@@ -78,61 +78,70 @@ def disposable_market():
         engine.dispose()
 
 
-def _seed_history(engine, root):
+def _seed_history(engine, root, scope=((PRODUCT, CONTRACT, "SHFE"),)):
     store = CanonicalMonthlyStore(root)
     first = DAY - timedelta(days=6)
+    exchanges = sorted({exchange for _, _, exchange in scope})
     with Session(engine) as session:
-        session.add(Exchange(code="SHFE", name="SHFE"))
-        session.add(Instrument(symbol=PRODUCT, name="RB", exchange_code="SHFE", is_active=True))
+        session.add_all(Exchange(code=exchange, name=exchange) for exchange in exchanges)
+        session.add_all(
+            Instrument(symbol=product, name=product.upper(), exchange_code=exchange, is_active=True)
+            for product, _, exchange in scope
+        )
         session.flush()
-        session.add(Contract(
-            contract_code=CONTRACT, instrument_symbol=PRODUCT, exchange_code="SHFE",
-            listed_date=first, expired_date=DAY + timedelta(days=10), provider="rqdata",
-        ))
+        for product, contract, exchange in scope:
+            session.add(Contract(
+                contract_code=contract, instrument_symbol=product, exchange_code=exchange,
+                listed_date=first, expired_date=DAY + timedelta(days=10), provider="rqdata",
+            ))
         for offset in range(8):
             day = first + timedelta(days=offset)
-            session.add(TradingSession(
-                exchange_code="SHFE", instrument_symbol=PRODUCT, session_name="day",
-                start_time=time(9), end_time=time(15), effective_from=day, effective_to=day, provider="rqdata",
-            ))
-            session.add(TradingCalendar(
-                exchange_code="SHFE", trade_date=day, is_trading_day=True,
-                has_night_session=False, provider="rqdata",
-            ))
-            session.add(MainContractMap(symbol=PRODUCT, trade_date=day, contract_code=CONTRACT))
+            session.add_all(
+                TradingCalendar(
+                    exchange_code=exchange, trade_date=day, is_trading_day=True,
+                    has_night_session=False, provider="rqdata",
+                ) for exchange in exchanges
+            )
+            for product, contract, exchange in scope:
+                session.add(TradingSession(
+                    exchange_code=exchange, instrument_symbol=product, session_name="day",
+                    start_time=time(9), end_time=time(15), effective_from=day, effective_to=day, provider="rqdata",
+                ))
+                session.add(MainContractMap(symbol=product, trade_date=day, contract_code=contract))
         session.flush()
 
-        minutes, hours = [], []
-        for offset in range(6):
-            day = first + timedelta(days=offset)
-            begin = datetime.combine(day, time(1), tzinfo=UTC)
-            source = tuple(
-                CanonicalBar(begin + minute * MINUTE, day, price, price, price, price,
-                             Decimal(1), Decimal(100), Decimal(51))
-                for minute in range(1, 361)
-                for price in (Decimal(100 + offset),)
-            )
-            minutes.extend(source)
-            hours.extend(aggregate_from_1m(
-                source, target_frequency=BarFrequency.H1,
-                sessions=(SessionWindow(begin, begin + timedelta(hours=6)),),
-            ))
-        for frequency, bars in ((BarFrequency.M1, minutes), (BarFrequency.H1, hours)):
-            key = DatasetKey("contract", PRODUCT, CONTRACT, frequency)
-            published = store.publish(PublishRequest(
-                key, DAY.year, DAY.month, tuple(bars), tuple(bar.bar_end for bar in bars),
-            ))
-            MarketCatalog(session, root).register_partition(published)
+        for index, (product, contract, _) in enumerate(scope):
+            minutes, hours = [], []
+            for offset in range(6):
+                day = first + timedelta(days=offset)
+                begin = datetime.combine(day, time(1), tzinfo=UTC)
+                price = Decimal(100 + index + offset)
+                bars = tuple(
+                    CanonicalBar(begin + minute * MINUTE, day, price, price, price, price,
+                                 Decimal(1), Decimal(100), Decimal(51))
+                    for minute in range(1, 361)
+                )
+                minutes.extend(bars)
+                hours.extend(aggregate_from_1m(
+                    bars, target_frequency=BarFrequency.H1,
+                    sessions=(SessionWindow(begin, begin + timedelta(hours=6)),),
+                ))
+            for frequency, bars in ((BarFrequency.M1, minutes), (BarFrequency.H1, hours)):
+                published = store.publish(PublishRequest(
+                    DatasetKey("contract", product, contract, frequency), DAY.year, DAY.month,
+                    tuple(bars), tuple(bar.bar_end for bar in bars),
+                ))
+                MarketCatalog(session, root).register_partition(published)
         session.commit()
 
 
-def _wait_for_subscriber(redis):
+def _wait_for_subscriber(redis, topics=(TOPIC,)):
     deadline = monotonic() + 2
     while monotonic() < deadline:
-        if redis.pubsub_numsub(TOPIC) == [(TOPIC, 1)]:
+        if dict(redis.pubsub_numsub(*topics)) == dict.fromkeys(topics, 1):
             return
         sleep(0.01)
-    pytest.fail("expected exactly one HTDY subscription")
+    pytest.fail("expected exactly one HTDY subscriber for each topic")
 
 
 @pytest.mark.parametrize(("delayed_completion", "owned_live"), (
@@ -422,3 +431,219 @@ def _assert_recovery_fence(redis, store, inlet, recovery_key, clock):
         assert inlet.issues == {PRODUCT.upper(): "HTDY_EXECUTION_REQUIRES_FIRST_SEEN"}
     finally:
         redis.delete(recovery_key)
+
+
+def test_isolated_htdy_live_restarts_all_trading_products(disposable_market, tmp_path, monkeypatch):
+    from app.simnow_controlled_market import MarketBridge
+    from guiyi_quant import htdy_account_execution as account_api, htdy_execution as execution
+    from guiyi_quant.htdy_account_execution.model import TqKqObservedSignalV1
+    from guiyi_quant.trading_universe import TRADING_PRODUCTS
+    from tests.unit.htdy_execution.test_account_execution import readback
+
+    exchange_products = {
+        "DCE": ("jm", "v", "i"), "GFEX": ("lc",), "SHFE": ("rb",), "INE": ("ec", "sc"),
+        "CZCE": ("sa", "fg", "ma", "pr", "ta", "ur", "sh", "cj", "oi"),
+    }
+    exchanges = {product: exchange for exchange, items in exchange_products.items() for product in items}
+    assert len(TRADING_PRODUCTS) == 16 and set(exchanges) == set(TRADING_PRODUCTS)
+    products = tuple(product.upper() for product in TRADING_PRODUCTS)
+    contracts = {product: product.upper() + ("2702" if product == "ec" else "2701") for product in TRADING_PRODUCTS}
+    scope = tuple((product, contracts[product], exchanges[product]) for product in TRADING_PRODUCTS)
+    topics = tuple(f"live:bar:{product}:60m" for product in TRADING_PRODUCTS)
+    engine, redis = disposable_market
+    root = tmp_path / "canonical"
+    root.mkdir()
+    _seed_history(engine, root, scope)
+    bind_market_redis(redis, tmp_path, engine.url)
+    bind_tick_source(redis)
+    store = RedisLiveStore(redis)
+    store.set_subscriptions(DAY, contracts)
+    source = ObservationStream(redis, kind="source")
+    source.initialize("live", DAY, cursor="0-0")
+    completed = ObservationStream(redis, kind="completed")
+    clock_now = OPEN
+
+    def clock():
+        return clock_now
+
+    class TickClient:
+        def subscribe(self, channels):
+            assert set(channels) == {f"tick_{contract}" for contract in contracts.values()}
+
+        def listen(self, *, handler):
+            self.handler = handler
+
+        def close(self):
+            pass
+
+    client = TickClient()
+    preview = TickPreviewStore()
+    window = SessionWindow(OPEN, OPEN + timedelta(hours=6))
+    market_args = dict(
+        dominant_source=FakeDominants({(product, DAY): contract for product, contract in contracts.items()}),
+        phase_resolver=FakePhases({product: _phase(product, DAY, window) for product in TRADING_PRODUCTS}),
+        coverage_sessions=lambda *_: (window,),
+        operational_products=TRADING_PRODUCTS, authoritative_dominants=True, clock=clock,
+    )
+    feed = MarketFeedService(
+        source_stream=source, store=FeedLiveStore(redis), tick_source=True,
+        provider_factory=lambda: TickMarketDataProvider(
+            client, connection_identity=lambda: client, preview=preview, clock=clock,
+        ),
+        shutdown_guard_factory=nullcontext, **market_args,
+    )
+    publisher = DurableLiveMarketService(source_provider=StreamLiveProvider(source), store=store, **market_args)
+
+    def replay_minutes(start, stop, market, watermarks):
+        nonlocal clock_now
+        signals = []
+        for minute in range(start, stop):
+            seen = OPEN + minute * MINUTE
+            clock_now = seen + timedelta(milliseconds=10)
+            for index, contract in enumerate(contracts.values()):
+                price = 101 + index + minute
+                client.handler({
+                    "channel": f"tick_{contract}", "action": "feed", "order_book_id": contract,
+                    "datetime": seen, "volume": minute, "last": price,
+                    "total_turnover": price * minute, "open_interest": 51,
+                })
+            clock_now = seen + timedelta(seconds=3)
+            assert feed.poll(clock()) is None
+            assert publisher.poll(clock()) is None
+            signals.extend(market.poll(clock(), watermarks))
+        return tuple(signals)
+
+    def inlet(runtime):
+        return PortfolioMarket(
+            products, redis=redis, session_factory=lambda: Session(engine), receipt_clock=clock,
+            require_completed_journal=True, isolated_live_compute=runtime, isolated_canonical_root=root,
+        )
+
+    scopes = tuple(OwnedLiveScope("htdy_simulation", p, c, "60m", DAY) for p, c, _ in scope)
+
+    def originals(end):
+        events = tuple(completed.read_original(DAY, f"{DAY}:{contract}:60m:{end.isoformat()}")
+                       for contract in contracts.values())
+        assert {event.channel for event in events} == set(topics)
+        assert len({event.stream_id for event in events}) == 16
+        assert all(event.notification_eligible and event.source_generation.startswith("rqdata-tick:") for event in events)
+        return events
+
+    observed_triggers = []
+    signal_from_trigger = MarketBridge.signal_from_trigger
+
+    def record_trigger(view, trigger, observed_at, after):
+        observed_triggers.append((view.product, trigger.bar.bar_end))
+        return signal_from_trigger(view, trigger, observed_at, after)
+
+    monkeypatch.setattr(MarketBridge, "signal_from_trigger", record_trigger)
+
+    def verify_duplicate_originals(market, events, watermarks, end):
+        observed_triggers.clear()
+        tail = completed.tail(DAY)
+        for event in events:
+            assert completed.append(event) == event.stream_id
+            assert redis.publish(event.channel, json.dumps(event.data)) == 1
+        assert completed.tail(DAY) == tail
+        # Subscribe ACKs can yield empty nonblocking polls. Wait for all
+        # duplicated originals to actually reach their product's inlet.
+        deadline = monotonic() + 2
+        while len(observed_triggers) < len(products) and monotonic() < deadline:
+            assert market.poll(clock(), watermarks) == ()
+            if len(observed_triggers) < len(products):
+                sleep(0.01)
+        assert sorted(observed_triggers) == sorted((product, end) for product in products)
+        assert market.issues == {}
+
+    def verify_signals(signals, end):
+        assert len(signals) == len(products)
+        assert {signal.product: signal.contract for signal in signals} == {
+            product.upper(): contract for product, contract in contracts.items()
+        }
+        assert len({signal.source_id for signal in signals}) == 16
+        assert all(signal.bar_end == end for signal in signals)
+
+    def floors(state):
+        return {item.product: item.last_bar for item in state.products}
+
+    def command(signal):
+        return TqKqObservedSignalV1(signal, signal.observed_at)
+
+    account = tmp_path / "fast-simulation.sqlite"
+    native_identity = "TQKQ:simnow-test:htdy_tqkq_v1"
+    initial = account_api.start("simnow-test", products, OPEN, readback(OPEN))
+    assert feed.poll(OPEN) is None and publisher.poll(OPEN) is None
+    with ComputeRuntime(REGISTRY, owned_live_scopes=scopes) as runtime:
+        market = inlet(runtime)
+        try:
+            _wait_for_subscriber(redis, topics)
+            market.activate(clock())
+            first = replay_minutes(0, 61, market, dict.fromkeys(products, OPEN))
+            first_originals = originals(CUTOFF)
+            assert market.issues == {}
+            verify_signals(first, CUTOFF)
+            assert runtime.queue_load()["live"]["peak_pending"] == 1
+        finally:
+            market.close()
+
+    ledger = account_api.LocalStore(account, initial, execution_identity=native_identity)
+    try:
+        for product in products:
+            key = "owner:" + product
+            ledger.execute(key, execution.Owner(product, contracts[product.lower()], OPEN, key))
+        for signal in first:
+            commit = ledger.execute("tq-signal:" + signal.source_id, command(signal))
+            assert not commit.duplicate and not commit.effects
+    finally:
+        ledger.close()
+
+    settled = account_api.LocalStore.inspect_tip(account)
+    assert floors(settled) == dict.fromkeys(products, CUTOFF)
+    clock_now = CUTOFF + timedelta(seconds=4)
+    with ComputeRuntime(REGISTRY, owned_live_scopes=scopes) as runtime:
+        market = inlet(runtime)
+        ledger = account_api.LocalStore(account, execution_identity=native_identity)
+        try:
+            _wait_for_subscriber(redis, topics)
+            market.activate(clock())
+            assert floors(ledger.current()) == floors(settled)
+            assert ledger.current().phase == "RECOVERY_REQUIRED"
+            proofs = market.recovery(ledger.current(), clock())
+            assert market.issues == {}
+            assert len(proofs) == 16
+            assert {proof.product: (proof.contract, proof.bar_end) for proof in proofs} == {
+                product.upper(): (contract, CUTOFF) for product, contract in contracts.items()
+            }
+            recovery = account_api.Recover(readback(clock()), proofs)
+            recovered = ledger.execute("recover", recovery)
+            assert recovered.state.phase == "READY" and floors(recovered.state) == floors(settled)
+            verify_duplicate_originals(market, first_originals, floors(recovered.state), CUTOFF)
+            assert account_api.LocalStore.inspect_tip(account) == recovered.state
+            for signal in first:
+                duplicate = ledger.execute("tq-signal:" + signal.source_id, command(signal))
+                assert duplicate.duplicate and duplicate.sequence == recovered.sequence
+
+            next_end = CUTOFF + timedelta(hours=1)
+            following = replay_minutes(61, 121, market, floors(recovered.state))
+            next_originals = originals(next_end)
+            assert market.issues == {}
+            verify_signals(following, next_end)
+            assert all(signal.previous_bar_end == CUTOFF for signal in following)
+            for number, signal in enumerate(following, start=1):
+                expected = floors(ledger.current())
+                expected[signal.product] = next_end
+                commit = ledger.execute("tq-signal:" + signal.source_id, command(signal))
+                assert not commit.duplicate and not commit.effects
+                assert commit.sequence == recovered.sequence + number
+                assert floors(commit.state) == expected
+            finished = ledger.current()
+            assert floors(finished) == dict.fromkeys(products, next_end)
+            verify_duplicate_originals(market, next_originals, floors(finished), next_end)
+            for signal in following:
+                duplicate = ledger.execute("tq-signal:" + signal.source_id, command(signal))
+                assert duplicate.duplicate and duplicate.sequence == recovered.sequence + 16
+            assert ledger.current() == finished and runtime.queue_load()["live"]["peak_pending"] == 1
+        finally:
+            ledger.close()
+            market.close()
+    assert account_api.LocalStore.inspect(account) == finished
