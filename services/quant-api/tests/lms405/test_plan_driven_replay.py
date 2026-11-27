@@ -5,6 +5,7 @@ import json
 
 import pytest
 
+import lms405_plan_driven_replay as plan_replay
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.handoff import HandoffConfirmation
 from guiyi_quant.lms405.portfolio_tasks import REQUIRED, Book, Intent
@@ -137,3 +138,46 @@ def test_json_tape_waits_for_exact_approval_and_requires_fixture_opt_in():
     approval_only = tape | {"revisions": [], "evaluations": [tape["evaluations"][0] | {"facts": []}]}
     with pytest.raises(ValueError, match="FIXTURE_APPROVAL_DISABLED"):
         replay_input(**approval_only)
+
+
+def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monkeypatch):
+    minute = timedelta(minutes=1)
+    seed = Book("SH2701", "market-test", "SHORT", START - minute, Decimal(20), attempt=1)
+    prices = ((100, 107, 98, 104), (103, 105, 100, 103), (104, 107, 103, 106), (106, 111, 104, 110))
+    candles = [Bar(seed.contract, START + (i + 1) * minute, *map(Decimal, prices), start=START + i * minute)
+               for i, prices in enumerate(prices)]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: candles})
+    definition = dict(
+        version=plan_replay.MARKET_REQUEST_VERSION, trading_day="2026-10-22", start=START.isoformat(),
+        cutoff=(candles[-1].end + timedelta(microseconds=2)).isoformat(), seed=json.loads(encoded(asdict(seed))),
+        operation="PROTECT_EARLY", quantity="20", shape_period=1, confirmation_period=1, band=["109", "110"],
+        request_expires_at=(START + 8 * minute).isoformat(),
+        revision=dict(contract=seed.contract, id="market-plan", source="source-a",
+                      published_at=seed.known_at.isoformat(), known_at=seed.known_at.isoformat(),
+                      operations=["PROTECT_EARLY"]),
+    )
+    def compile_case(**changes):
+        return plan_replay.market_request(session=None, market=None, **(definition | changes))
+
+    report = compile_case()
+    row, = report["replay"]["events"]
+    assert row["status"] == "INDETERMINATE"
+    scope = row["pending_approval_scope"]
+    assert report["replay"]["final"] == asdict(seed)
+    cut = (candles[2].end + timedelta(microseconds=3)).isoformat()
+    assert compile_case(cutoff=cut)["replay"]["events"][0]["pending_approval_scope"] == scope
+    altered = definition["revision"] | {"source": "source-b"}
+    assert compile_case(revision=altered)["replay"]["events"][0]["pending_approval_scope"] != scope
+    tape = report["tape"]
+    event = tape["evaluations"][0]
+    at = datetime.fromisoformat(event["at"])
+    event["at"] = (at + 2 * timedelta(microseconds=1)).isoformat()
+    event["approval"] = dict(scope=scope, id="test-approval", accepted=True, decided_at=at.isoformat(),
+                             known_at=(at + timedelta(microseconds=1)).isoformat(), record_kind="TEST_FIXTURE")
+    assert replay_input(**tape, allow_test_fixture=True)["final"]["protection"] == Decimal(20)
+    changed_tape = tape | {"revisions": [altered]}
+    assert replay_input(**changed_tape, allow_test_fixture=True)["events"][0]["status"] == (
+        "MARKET_FACT_PLAN_REVISION_MISMATCH"
+    )
+    with pytest.raises(ValueError, match="BAND_ARRAY_REQUIRED"):
+        compile_case(band={"109": False, "110": False})

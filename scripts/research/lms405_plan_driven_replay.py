@@ -1,7 +1,7 @@
 """Replay attributed LMS research proposals against the plan known at each evaluation."""
 
 from dataclasses import asdict, dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 import argparse
@@ -20,18 +20,20 @@ from lms405_jm_m_leg_handoff import OLD_PLAN as JM_OLD_PLAN
 from lms405_portfolio_replay import input_sources
 from lms405_pre_touch_protection import analyze
 from lms405_protection_lot_timing import verified_json
-from lms405_protection_timeframes import read_window
+from lms405_protection_timeframes import VARIANTS, read_window
 from lms405_public_plan_roles import load_source
 from lms405_recovery_confirmation_audit import edge_candidates
 from lms405_right_side_study import ONE, US
 from lms405_sh_lock_lifecycle import NIGHT_RANGE, OLD_RANGE, completed, digest, signals
 from lms405_sh_protection_replacement import LIFECYCLE, LIFECYCLE_SHA
-from lms_near405_replay import encoded
+from lms_near405_replay import encoded, sha
 
 VERSION = "lms405-plan-driven-replay-v1"
 INPUT_VERSION = "lms405-plan-replay-input-v1"
+MARKET_REQUEST_VERSION = "lms405-plan-market-request-v1"
 INDEPENDENT_PREFIX = "INDEPENDENT:"
 INDEPENDENT_MANAGEMENT = frozenset({"CLEAR_TREND", "EXIT_COUNTER_M"})
+MARKET_FACT_PREFIX = "RESEARCH_MDS_CANDIDATE:"
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,10 @@ def evaluate(book, event, revisions, allow_test_fixture):
             status = "PLAN_SUPERSEDED"
         elif request.operation not in plan.operations:
             status = "PLAN_DOES_NOT_ALLOW_ACTION"
+        elif any(fact.known_at < event.at and fact.source.startswith(MARKET_FACT_PREFIX)
+                 and not fact.source.startswith(f"{MARKET_FACT_PREFIX}{revision_digest(plan)}:")
+                 for fact in event.facts):
+            status = "MARKET_FACT_PLAN_REVISION_MISMATCH"
         elif any(fact.known_at < event.at and fact.observed_at <= plan.known_at for fact in event.facts):
             status = "CONDITION_NOT_NEW_UNDER_PLAN"
     elif request.operation not in INDEPENDENT_MANAGEMENT:
@@ -183,6 +189,14 @@ def input_revision(record):
         raise ValueError("PLAN_REPLAY_OPERATION_LIST_REQUIRED")
     values["operations"] = frozenset(operations)
     return PlanRevision(**values)
+
+
+def revision_record(plan):
+    return asdict(plan) | {"operations": sorted(plan.operations)}
+
+
+def revision_digest(plan):
+    return sha(encoded(revision_record(plan)).encode())
 
 
 def input_evaluation(*, at, before, operation, quantity, plan_id, expires_at, facts=(), approval=None,
@@ -273,9 +287,11 @@ def sh_market_candidates(session, market, contract, lifecycle):
     return {"recovery_candidate": day_event, "protection_candidate": night_event}, market_digests
 
 
-def first_early_candidate(series, *, start, cutoff, band):
+def first_early_candidate(series, *, start, cutoff, band, setup_not_before=None):
     """Return the first armed shape using the completed prefix at its own reveal clock."""
     for event in signals(series, 1, 1, side="LONG", start=start, cut=cutoff):
+        if setup_not_before is not None and event["shape_end"] - ONE < setup_not_before:
+            continue
         cut = event["available_at"] + US
         if cut > cutoff:
             break
@@ -287,6 +303,88 @@ def first_early_candidate(series, *, start, cutoff, band):
         if candidate["pre_touch_arm"]:
             return candidate
     return None
+
+
+def market_request(*, session, market, version, seed, revision, trading_day, start, cutoff, request_expires_at,
+                   band, operation, quantity, shape_period, confirmation_period):
+    """Compile one explicitly scoped market candidate into an unsigned replay tape."""
+    if version != MARKET_REQUEST_VERSION:
+        raise ValueError("PLAN_REPLAY_MARKET_REQUEST_VERSION_UNSUPPORTED")
+    position, plan = input_book(seed), input_revision(revision)
+    day = date.fromisoformat(trading_day)
+    start, cutoff = map(datetime.fromisoformat, (start, cutoff))
+    timestamp(start)
+    timestamp(cutoff)
+    expires = datetime.fromisoformat(request_expires_at)
+    timestamp(expires)
+    if (type(shape_period) is not int or type(confirmation_period) is not int
+            or (shape_period, confirmation_period) not in VARIANTS):
+        raise ValueError("PLAN_REPLAY_MARKET_TIMEFRAME_UNSUPPORTED")
+    if not isinstance(band, list) or len(band) != 2:
+        raise ValueError("PLAN_REPLAY_MARKET_BAND_ARRAY_REQUIRED")
+    lower, upper = map(decimal_text, band)
+    quantity = decimal_text(quantity)
+    if (position.contract != plan.contract or operation not in plan.operations
+            or not lower.is_finite() or not upper.is_finite() or not quantity.is_finite() or not lower < upper
+            or not start < cutoff or max(position.known_at, plan.known_at) >= min(cutoff, expires)
+            or plan.expires_at is not None and plan.expires_at < cutoff):
+        raise ValueError("PLAN_REPLAY_MARKET_REQUEST_SCOPE_INVALID")
+    series = read_window(session, market, position.contract, day)
+    if start < series[1][0].start or cutoff > series[1][-1].end + 2 * US:
+        raise ValueError("PLAN_REPLAY_MARKET_WINDOW_OUTSIDE_COVERAGE")
+    # Strictly later than both the applicable plan and the position pre-image.
+    effective_start = max(start, position.known_at + US, plan.known_at + US)
+    side = position.direction
+    if operation == "RECOVER_ORIGINAL":
+        if quantity != position.protection or not quantity:
+            raise ValueError("PLAN_REPLAY_MARKET_RECOVERY_SCOPE_INVALID")
+        events = signals(series, shape_period, confirmation_period, side=side, start=effective_start, cut=cutoff)
+        edge = upper if side == "SHORT" else lower
+        candidate = edge_candidates(
+            completed(series[confirmation_period], effective_start, cutoff), events, edge, side,
+        )["first_shape_after_fresh_cross_and_still_beyond"]
+    elif operation in ("PROTECT_EARLY", "PROTECT_REGULAR"):
+        if position.protection or not 0 < quantity <= position.original or (
+            operation == "PROTECT_REGULAR" and quantity != position.original
+        ):
+            raise ValueError("PLAN_REPLAY_MARKET_PROTECTION_SCOPE_INVALID")
+        side = "LONG" if side == "SHORT" else "SHORT"
+        if operation == "PROTECT_EARLY":
+            if (side, shape_period, confirmation_period) != ("LONG", 1, 1):
+                raise ValueError("PLAN_REPLAY_MARKET_EARLY_SCOPE_UNSUPPORTED")
+            candidate = first_early_candidate(series, start=start, cutoff=cutoff, band=(lower, upper),
+                                              setup_not_before=effective_start)
+        else:
+            events = signals(series, shape_period, confirmation_period, side=side, start=effective_start, cut=cutoff)
+            candidate = next((row for row in events if lower <= row["close"] <= upper), None)
+    else:
+        raise ValueError("PLAN_REPLAY_MARKET_OPERATION_UNSUPPORTED")
+
+    market_digests = {f"{period}m": digest(completed(rows, start, cutoff)) for period, rows in series.items()}
+    evaluations = []
+    if candidate is not None and candidate["available_at"] + US < cutoff:
+        known_at = candidate["available_at"]
+        setup = candidate["shape_end"] - timedelta(minutes=shape_period)
+        request = Intent(position, operation, quantity, plan.id, expires)
+        plan_digest = revision_digest(plan)
+        candidate_id = sha(encoded([plan.id, position.contract, operation, shape_period, confirmation_period,
+                                    lower, upper, candidate]).encode())
+        facts = [
+            asdict(Condition(name, request.scope, position.contract, True, setup, known_at,
+                             f"{MARKET_FACT_PREFIX}{plan_digest}:{candidate_id}", "EVENT_TIME"))
+            for name in REQUIRED[operation]
+        ]
+        evaluations.append(asdict(request) | dict(at=known_at + US, facts=facts))
+    tape = json.loads(encoded(dict(
+        version=INPUT_VERSION, cutoff=cutoff, seed=asdict(position),
+        revisions=[revision_record(plan)], evaluations=evaluations,
+    )))
+    return dict(
+        version=MARKET_REQUEST_VERSION, contract=position.contract, trading_day=day, operation=operation,
+        candidate=candidate, timeframe=dict(shape_minutes=shape_period, confirmation_minutes=confirmation_period),
+        band=(lower, upper), market_digests=market_digests, tape=tape, replay=replay_input(**tape),
+        declared_plan_revision=plan.id, plan_historical_revision_verified=False,
+    )
 
 
 def sh_oct27_case(*, market_input=None):
@@ -463,16 +561,24 @@ def main():
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--case", choices=("sh-oct27", "jm-oct23"))
     mode.add_argument("--input", type=Path, help="Replay a versioned JSON tape with supplied market facts and permissions.")
+    mode.add_argument("--market-request", type=Path, help="Compile a declared price band and completed bars into a tape.")
     parser.add_argument("--allow-test-fixture", action="store_true", help="Allow fixture permissions in an input tape.")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PLAN_REPLAY_OUTPUT_EXISTS")
-    if (args.input is not None and args.env_file is not None) or (args.allow_test_fixture and args.input is None):
+    if ((args.input is not None and args.env_file is not None)
+            or (args.allow_test_fixture and args.input is None)
+            or (args.market_request is not None and args.env_file is None)):
         parser.error("PLAN_REPLAY_INPUT_MODE_CONFLICT")
     try:
         if args.input is not None:
             tape = json.loads(args.input.read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
             result = replay_input(**tape, allow_test_fixture=args.allow_test_fixture)
+        elif args.market_request is not None:
+            definition = json.loads(args.market_request.read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
+            result = local_market_case(args.env_file, case=lambda market_input: market_request(
+                session=market_input[0], market=market_input[1], **definition,
+            ))
         else:
             case = jm_oct23_case if args.case == "jm-oct23" else sh_oct27_case
             result = case() if args.env_file is None else local_market_case(args.env_file, case=case)

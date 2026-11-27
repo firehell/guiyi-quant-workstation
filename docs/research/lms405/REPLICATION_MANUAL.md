@@ -71,6 +71,23 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 两案各运行两次，分别逐字节一致，动作、时间、许可、身份及前后仓位逐项与原报告一致。默认烧碱离线结果依然逐字节一致。文件入口的下一项是把已披露价带和完成K候选统一转换为可审查的外部事实，再评估纯行情近似。
 
+### 从已知价带生成待确认文件
+
+`--market-request` 读取一份声明计划的JSON，使用统一MDS加载单个物理合约的完整交易日。输入要求 `version=lms405-plan-market-request-v1`、`seed`、`revision`、`trading_day`、带时区的 `start`、`cutoff`、独立请求有效期 `request_expires_at`、两个十进制字符串组成的 `band`、`operation`、`quantity`、`shape_period`、`confirmation_period`。计划和种子沿用上节结构，实际出处与历史版本由研究输入提供。
+
+支持原向恢复、区内保护和原仓为空头时的1→1区前多向保护。恢复要求新穿越及确认仍在方向侧，区内保护要求收盘在价带内。区前保护在声明窗口内保留同段接触历史，即使某次接触比计划或仓位更早也不重置；候选自身仍须在计划及仓位可知后形成。这是保守的研究候选口径，作者区间重置条件未知。
+
+报告内嵌通用 `tape`。报告记录确认周期、形态和价格。候选事实绑定这些内容及完整计划修订指纹。复算换掉计划内容或来源时，旧候选事实会被拒绝。输入的截止时刻可改变观测范围，已生成候选的许可作用域还取决于单独给定的请求有效期。待确认标识产生后，许可方须以对应作用域创建独立记录，并将下一次评估放在许可可知之后、计划和请求到期之前。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py \
+  --market-request output/lms405-market-request-20261127/recover-request.json \
+  --env-file .env --output /tmp/lms405-market-request-new.json
+```
+
+烧碱日盘14:08恢复、夜盘21:21提前保护分别用对应计划和条件前像复算。夜盘前像假设日盘撤腿已发生。两次均仅等待当次许可，数量保持各自起点。两组各复算两次逐字节一致。报告在 `output/lms405-market-request-20261127/`，日盘与夜盘SHA256分别为 `d2a262f6e598d54d6113193522c1fd197bf84f97b4bc8c46653fc6a25f777984` 和 `490008d4d221429f11f8f30fee4788d2eb0ce74b10db62bf7ab1b3a03d3b5f07`。LMS定向测试710通过、1跳过。
+
 ## 菜油、纯碱与PTA的计划准入
 
 [三案准入对照](evidence/PORTFOLIO_REPLAY.md#菜油纯碱与pta的计划准入对照)复算仓位用途、跨交易日可见腿及公开价带暂停三类缺口。首个候选留出窗口预留为11月16日至20日交易日，待规则固定后再读取验证材料。焦煤、烧碱、玻璃、铁矿、PVC与橡胶的已见对照仍归开发证据。
