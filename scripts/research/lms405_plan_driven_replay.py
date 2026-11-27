@@ -1,7 +1,7 @@
 """Replay attributed LMS research proposals against the plan known at each evaluation."""
 
 from dataclasses import asdict, dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 import argparse
@@ -11,9 +11,14 @@ from guiyi_quant.lms405.handoff import HandoffConfirmation
 from guiyi_quant.lms405.portfolio_tasks import REQUIRED, Book, Intent, assess
 from guiyi_quant.lms405.public_conditions import Condition
 from lms405_portfolio_replay import input_sources
+from lms405_pre_touch_protection import analyze
 from lms405_protection_lot_timing import verified_json
+from lms405_protection_timeframes import read_window
 from lms405_public_plan_roles import load_source
+from lms405_recovery_confirmation_audit import edge_candidates
 from lms405_right_side_study import ONE, US
+from lms405_sh_lock_lifecycle import NIGHT_RANGE, OLD_RANGE, completed, digest, signals
+from lms405_sh_protection_replacement import LIFECYCLE, LIFECYCLE_SHA
 from lms_near405_replay import encoded
 
 VERSION = "lms405-plan-driven-replay-v1"
@@ -138,12 +143,59 @@ def report_rows(rows):
     ) for row in rows]
 
 
-def sh_oct27_case():
-    """Use frozen signal candidates and explicit test approvals for the first linked case."""
+SH_CANDIDATE_KEYS = ("shape_end", "confirmed_at", "available_at", "boundary", "close", "ibar", "pinbar")
+
+
+def sh_market_candidates(session, market, contract, lifecycle):
+    day, night = (read_window(session, market, contract, date(2026, 10, day)) for day in (27, 28))
+    market_digests = {f"{p}m": dict(afternoon=digest(day[p]), night=digest(night[p])) for p in (1, 5)}
+    if market_digests != lifecycle["market"]:
+        raise ValueError("PLAN_REPLAY_SH_MARKET_CHANGED")
+    day_start, day_cut, night_start, night_cut = (
+        datetime.fromisoformat(lifecycle[key]) for key in ("afternoon_start", "afternoon_cut", "night_start", "night_cut")
+    )
+
+    def recovery(cut):
+        return edge_candidates(
+            completed(day[1], day_start, cut), signals(day, 5, 1, side="SHORT", start=day_start, cut=cut),
+            OLD_RANGE[1], "SHORT",
+        )["first_shape_after_fresh_cross_and_still_beyond"]
+
+    day_event = recovery(day_cut)
+    if (day_event is None or recovery(day_event["available_at"]) is not None
+            or recovery(day_event["available_at"] + US) != day_event):
+        raise ValueError("PLAN_REPLAY_SH_RECOVERY_PREFIX_CHANGED")
+
+    night_event = first_early_candidate(night, start=night_start, cutoff=night_cut, band=NIGHT_RANGE)
+    if night_event is None:
+        raise ValueError("PLAN_REPLAY_SH_PROTECTION_CANDIDATE_MISSING")
+    return {"recovery_candidate": day_event, "protection_candidate": night_event}, market_digests
+
+
+def first_early_candidate(series, *, start, cutoff, band):
+    """Return the first armed shape using the completed prefix at its own reveal clock."""
+    for event in signals(series, 1, 1, side="LONG", start=start, cut=cutoff):
+        cut = event["available_at"] + US
+        if cut > cutoff:
+            break
+        prefix = {period: [bar for bar in rows if bar.end + US < cut] for period, rows in series.items()}
+        scoped = analyze(prefix, start=start, cut=cut, band=band, side="LONG", leg=None, variants=((1, 1),))
+        candidate = scoped["variants"]["1m_to_1m"][-1]
+        if candidate["confirmed_at"] != event["confirmed_at"]:
+            raise ValueError("PLAN_REPLAY_SH_NIGHT_PREFIX_CHANGED")
+        if candidate["pre_touch_arm"]:
+            return candidate
+    return None
+
+
+def sh_oct27_case(*, market_input=None):
+    """Run the first linked case with frozen or newly computed market candidates."""
     path = Path("output/lms405-sh-cycle-permissions-20261126/final-a.json")
     digest = "f69045985afb4b72644c450627ba269eb35c3153361d6138964ffe8c022920a6"
     report = verified_json(path, digest)
     scenario = report["scenarios"]["old_near_5m_to_1m:both_immediate"]
+    candidate_inputs = {name: scenario[name] for name in ("recovery_candidate", "protection_candidate")}
+    market_report = {}
     plan_ids = ("A5358325972992140", "A5358686695981271")
     position_id = "WRoAkcEppg"
     index = input_sources()
@@ -151,6 +203,18 @@ def sh_oct27_case():
     if any(source != report["sources"][key] for key, source in sources.items()):
         raise ValueError("PLAN_REPLAY_SH_SOURCES_CHANGED")
     contract = report["contract"]
+    if market_input is not None:
+        lifecycle = verified_json(LIFECYCLE, LIFECYCLE_SHA)
+        recomputed, market_digests = sh_market_candidates(*market_input, contract, lifecycle)
+        for name, candidate in recomputed.items():
+            frozen = candidate_inputs[name]
+            if encoded([candidate[key] for key in SH_CANDIDATE_KEYS]) != encoded(
+                [frozen[key] for key in SH_CANDIDATE_KEYS]
+            ):
+                raise ValueError("PLAN_REPLAY_SH_CANDIDATE_CHANGED")
+        candidate_inputs = recomputed
+        market_report = dict(candidate_origin="LOCAL_MDS_COMPLETED_BARS", market_digests=market_digests,
+                             advance_candidate_uses_only_signal_prefix=True)
     known_at = datetime.fromisoformat(sources[position_id]["published_at"]) + ONE
     seed = Book(contract, f"{position_id}:CONDITIONAL", "SHORT", known_at,
                 Decimal(20), Decimal(20), attempt=1)
@@ -164,10 +228,11 @@ def sh_oct27_case():
         published = datetime.fromisoformat(source["published_at"])
         revisions.append(PlanRevision(contract, source_id, published, published + ONE,
                                       source["source_url"], frozenset({operation})))
-        candidate = scenario[candidate_name]
-        setup_start = datetime.fromisoformat(candidate["shape_end"]) - shape_period * ONE
-        confirmed = datetime.fromisoformat(candidate["confirmed_at"])
-        available = datetime.fromisoformat(candidate["available_at"])
+        candidate = candidate_inputs[candidate_name]
+        shape_end, confirmed, available = (
+            datetime.fromisoformat(str(candidate[key])) for key in ("shape_end", "confirmed_at", "available_at")
+        )
+        setup_start = shape_end - shape_period * ONE
         if not setup_start < confirmed < available:
             raise ValueError("PLAN_REPLAY_SH_CANDIDATE_CLOCK_CHANGED")
         at = available + 4 * US
@@ -189,29 +254,51 @@ def sh_oct27_case():
         version=VERSION, seed=asdict(seed), sources=sources, frozen_case_sha256=digest,
         revisions=[asdict(row) | dict(operations=sorted(row.operations)) for row in revisions],
         candidates={
-            "RECOVER_ORIGINAL": dict(shape_period=5, confirmation_period=1, **scenario["recovery_candidate"]),
-            "PROTECT_EARLY": dict(shape_period=1, confirmation_period=1, **scenario["protection_candidate"]),
+            "RECOVER_ORIGINAL": dict(shape_period=5, confirmation_period=1, **candidate_inputs["recovery_candidate"]),
+            "PROTECT_EARLY": dict(shape_period=1, confirmation_period=1, **candidate_inputs["protection_candidate"]),
         },
         historical_plan_revision_verified=False, public=report_rows(public), public_end=asdict(public_end),
         test_fixture=report_rows(fixture), test_fixture_end=asdict(fixture_end), author_action_samples=0,
-        author_match_rate=None, executable=False, fills=None, pnl=None,
+        author_match_rate=None, executable=False, fills=None, pnl=None, **market_report,
     )
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--env-file", type=Path, help="Recompute candidates using local MDS and this environment file.")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PLAN_REPLAY_OUTPUT_EXISTS")
     try:
-        result = sh_oct27_case()
+        result = sh_oct27_case() if args.env_file is None else local_market_case(args.env_file)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result))
     except (KeyError, ValueError, OSError) as exc:
         code = str(exc)
         parser.exit(2, (code if code.isidentifier() and code.startswith("PLAN_REPLAY_")
                         else "PLAN_REPLAY_INPUT_UNVERIFIED") + "\n")
+
+
+def local_market_case(env_file):
+    from dotenv import load_dotenv
+
+    if not env_file.is_file():
+        raise ValueError("PLAN_REPLAY_ENV_FILE_MISSING")
+    load_dotenv(env_file, override=False)
+    from sqlalchemy.exc import OperationalError
+    from app.db.readonly import readonly_transaction
+    from app.db.session import SessionLocal
+    from app.market_data.composition import build_market_data_service
+    from app.market_data.market_data_service import MarketDataError
+
+    try:
+        with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
+            return sh_oct27_case(market_input=(session, build_market_data_service(session)))
+    except MarketDataError as exc:
+        raise ValueError("PLAN_REPLAY_MDS_" + exc.code) from None
+    except OperationalError:
+        raise ValueError("PLAN_REPLAY_LOCAL_MDS_UNAVAILABLE") from None
 
 
 if __name__ == "__main__":

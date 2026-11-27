@@ -14,6 +14,20 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 两次生成逐字节一致，定稿 `output/lms405-plan-driven-sh-20261127/verified.json` 的SHA256为 `2b2cee4f75250ef2e5681bd4e93111a2499e799d8a5686213e33913ed7287490`。全链测试还覆盖首次进入、提前保护、补足、开独立M、恢复原方向、分别退出、暂停及新计划回补。修订有效期和信号优先级仍按各案可知证据处理。下一批接行情候选生成与输入映射，再补焦煤的跨交易日及部分换腿。
 
+### 烧碱从本地行情生成候选
+
+增加 `--env-file .env` 可通过MDS只读加载SH2701的10月27、28日交易日。两日1分钟、5分钟核对冻结指纹，5分钟和15分钟均核对分钟聚合。日盘沿用旧抵抗近沿、5→1及新穿越的既有对照，14:08确认。夜盘用1→1逐个检查到候选可知时的完整Bar，21:21确认时尚无保护带接触。这项早段结果的首次触区和信号存续字段为空，后续触区无需进入此前判断。同一确认分钟已经触区的情形不通过区前分支。
+
+本地行情模式与冻结方式的两套仓位结果、动作及许可记录逐字段一致。许可仍是独立的测试输入，历史版本和实际作者触发仍待证。无参数的原离线结果逐字节一致。实际入口如下。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py \
+  --env-file .env --output /tmp/lms405-sh-plan-driven-market-new.json
+```
+
+两次行情模式复算逐字节一致，报告 `output/lms405-plan-driven-sh-20261127/market-verified.json` 的SHA256为 `e7d263ac0690ba2fac929064449e3199685f6d4647eecf058ce65a6d7a916a6e`。LMS定向测试707通过、1跳过，独立复核通过。
+
 ## 菜油、纯碱与PTA的计划准入
 
 [三案准入对照](evidence/PORTFOLIO_REPLAY.md#菜油纯碱与pta的计划准入对照)复算仓位用途、跨交易日可见腿及公开价带暂停三类缺口。首个候选留出窗口预留为11月16日至20日交易日，待规则固定后再读取验证材料。焦煤、烧碱、玻璃、铁矿、PVC与橡胶的已见对照仍归开发证据。

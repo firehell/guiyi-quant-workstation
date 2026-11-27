@@ -4,10 +4,11 @@ from decimal import Decimal
 
 import pytest
 
+from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.handoff import HandoffConfirmation
 from guiyi_quant.lms405.portfolio_tasks import REQUIRED, Book, Intent
 from guiyi_quant.lms405.public_conditions import Condition
-from lms405_plan_driven_replay import Evaluation, PlanRevision, replay
+from lms405_plan_driven_replay import Evaluation, PlanRevision, first_early_candidate, replay
 
 START = datetime(2026, 10, 22, 12, tzinfo=UTC)
 SECOND = timedelta(seconds=1)
@@ -88,3 +89,21 @@ def test_expired_plan_and_late_revision_cannot_revive_an_approval():
     rows, terminal = replay(seed, (step,), (older, active, later), cutoff=step.at + SECOND, allow_test_fixture=True)
     assert rows[0]["status"] == "PLAN_EXPIRED" and terminal == seed
     assert rows[0]["current_plan_id"] == "active" and rows[0]["approval"] == step.approval
+
+
+def test_early_protection_does_not_read_future_or_same_minute_contact():
+    minute = timedelta(minutes=1)
+    us = timedelta(microseconds=1)
+    candles = []
+    for i, prices in enumerate(((100, 107, 98, 104), (103, 105, 100, 103), (104, 107, 103, 106),
+                                (106, 111, 104, 110))):
+        start = START + i * minute
+        candles.append(Bar("SH2701", start + minute, *map(Decimal, prices), start=start))
+    band = Decimal(109), Decimal(110)
+    known = candles[2].end + us
+    assert first_early_candidate({1: candles}, start=START, cutoff=known, band=band) is None
+    early = first_early_candidate({1: candles}, start=START, cutoff=known + us, band=band)
+    later = first_early_candidate({1: candles}, start=START, cutoff=candles[-1].end + 2 * us, band=band)
+    assert early == later and early["pre_touch_arm"] and early["segment_first_touch"] is None
+    same_minute = candles[:2] + [replace(candles[2], high=Decimal(109))]
+    assert first_early_candidate({1: same_minute}, start=START, cutoff=known + us, band=band) is None
