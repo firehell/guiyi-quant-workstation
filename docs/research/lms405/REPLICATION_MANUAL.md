@@ -170,6 +170,28 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 三份行情报告在 `output/lms405-plan-lifecycle-20261127/`。两次只读复算逐字节一致，四份既有首次进场报告及两份离线烧碱、焦煤计划案例逐字节一致。作者动作可评分样本仍为0。
 
+### 连续行情和仓位回放
+
+`--market-sequence` 读取 `lms405-plan-market-sequence-v1`。每次只给一个实月和一个初始仓位。`steps` 按时钟声明互不重叠的行情窗口、动作、数量及预期计划ID，后续窗口的仓位总是取上一窗口的结果。窗口先核对当前计划及仓位，再从完成K生成候选，并在许可实际可知时重新核对最新修订。计划已暂停、换版、到期或仓位不符合动作要求时保留仓位。较早目标可在已声明承接的退出试验中作为价格观察，新形态仍须出现在仓位可知后。各次候选在下一根1m可知时或明确到期时失效，取较早者。
+
+支持提前保护、常规保护及补足。补足只在已有部分保护时查指定带内的反向确认，数量必须恰好补齐原仓与保护之差。已有保护的状态不能以提前保护重开；撤腿还是回补按各自当前仓位判断。许可为独立记录，只能为对应窗口和当前作用域生效；示例测试许可单独保存，普通输入默认没有许可。
+
+| 条件试验 | 默认无许可 | 明确提供两份测试许可 |
+|---|---|---|
+| SH2701 烧碱 | 14:08候选待许可。午盘保护多未撤，夜盘不可将原双腿当作只有原空 | 14:08减少保护多20，原空20延续。夜盘21:21重新生成候选并保护多20 |
+| V2701 PVC | 10月26日10:50候选待许可。原多40仍在，次日回补被仓位挡住 | 当日退出原多40成为空仓，次日10:46获独立许可后以1单位开始第二次研究参与 |
+
+烧碱午盘前像来自已见图；PVC允许承接前夜目标使用前述研究假设。两个试验的时间与仓位属于条件投影。作者未公开可核的许可记录，行为匹配分母保持0。 [烧碱连续图](evidence/SH2701_OCT_CASE.md#同一持仓路径核对午盘收盘和夜盘) · [PVC退出对照](evidence/V_TA_CASE.md#pvc-白天旧多止盈的候选时钟)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-sequence docs/research/lms405/evidence/plan-market-sequence/sh-recover-reprotect.json \
+  --output /tmp/lms405-sh-sequence-new.json
+```
+
+若需复算测试确认，先用 `jq --slurpfile approvals <同名.fixtures.json> '. + {approvals: $approvals[0]}' <输入文件>` 生成一份含测试记录的输入，再显式增加 `--allow-test-fixture`，并使用新的输出路径。两案均连续复算两次逐字节一致，四次测试许可的作用域逐项核对。无许可与测试许可报告在 `output/lms405-plan-market-sequence-20261127/`。
+
 ### 烧碱从本地行情生成候选
 
 增加 `--env-file .env` 可通过MDS只读加载SH2701的10月27、28日交易日。两日1分钟、5分钟核对冻结指纹，5分钟和15分钟均核对分钟聚合。日盘沿用旧抵抗近沿、5→1及新穿越的既有对照，14:08确认。夜盘用1→1逐个检查到候选可知时的完整Bar，21:21确认时尚无保护带接触。这项早段结果的首次触区和信号存续字段为空，后续触区无需进入此前判断。同一确认分钟已经触区的情形不通过区前分支。

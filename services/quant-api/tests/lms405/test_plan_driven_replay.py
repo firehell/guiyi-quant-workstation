@@ -300,3 +300,61 @@ def test_plan_exit_keeps_other_legs_and_requires_explicit_role_and_fresh_evidenc
     assert m["exit"]["managed_side"] == "SHORT"
     assert m["candidate"]["confirmed_at"] == bars[5].end
     assert m["replay"]["events"][0]["unknown"] == ["SCOPED_APPROVAL"]
+
+
+def test_market_sequence_uses_only_confirmed_books_and_rechecks_the_active_plan(monkeypatch):
+    minute, us = timedelta(minutes=1), timedelta(microseconds=1)
+    values = ((100, 107, 98, 104), (103, 105, 100, 103), (104, 107, 103, 106), (106, 111, 104, 110))
+    bars = [Bar("SH2701", START + (i + 1) * minute, *map(Decimal, prices), start=START + i * minute)
+            for i, prices in enumerate(values + values + (values[-1],))]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
+    seed = Book("SH2701", "sequence-test", "SHORT", START - minute, Decimal(20), attempt=1)
+    first = PlanRevision(seed.contract, "protect", START - minute, START - minute, "source-early",
+                         frozenset({"PROTECT_EARLY"}))
+    second = PlanRevision(seed.contract, "topup", START + 3 * minute + 5 * us, START + 3 * minute + 5 * us,
+                          "source-topup", frozenset({"PROTECT_TOPUP"}))
+    first_end, last_end = START + 4 * minute, bars[-1].end + 2 * us
+    common = dict(trading_day="2026-10-22", shape_period=1, confirmation_period=1)
+    steps = [common | dict(id="early", plan_id=first.id, operation="PROTECT_EARLY", quantity="7",
+                           start=START.isoformat(), cutoff=first_end.isoformat(),
+                           request_expires_at=first_end.isoformat(), band=["109", "110"]),
+             common | dict(id="topup", plan_id=second.id, operation="PROTECT_TOPUP", quantity="13",
+                           start=first_end.isoformat(), cutoff=last_end.isoformat(),
+                           request_expires_at=last_end.isoformat(), band=["105", "107"])]
+    plans = json.loads(encoded([plan_replay.revision_record(p) for p in (first, second)]))
+    definition = dict(version=plan_replay.MARKET_SEQUENCE_VERSION, seed=json.loads(encoded(asdict(seed))),
+                      cutoff=last_end.isoformat(), revisions=plans, steps=steps)
+
+    def run(**changes):
+        return plan_replay.market_sequence(session=None, market=None, **(definition | changes))
+
+    def confirm(row, *, accepted=True, delay=1):
+        at = row["evaluation"]["at"]
+        return dict(scope=row["evaluation"]["pending_approval_scope"], id=f"approval-{row['id']}",
+                    accepted=accepted, decided_at=at.isoformat(), known_at=(at + delay * us).isoformat(),
+                    record_kind="TEST_FIXTURE")
+
+    baseline = run()
+    assert [row["status"] for row in baseline["steps"]] == ["INDETERMINATE", "POSITION_PREREQUISITE_UNMET"]
+    first_approval = confirm(baseline["steps"][0])
+    with pytest.raises(ValueError, match="FIXTURE_APPROVAL_DISABLED"):
+        run(approvals={"early": first_approval})
+    left = run(approvals={"early": first_approval}, allow_test_fixture=True)
+    assert left["steps"][1]["before"] == left["steps"][0]["after"]
+    assert left["final"]["protection"] == 7
+    approvals = {"early": first_approval, "topup": confirm(left["steps"][1])}
+    complete = run(approvals=approvals, allow_test_fixture=True)
+    assert [row["status"] for row in complete["steps"]] == ["CONDITIONAL_ACTION"] * 2
+    assert complete["final"]["protection"] == 20
+    assert run(cutoff=first_end.isoformat(), approvals=approvals, allow_test_fixture=True)["steps"] == complete["steps"][:1]
+
+    rejected = run(approvals={"early": confirm(baseline["steps"][0], accepted=False)}, allow_test_fixture=True)
+    assert [row["status"] for row in rejected["steps"]] == ["REJECTED", "POSITION_PREREQUISITE_UNMET"]
+    late = run(approvals={"early": confirm(baseline["steps"][0], delay=6)}, allow_test_fixture=True)
+    assert late["steps"][0]["status"] == "PLAN_SUPERSEDED" and late["final"] == asdict(seed)
+    stale_topup = confirm(left["steps"][1], delay=1_000_000 * 60)
+    expired = run(approvals={"early": first_approval, "topup": stale_topup}, allow_test_fixture=True)
+    assert expired["steps"][1]["status"] == "EXPIRED" and expired["final"] == left["final"]
+    short_end = first_end - 30 * timedelta(seconds=1)
+    shorter_plans = [plans[0] | {"expires_at": short_end.isoformat()}, plans[1]]
+    assert run(revisions=shorter_plans)["steps"][0]["cutoff_exclusive"] == short_end

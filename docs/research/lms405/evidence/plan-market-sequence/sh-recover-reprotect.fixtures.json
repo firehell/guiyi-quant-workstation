@@ -1,0 +1,18 @@
+{
+  "recover": {
+    "scope": "2d14e8bc0807b76c5afc29a3b8aec119bc862dd3f1d58d634574a3ee441a3d73",
+    "id": "fixture:sh-recover-reprotect:recover",
+    "accepted": true,
+    "decided_at": "2026-10-27T06:08:00.000002+00:00",
+    "known_at": "2026-10-27T06:08:00.000003+00:00",
+    "record_kind": "TEST_FIXTURE"
+  },
+  "protect": {
+    "scope": "5eb4b082c4804733a4bfd62989cf88844dd3c483084d3702f6f3b5c968c0bab7",
+    "id": "fixture:sh-recover-reprotect:protect",
+    "accepted": true,
+    "decided_at": "2026-10-27T13:21:00.000002+00:00",
+    "known_at": "2026-10-27T13:21:00.000003+00:00",
+    "record_kind": "TEST_FIXTURE"
+  }
+}

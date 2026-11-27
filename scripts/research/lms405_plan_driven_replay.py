@@ -32,6 +32,7 @@ from lms_near405_replay import encoded, sha
 VERSION = "lms405-plan-driven-replay-v1"
 INPUT_VERSION = "lms405-plan-replay-input-v1"
 MARKET_REQUEST_VERSION = "lms405-plan-market-request-v1"
+MARKET_SEQUENCE_VERSION = "lms405-plan-market-sequence-v1"
 INDEPENDENT_PREFIX = "INDEPENDENT:"
 INDEPENDENT_MANAGEMENT = frozenset({"CLEAR_TREND", "EXIT_COUNTER_M"})
 MARKET_FACT_PREFIX = "RESEARCH_MDS_CANDIDATE:"
@@ -369,11 +370,32 @@ def exit_candidate(series, *, role, side, plan_start, fresh_start, cutoff, lower
                            status="CANDIDATE_FOUND" if candidate else "NO_FRESH_REVERSAL_AFTER_TARGET")
 
 
+def market_position_ready(position, operation, quantity):
+    original, protection, counter = position.original, position.protection, position.counter_m
+    match operation:
+        case "ENTER_TREND" | "REENTER_TREND":
+            return not (original or protection or counter) and (position.attempt == 0) == (operation == "ENTER_TREND")
+        case "CLEAR_TREND":
+            return quantity == original + protection
+        case "EXIT_COUNTER_M":
+            return quantity <= counter
+        case "RECOVER_ORIGINAL":
+            return quantity == protection
+        case "PROTECT_EARLY":
+            return not protection and quantity <= original
+        case "PROTECT_REGULAR":
+            return not protection and quantity == original
+        case "PROTECT_TOPUP":
+            return bool(protection) and quantity == original - protection
+        case _:
+            raise ValueError("PLAN_REPLAY_MARKET_OPERATION_UNSUPPORTED")
+
+
 def market_request(*, session, market, version, seed, revision, trading_day, start, cutoff, request_expires_at,
                    band, operation, quantity, shape_period, confirmation_period, entry_route=None,
-                   next_reference=None, exit_role=None, inherit_observed_target=False):
+                   next_reference=None, exit_role=None, inherit_observed_target=False, sequence_window=False):
     """Compile one explicitly scoped market candidate into an unsigned replay tape."""
-    if version != MARKET_REQUEST_VERSION:
+    if version != MARKET_REQUEST_VERSION or type(sequence_window) is not bool:
         raise ValueError("PLAN_REPLAY_MARKET_REQUEST_VERSION_UNSUPPORTED")
     position, plan = input_book(seed), input_revision(revision)
     day = date.fromisoformat(trading_day)
@@ -402,8 +424,7 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
             or plan.expires_at is not None and plan.expires_at < cutoff):
         raise ValueError("PLAN_REPLAY_MARKET_REQUEST_SCOPE_INVALID")
     if entry_operation:
-        first_entry = operation == "ENTER_TREND"
-        if (position.original or position.protection or position.counter_m or first_entry != (position.attempt == 0)
+        if (not market_position_ready(position, operation, quantity)
                 or not isinstance(entry_route, str) or entry_route not in ENTRY_ROUTES):
             raise ValueError("PLAN_REPLAY_MARKET_ENTRY_SCOPE_INVALID")
         if entry_route in RIGHT_ENTRY_ROUTES:
@@ -420,8 +441,7 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
     if exit_operation:
         if not isinstance(exit_role, str) or exit_role not in EXIT_ROLES:
             raise ValueError("PLAN_REPLAY_MARKET_EXIT_ROLE_REQUIRED")
-        if (operation == "CLEAR_TREND" and quantity != position.original + position.protection
-                or operation == "EXIT_COUNTER_M" and quantity > position.counter_m):
+        if not market_position_ready(position, operation, quantity):
             raise ValueError("PLAN_REPLAY_MARKET_EXIT_QUANTITY_INVALID")
         if exit_role == "ADVERSE_EXIT" and (shape_period, confirmation_period) != (1, 1):
             raise ValueError("PLAN_REPLAY_MARKET_ADVERSE_CLOSE_REQUIRES_1M")
@@ -454,17 +474,15 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
         diagnostics["exit"] = dict(role=exit_role, managed_side=exit_side,
                                    inherit_observed_target=inherit_observed_target, **diagnostic)
     elif operation == "RECOVER_ORIGINAL":
-        if quantity != position.protection or not quantity:
+        if not market_position_ready(position, operation, quantity):
             raise ValueError("PLAN_REPLAY_MARKET_RECOVERY_SCOPE_INVALID")
         events = signals(series, shape_period, confirmation_period, side=side, start=effective_start, cut=cutoff)
         edge = upper if side == "SHORT" else lower
         candidate = edge_candidates(
             completed(series[confirmation_period], effective_start, cutoff), events, edge, side,
         )["first_shape_after_fresh_cross_and_still_beyond"]
-    elif operation in ("PROTECT_EARLY", "PROTECT_REGULAR"):
-        if position.protection or not 0 < quantity <= position.original or (
-            operation == "PROTECT_REGULAR" and quantity != position.original
-        ):
+    elif operation in ("PROTECT_EARLY", "PROTECT_REGULAR", "PROTECT_TOPUP"):
+        if not market_position_ready(position, operation, quantity):
             raise ValueError("PLAN_REPLAY_MARKET_PROTECTION_SCOPE_INVALID")
         side = "LONG" if side == "SHORT" else "SHORT"
         if operation == "PROTECT_EARLY":
@@ -480,11 +498,13 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
 
     market_digests = {f"{period}m": digest(completed(rows, start, cutoff)) for period, rows in series.items()}
     evaluations = []
-    if diagnostics and candidate is not None:
+    cap_approval = bool(diagnostics) or sequence_window
+    if cap_approval and candidate is not None:
         # The next minute can change the premise. A saved tape cannot authorize across it.
         expires = min(expires, candidate["confirmed_at"] + ONE + US)
-        diagnostics["entry" if entry_operation else "exit"]["candidate_expires_at"] = expires
-    ready_before = min(cutoff, expires) if diagnostics else cutoff
+        if diagnostics:
+            diagnostics["entry" if entry_operation else "exit"]["candidate_expires_at"] = expires
+    ready_before = min(cutoff, expires) if cap_approval else cutoff
     if candidate is not None and candidate["available_at"] + US < ready_before:
         known_at = candidate["available_at"]
         setup = candidate["observed_at"] if exit_role == "ADVERSE_EXIT" else candidate["shape_end"] - shape_period * ONE
@@ -512,6 +532,99 @@ def market_request(*, session, market, version, seed, revision, trading_day, sta
         band=(lower, upper), market_digests=market_digests, tape=tape, replay=replay_input(**tape),
         declared_plan_revision=plan.id, plan_historical_revision_verified=False, **diagnostics,
     )
+
+
+def market_sequence(*, session, market, version, seed, revisions, steps, cutoff, approvals=None,
+                    allow_test_fixture=False):
+    """Chain nonoverlapping market windows using each prior confirmed research book."""
+    if (version != MARKET_SEQUENCE_VERSION or not isinstance(steps, list) or not isinstance(revisions, list)
+            or type(allow_test_fixture) is not bool):
+        raise ValueError("PLAN_REPLAY_MARKET_SEQUENCE_CONTRACT_INVALID")
+    position = input_book(seed)
+    plans = tuple(input_revision(row) for row in revisions)
+    limit = datetime.fromisoformat(cutoff)
+    timestamp(limit)
+    if any(plan.contract != position.contract for plan in plans):
+        raise ValueError("PLAN_REPLAY_MARKET_SEQUENCE_CONTRACT_MISMATCH")
+
+    windows = []
+    seen = set()
+    previous_end = None
+    for step in steps:
+        key = step["id"]
+        start, end = (datetime.fromisoformat(step[field]) for field in ("start", "cutoff"))
+        timestamp(start)
+        timestamp(end)
+        if (not isinstance(key, str) or not key.strip() or key in seen
+                or not start < end or (previous_end is not None and start < previous_end)
+                or {"seed", "revision", "version", "sequence_window"} & step.keys()):
+            raise ValueError("PLAN_REPLAY_MARKET_SEQUENCE_WINDOW_INVALID")
+        seen.add(key)
+        previous_end = end
+        windows.append((key, start, end, step))
+    if approvals is None:
+        approvals = {}
+    if not isinstance(approvals, dict) or not approvals.keys() <= seen:
+        raise ValueError("PLAN_REPLAY_MARKET_SEQUENCE_APPROVAL_STEP_INVALID")
+
+    rows = []
+    for key, start, end, step in windows:
+        if start >= limit or position.known_at >= limit:
+            break
+        end = min(end, limit)
+        plan, unavailable = current_plan(position.contract, plans, start)
+        operation = step["operation"]
+        quantity = decimal_text(step["quantity"])
+        if not quantity.is_finite() or quantity <= 0:
+            raise ValueError("PLAN_REPLAY_MARKET_SEQUENCE_QUANTITY_INVALID")
+        before = asdict(position)
+        row = dict(id=key, operation=operation, before=before, after=before, start=start, cutoff_exclusive=end,
+                   current_plan_id=plan.id if plan else None)
+        rows.append(row)
+        if unavailable or plan.id != step["plan_id"]:
+            row["status"] = unavailable or "PLAN_SUPERSEDED"
+            continue
+        if operation not in plan.operations:
+            row["status"] = "PLAN_DOES_NOT_ALLOW_ACTION"
+            continue
+        if not market_position_ready(position, operation, quantity):
+            row["status"] = "POSITION_PREREQUISITE_UNMET"
+            continue
+        if plan.expires_at is not None:
+            end = min(end, plan.expires_at)
+            row["cutoff_exclusive"] = end
+        if max(position.known_at, plan.known_at) + US >= end:
+            row["status"] = "NO_VISIBLE_EVALUATION"
+            continue
+
+        arguments = {name: value for name, value in step.items() if name not in {"id", "plan_id", "cutoff"}}
+        compiled = market_request(session=session, market=market, version=MARKET_REQUEST_VERSION,
+                                  seed=json.loads(encoded(before)), revision=json.loads(encoded(revision_record(plan))),
+                                  cutoff=end.isoformat(), sequence_window=True, **arguments)
+        row["market"] = compiled
+        tape = compiled["tape"] | {"revisions": revisions}
+        if not tape["evaluations"]:
+            row["status"] = "NO_MARKET_CANDIDATE"
+            continue
+        result = replay_input(**tape, allow_test_fixture=allow_test_fixture)
+        event, = result["events"]
+        pending = event.get("pending_approval_scope")
+        confirmation = approvals.get(key)
+        if pending is not None and confirmation is not None:
+            known = datetime.fromisoformat(confirmation["known_at"])
+            timestamp(known)
+            if known + US < end:
+                evaluation, = tape["evaluations"]
+                at = max(event["at"], known + US)
+                tape["evaluations"] = [evaluation | {"at": at.isoformat(), "approval": confirmation}]
+                result = replay_input(**tape, allow_test_fixture=allow_test_fixture)
+                event, = result["events"]
+        row.update(status=event["status"], evaluation=event, after=result["final"])
+        position = input_book(json.loads(encoded(result["final"])))
+
+    return dict(version=version, cutoff_exclusive=limit, steps=rows,
+                final=asdict(position) if position.known_at < limit else None, test_fixture_allowed=allow_test_fixture,
+                author_action_samples=0, author_match_rate=None, executable=False, fills=None, pnl=None)
 
 
 def sh_oct27_case(*, market_input=None):
@@ -689,13 +802,14 @@ def main():
     mode.add_argument("--case", choices=("sh-oct27", "jm-oct23"))
     mode.add_argument("--input", type=Path, help="Replay a versioned JSON tape with supplied market facts and permissions.")
     mode.add_argument("--market-request", type=Path, help="Compile a declared price band and completed bars into a tape.")
+    mode.add_argument("--market-sequence", type=Path, help="Chain planned market windows with scoped approvals.")
     parser.add_argument("--allow-test-fixture", action="store_true", help="Allow fixture permissions in an input tape.")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("PLAN_REPLAY_OUTPUT_EXISTS")
     if ((args.input is not None and args.env_file is not None)
-            or (args.allow_test_fixture and args.input is None)
-            or (args.market_request is not None and args.env_file is None)):
+            or (args.allow_test_fixture and args.input is None and args.market_sequence is None)
+            or ((args.market_request is not None or args.market_sequence is not None) and args.env_file is None)):
         parser.error("PLAN_REPLAY_INPUT_MODE_CONFLICT")
     try:
         if args.input is not None:
@@ -705,6 +819,11 @@ def main():
             definition = json.loads(args.market_request.read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
             result = local_market_case(args.env_file, case=lambda market_input: market_request(
                 session=market_input[0], market=market_input[1], **definition,
+            ))
+        elif args.market_sequence is not None:
+            definition = json.loads(args.market_sequence.read_text(encoding="utf-8"), object_pairs_hook=unique_fields)
+            result = local_market_case(args.env_file, case=lambda market_input: market_sequence(
+                session=market_input[0], market=market_input[1], allow_test_fixture=args.allow_test_fixture, **definition,
             ))
         else:
             case = jm_oct23_case if args.case == "jm-oct23" else sh_oct27_case
