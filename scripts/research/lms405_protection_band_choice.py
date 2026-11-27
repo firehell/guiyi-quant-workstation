@@ -3,9 +3,11 @@
 import argparse
 from datetime import datetime
 from decimal import Decimal
+import json
 from pathlib import Path
 
 from guiyi_quant.lms405.protection_band import ProtectionBandUpdate, active_band, visible_bands
+from lms405_plan_driven_replay import market_request, replay_input
 from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_pre_touch_protection import analyze
 from lms405_protection_lot_timing import verified_json
@@ -18,6 +20,7 @@ from lms_near405_replay import encoded, sha
 
 PRIOR_OIL = Path("output/lms405-pre-touch-protection-20261125/final.json")
 PRIOR_OIL_SHA = "d5053217c8be047d853955709fdca77b8b268656f5cb2af0b078574399e94a60"
+OIL_PLAN = Path("docs/research/lms405/evidence/oi2609-before-band-protection-request.json")
 SODA_LIST = "https://stock.weibo.cn/page/detail?market=gn&symbol=SA0"
 WINDOWS = (
     ("OI2609", "2026-06-03T10:13", "S5305666088472874", "LONG",
@@ -139,10 +142,84 @@ def study(session, market, existing_oil):
                 author_match_rate=None, executable=False, fills=None, pnl=None)
 
 
+def oil_approval(tape, scope):
+    evaluation, = tape["evaluations"]
+    evaluated = datetime.fromisoformat(evaluation["at"])
+    approval = dict(scope=scope, id=f"TEST_FIXTURE:{scope}", accepted=True, decided_at=evaluated.isoformat(),
+                    known_at=(evaluated + US).isoformat(), record_kind="TEST_FIXTURE")
+    return replay_input(**(tape | {"evaluations": [evaluation | {
+        "approval": approval, "at": (evaluated + 2 * US).isoformat(),
+    }]}), allow_test_fixture=True)
+
+
+def compile_oil_choices(session, market, existing_oil):
+    """Compare individually selected bands without treating them as successive plans."""
+    raw = OIL_PLAN.read_bytes()
+    request = json.loads(raw)
+    revision = request["revision"] | {"operations": ["PROTECT_EARLY", "PROTECT_REGULAR"]}
+    contract = revision["contract"]
+    source = input_sources()[revision["id"]]
+    publication = datetime.fromisoformat(source["published_at"])
+    window = WINDOWS[0]
+    if (contract != window[0] or revision["source"] != source["source_url"] or publication != at(window[1])
+            or revision["known_at"] != (publication + ONE).isoformat() or tuple(request["band"]) != window[4]):
+        raise ValueError("BAND_CHOICE_PLAN_SOURCE_CHANGED")
+    # The request starts at day open to retain earlier same-segment contact history.
+    series = read_window(session, market, contract, publication.date())
+    market_fingerprints = {f"{period}m": digest(bars) for period, bars in series.items()}
+    if market_fingerprints != existing_oil["market"]:
+        raise ValueError("BAND_CHOICE_OIL_MARKET_CHANGED")
+    branches, fixtures, scopes = {}, {}, {}
+    for period in (1, 15):
+        for band_name, band in (("near", window[4]), ("far", window[5])):
+            for operation in ("PROTECT_EARLY", "PROTECT_REGULAR"):
+                name = f"{band_name}:{operation}:{period}m"
+                compiled = market_request(session=session, market=market, **(request | dict(
+                    revision=revision, band=list(band), operation=operation,
+                    shape_period=period, confirmation_period=period,
+                )))
+                branches[name] = compiled
+                if compiled["replay"]["final"]["protection"]:
+                    raise ValueError("BAND_CHOICE_PUBLIC_PROJECTION_APPLIED")
+                if compiled["candidate"] is None:
+                    continue
+                event, = compiled["replay"]["events"]
+                scope = event["pending_approval_scope"]
+                scopes[name] = scope
+                fixtures[name] = oil_approval(compiled["tape"], scope)
+                final = fixtures[name]["final"]
+                if (final["original"], final["protection"], final["counter_m"], final["attempt"]) != (
+                    Decimal(1), Decimal(1), Decimal(0), 1,
+                ):
+                    raise ValueError("BAND_CHOICE_FIXTURE_PROJECTION_DIVERGED")
+    near_name, far_name = "near:PROTECT_REGULAR:1m", "far:PROTECT_EARLY:1m"
+    if set(scopes) != {near_name, far_name} or scopes[near_name] == scopes[far_name]:
+        raise ValueError("BAND_CHOICE_FROZEN_PROPOSALS_DIVERGED")
+    near_signal, far_signal = (branches[key]["candidate"] for key in (near_name, far_name))
+    if any(near_signal[key] != far_signal[key] for key in ("shape_end", "confirmed_at", "close", "boundary")):
+        raise ValueError("BAND_CHOICE_SIGNAL_IDENTITY_DIVERGED")
+    for name, other in ((near_name, far_name), (far_name, near_name)):
+        try:
+            oil_approval(branches[name]["tape"], scopes[other])
+        except ValueError as exc:
+            if str(exc) != "PORTFOLIO_TASK_APPROVAL_SCOPE_MISMATCH":
+                raise
+        else:
+            raise ValueError("BAND_CHOICE_REUSED_OTHER_APPROVAL")
+    return dict(
+        version="lms405-original-long-band-approval-comparison-v1", contract=contract, source=source,
+        input_sha256=sha(raw), market_fingerprints=market_fingerprints,
+        bands_are_alternative_hypotheses=True, author_active_band=None, author_action_at=None,
+        branches=branches, approvals_reused_across_bands=False, approved_fixtures=fixtures,
+        author_action_samples=0, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--compile-oil", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -157,7 +234,8 @@ def main():
     try:
         oil = verified_json(PRIOR_OIL, PRIOR_OIL_SHA)["cases"]["oi"]
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=45):
-            report = study(session, build_market_data_service(session), oil)
+            calculate = compile_oil_choices if args.compile_oil else study
+            report = calculate(session, build_market_data_service(session), oil)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:

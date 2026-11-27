@@ -399,6 +399,26 @@ done
 
 两份报告重复复算一致。结果见 `output/lms405-original-long-protection-20261128/`，OI2609与RU2701的SHA256分别为 `c333c4f7911aa873c4049b0fd3b12af475decd15e70d94f114e9c94b0f9ec480` 和 `fd84bea1bfcc38d5c97e6a6287bafaa41fe33fbe1c26bc993628872c9bc68d6a`。
 
+### 菜油两档保护的计划重放
+
+同一份6月3日盘中建议分别声明近档与远档，以原多一单位为条件前像。当前可见正文从10:14作保守可知代理，原文历史修订及作者实际选档待证。把1→1和15→15与近远两档、区前和区内两条路线交叉，得到八个独立请求。自然日与交易日、该段首次接触与当前信号分别核对。 [6月3日作者建议归档](../lms-source-archive/03-单品种分析/2026-06-03/菜油/S5305666088472874.md)
+
+|请求|可用候选（北京时间）|解释|
+|---|---|---|
+|近档10175–10197，区内1→1|10:33确认收10177|10:31该段首次触及近档，确认收盘在带内。|
+|远档10019–10151，区前1→1|同一根10:33确认，收10177|确认高于远档上沿26点，该段此前无远档接触。把区前操作用于常规远档属于研究对照；作者没有公布「附近」的定量范围。|
+|其余六个请求|无候选|两档15→15均无区前或区内确认。近档1→1无区前，远档1→1无区内。|
+
+只给计划和行情时，两条候选均待独立许可，仓位保持一多零空。分别给定精确匹配的 `TEST_FIXTURE` 许可，两种情景各自投影为一多一空；交换许可，两边均因作用域不符而拒绝。两条替代情景分别从同一前像开始。6月4日作者暂锁披露给的是10273–10315，日期及价带均不同，不能给6月3日的任何候选赋实际锁定标签。焦煤4月23日虽有4.0.5锁定自述及两个保护参考，事前计划、生效时点及成交仍未取得。 [6月4日暂锁](https://www.sina.cn/news/detail/5306128623993006.html) · [焦煤4月23日复盘](https://www.sina.cn/news/detail/5290900347693045.html)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_protection_band_choice.py \
+  --compile-oil --env-file .env --output /tmp/lms405-oil-band-approval-new.json
+```
+
+两次复算逐字节一致，合格作者动作0。结果保存在 `output/lms405-oil-band-approval-20261128/report.json`，SHA256 `cc55a1a1b2eb0406dd1a8c971aeafaece52edc71db2429d1b4fdea84bd350506`。
+
 ## 菜油、纯碱与PTA的计划准入
 
 [三案准入对照](evidence/PORTFOLIO_REPLAY.md#菜油纯碱与pta的计划准入对照)复算仓位用途、跨交易日可见腿及公开价带暂停三类缺口。首个候选留出窗口预留为11月16日至20日交易日，待规则固定后再读取验证材料。焦煤、烧碱、玻璃、铁矿、PVC与橡胶的已见对照仍归开发证据。
