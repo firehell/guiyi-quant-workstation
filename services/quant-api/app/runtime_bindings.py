@@ -15,7 +15,9 @@ import subprocess
 import tempfile
 from typing import Any
 
-from app.market_release_identity import MARKET_SERVICES, MARKET_TAG_PREFIX, market_release_version, valid_release_tag
+from app.market_release_identity import (
+    MARKET_SERVICES, MARKET_VERSION_PATH, declared_market_release_tag, market_release_version, valid_release_tag,
+)
 from app.runtime_contracts import SERVICES
 
 CONTRACTS = frozenset({"db", "live", "input", "formula", "reference", "launcher"})
@@ -289,12 +291,8 @@ def verify_release(root: Path, tag: str, commit: str) -> None:
         raise RuntimeBindingError("RELEASE_IDENTITY_INVALID")
 
     if market_release_version(tag) is not None:
-        identity = _git(root, "show", "HEAD:services/quant-api/app/market_version.py")
-        version = tag.removeprefix(MARKET_TAG_PREFIX)
-        if identity.splitlines() != [
-            '"""Release version for the Market Foundation component."""', "",
-            f'MARKET_RELEASE_VERSION = "{version}"',
-        ]:
+        identity = _git(root, "show", f"HEAD:{MARKET_VERSION_PATH}")
+        if declared_market_release_tag(identity) != tag:
             raise RuntimeBindingError("MARKET_RELEASE_VERSION_MISMATCH")
 
 
@@ -373,7 +371,6 @@ def bootstrap_registry(bindings: list[ServiceBinding]) -> BindingRegistry:
     return BindingRegistry(1, {binding.service: binding for binding in bindings})
 
 
-MARKET_VERSION_PATH = "services/quant-api/app/market_version.py"
 MARKET_IDENTITY_PATH = "services/quant-api/app/market_release_identity.py"
 # These files run behind the existing writer and published wire contracts.
 # Unknown runtime changes require a coordinated application release.

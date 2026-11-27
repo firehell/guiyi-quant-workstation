@@ -1010,3 +1010,76 @@ def test_macos_unknown_outcome_attempts_each_account_stop_independently(tmp_path
     monkeypatch.setattr(native, "_account_absent", lambda name: name == "subing" and ("bootout", subing_label) in requests)
     assert native.halt_unknown(plan)["account_stops"] == {"tqkq": "unproven", "subing": "stopped"}
     assert requests[-2:] == [("disable", subing_label), ("bootout", subing_label)]
+
+
+@pytest.mark.parametrize("case", [
+    "released_ancestor", "released_exact", "missing", "lightweight", "unrelated",
+    "wrong_declaration", "invalid_candidate",
+])
+def test_candidate_market_identity_uses_its_published_version(tmp_path, case):
+    import subprocess
+
+    from app.runtime_cohort_errors import CohortError
+    from app.runtime_market_cohort_host import _candidate_market_component
+
+    def git(*arguments):
+        return subprocess.check_output(
+            ["/usr/bin/git", *arguments], cwd=tmp_path, text=True, stderr=subprocess.DEVNULL,
+        ).strip()
+
+    def commit(version):
+        declaration.write_text('"""Release version for the Market Foundation component."""\n\n'
+                               f'MARKET_RELEASE_VERSION = "{version}"\n')
+        git("add", ".")
+        git("commit", "--allow-empty", "-m", version)
+        return git("rev-parse", "HEAD")
+
+    git("init", "-q")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    declaration = tmp_path / "services/quant-api/app/market_version.py"
+    declaration.parent.mkdir(parents=True)
+    base = commit("0.0.0")
+    commit("0.1.0")
+    git("tag", "-a", "market-foundation/v0.1.0", "-m", "previous component")
+    git("checkout", "--detach", base)
+    release = commit("0.1.0" if case == "wrong_declaration" else "0.1.1")
+    tag = "market-foundation/v0.1.1"
+    if case == "lightweight":
+        git("tag", tag)
+    elif case != "missing":
+        git("tag", "-a", tag, "-m", "current component")
+    if case == "unrelated":
+        git("checkout", "--detach", base)
+        (tmp_path / "controller").write_text("a different release")
+    if case != "released_exact":
+        commit("0.1.01" if case == "invalid_candidate" else "0.1.1")
+    if case.startswith("released_"):
+        assert _candidate_market_component(tmp_path) == (tag, release)
+    else:
+        with pytest.raises(CohortError, match="^MARKET_SOURCE_COMPONENT_TAG_UNPROVEN$"):
+            _candidate_market_component(tmp_path)
+
+
+def test_component_drift_blocks_staged_handover_before_cas(tmp_path, monkeypatch):
+    from hashlib import sha256
+    from types import SimpleNamespace
+
+    from app import runtime_market_cohort_host as module
+
+    host = module.MarketCohortHost()
+    host._market_component = ("market-foundation/v0.1.1", "a" * 40)
+    host.check_commit = lambda _plan: None
+    host._assert_stopped = lambda _plan: None
+    host._verify_stopped_namespaces = lambda *_args: None
+    monkeypatch.setattr(module, "_private_configuration", lambda _path: (b"candidate", {}))
+    monkeypatch.setattr(module, "_private", lambda _path: b"candidate")
+    monkeypatch.setattr(module, "registry", lambda _raw: SimpleNamespace(
+        services={"api": SimpleNamespace(root=str(tmp_path))},
+    ))
+    monkeypatch.setattr(module, "_candidate_market_component",
+                        lambda _root: ("market-foundation/v0.1.1", "b" * 40))
+    with pytest.raises(module.CohortError, match="^MARKET_SOURCE_COMPONENT_TAG_UNPROVEN$"):
+        host.check_staged_market_source(
+            {"new": {}}, {}, {}, {"config_sha256": sha256(b"candidate").hexdigest()},
+        )
