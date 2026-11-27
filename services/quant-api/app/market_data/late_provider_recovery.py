@@ -37,6 +37,7 @@ _PUBLIC_RECOVERY_CODES = SAFE_FAILURES | {
     "PROVIDER_QUOTA_EXHAUSTED",
     "CANONICAL_READBACK_UNVERIFIED",
     "LIVE_DOMINANT_MISMATCH",
+    "LIVE_SUBSCRIPTION_SNAPSHOT_MISSING",
     "MAINTENANCE_LOCKED",
     "MARKET_ARCHIVE_RECEIPT_UNAVAILABLE",
     "PUBLICATION_EVIDENCE_CAPACITY_EXCEEDED",
@@ -416,10 +417,12 @@ def run_scheduled(
         target_day = date.fromisoformat(day)
 
         def archive_scope() -> None:
-            if formal_archive is not None and not formal_archive.archive_live_scope_matches(
-                products, target_day, scheduled_scope=row.get("archive_scope_sha256"),
-            ):
-                raise ValueError("LIVE_DOMINANT_MISMATCH")
+            if formal_archive is not None:
+                scope_error = formal_archive.archive_live_scope_error(
+                    products, target_day, scheduled_scope=row.get("archive_scope_sha256"),
+                )
+                if scope_error is not None:
+                    raise ValueError(scope_error)
 
         def stage(value: str) -> None:
             row["stage"] = value

@@ -52,6 +52,7 @@ _PUBLIC_ERROR_CODES = frozenset(
     {
         "MAINTENANCE_LOCKED",
         "LIVE_DOMINANT_MISMATCH",
+        "LIVE_SUBSCRIPTION_SNAPSHOT_MISSING",
         "NON_TRADING_DAY",
         "NEXT_TRADING_SESSION_NOT_READY",
         "PROVIDER_QUOTA_EXHAUSTED",
@@ -564,8 +565,9 @@ class AfterMarketUpdater:
         self._current.pop("historical_publications", None)
         if self.archive_readback is not None:
             try:
-                if not self.archive_live_scope_matches(products, trading_day):
-                    return "LIVE_DOMINANT_MISMATCH"
+                scope_error = self.archive_live_scope_error(products, trading_day)
+                if scope_error is not None:
+                    return scope_error
             except Exception as exc:  # noqa: BLE001 - connection details remain private
                 _diagnostic_warning("after_market_archive_scope_unverified exception_type=%s", type(exc).__name__,
                                     detail_code="LIVE_DOMINANT_MISMATCH", exception_type=type(exc).__name__)
@@ -785,14 +787,17 @@ class AfterMarketUpdater:
                     key.strip().lower(): value.strip().upper() for key, value in snapshot.items()
                 })
             else:
+                code = ("LIVE_SUBSCRIPTION_SNAPSHOT_MISSING" if snapshot is None
+                        else "LIVE_DOMINANT_MISMATCH")
                 _diagnostic_warning(
                     "after_market_attempt_failed stage=live_reconciliation attempt=%s "
-                    "detail_code=LIVE_DOMINANT_MISMATCH",
+                    "detail_code=%s",
                     attempt,
+                    code,
                     stage="live_reconciliation",
-                    detail_code="LIVE_DOMINANT_MISMATCH",
+                    detail_code=code,
                 )
-                return "LIVE_DOMINANT_MISMATCH"
+                return code
             if (revisions is not None and restart_evidence is None
                     and (repeat is None or revisions != repeat["canonical_readback"])):
                 self.live_store.publish_state(change)
@@ -868,16 +873,20 @@ class AfterMarketUpdater:
         rank1 = _evidence_hash(formal)
         return rank1 if self._bound_archive_scope(day, rank1) == proof else None
 
-    def archive_live_scope_matches(
+    def archive_live_scope_error(
         self, products: tuple[str, ...], day: date, *, scheduled_scope: str | None = None,
-    ) -> bool:
+    ) -> str | None:
         proved = self._scheduled_scope_rank1(products, day, scheduled_scope)
         if scheduled_scope is not None and proved is None:
-            return False
+            return "LIVE_DOMINANT_MISMATCH"
         snapshot = self.live_store.subscriptions(day)
         if snapshot is None:
-            return proved is not None or self._previous_cleanup(products, day, restart_evidence=None) is not None
-        return _rank1_matches_snapshot(self.manager, snapshot, products, day)
+            if proved is not None or self._previous_cleanup(products, day, restart_evidence=None) is not None:
+                return None
+            return "LIVE_SUBSCRIPTION_SNAPSHOT_MISSING"
+        if not _rank1_matches_snapshot(self.manager, snapshot, products, day):
+            return "LIVE_DOMINANT_MISMATCH"
+        return None
 
     def finish_late_archive(
         self, products: tuple[str, ...], day: date, *, started_at: str,

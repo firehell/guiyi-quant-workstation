@@ -1,3 +1,37 @@
+## 2026-11-27 20:35｜V2 发布与运行核验
+
+- **GitHub 发布。** [PR #676](https://github.com/firehell/guiyi-quant-workstation/pull/676) 合入
+  `7087b5594eb2dc1cca803c2de2fbc48ea4481908`，发布 Market Foundation 0.1.1、Quant Core 0.4.1、
+  Quant Chart 0.1.7 与应用 v1.16.148。[PR #677](https://github.com/firehell/guiyi-quant-workstation/pull/677)
+  随后发布控制器 v1.16.149，精确提交 `15a5eadc464f9c13582ece628487b6f56cb968a2`。
+  本次盘后诊断修订使用 [Market Foundation 0.1.2](https://github.com/firehell/guiyi-quant-workstation/releases/tag/market-foundation/v0.1.2)
+  和 [应用 v1.16.150](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.150) 的 annotated tag
+  指向同一后续 main 提交。应用候选继续锁定 Core 0.4.1 和 Chart 0.1.7。
+- **生产 Canonical。** 11/27 原盘后任务 18:16 终止。960 条成功提交记录涉及 840 个不同分区，
+  840 个最终 active 指针全部通过物理读回，60 个旧范围品种的七周期通过当日严格校验。
+  原任务保留 `LIVE_DOMINANT_MISMATCH`，当日 0 份订阅快照、无源和完成流原件，Live 对账和自然归档凭证缺失。
+  旧 Redis 的 Live、Alert 和 Reference 仍注册 11/26。Live 和 Alert 已达尾部，Reference 游标仍在 `0-0`，
+  对应保留的完成流有 27,085 条。Feed 需要旧消费者先达尾，11/27 因此未建立 Live 订阅。
+  11/30 Catalog rank1 截至核验时为 0。诊断修订区分快照缺失与实际不匹配，保留现有发布、清理、消费者和凭证门槛。
+  [同日证据](openspec/changes/guiyi-v2-market-foundation/evidence/tick/CU2701-canonical-20261127.json)
+- **计算覆盖。** 历史 60 × 7 矩阵的 418/420 是严格取数结果。RS 日线保留 `PRICE_UNAVAILABLE`，
+  周线保留 `MAPPED_CONTRACT_DATASET_MISSING`。PD、PT 最后核验各 51 根周线，EMA60 尚在预热，两品种已退出 V2
+  正式 58 品种范围。Core 0.4.1 和 Chart 0.1.7 继续使用原制品和原公式，正式消费者接管及全范围实时 READY 仍待核验。
+  [计算证据](openspec/changes/guiyi-v2-quant-compute-chart/tasks.md) · [RS 源质量](openspec/changes/guiyi-v2-market-foundation/evidence/rs-quality.md)
+- **Runtime。** Registry 仍登记 Web/API v1.16.146、generation 95（API 环境安装 Core 0.1.0，该 Web 版本未引入独立 Chart），
+  Feed、Live、盘后和 Reference 等仍登记 v1.16.141、generation 94。20:35 读回 v1.16.141 绑定目录缺失。
+  Feed、Live、Reference 启动失败，Web/API 启动日志报 `RUNTIME_DEPLOYMENT_BLOCKED`。
+  公网旧 IP 的页面入口实测返回 301，目标页面返回 200。该 HTTP 结果未核实后端版本与业务。
+  正式源仍按旧 `bar_1m` 绑定，目标 Redis 已运行。v1.16.149 的源切换计划曾被
+  `MARKET_SOURCE_NEXT_DAY_UNPROVEN` 拒绝，未取得有效计划和 CAS 切换读回。
+- **消费者和 Tick。** 快期仍显示 v1.16.139 和 11/26 水位，账户读回 `unverified`。
+  苏冰共享 Paper 原 run 已有账本，11/26 的 16 个消费水位曾完成独立核验；最近心跳为
+  `PORTFOLIO_INPUT_OR_STORAGE_UNAVAILABLE`，原启动脚本所在 checkout 缺失。两路 11/27 新源接管均未得到证明。
+  CU2701 已完成 463/465 个端点，其中 462 根与 Canonical 逐字段一致。开盘两个端点缺少可证累计基线，
+  15:00 持仓量仍差 1 手。新的 58 品种范围仍待完整自然交易日、盘后凭证和两账户接管读回。
+
+以下为此前检查点。
+
 11/20 14:42 第四批牛哇首根 H1 验收通过。14:30 的 59 份正式 H1 逐份匹配当日 rank1 合约、Redis 原件与 identity 索引及 Inbox 哈希；236/236 路投递已完成，四策略检查点均到 14:30，无新参考交易。趋势、主升浪各 59 路 READY，震荡、融合各 59 路 FORMULA_WARMING。预警现场 416 路正常、4 路周线预热。
 
 第四批账户两项仍待闭环。快期监控记录 AP2701 范围退出 SELL/CLOSE 1 手，原生时间 09:00:04.450291 CST、成交价 5643，本地委托 FILLED 和成交 RECORDED 匹配，范围退出待处理清单为空；最新账户投影只含 OI2701，但账户实时读回 unverified、可执行品种 0，新自然策略成交尚未观察。苏冰共享 16 品种尚无 run_id，正式心跳报 PORTFOLIO_INITIAL_PREFIX_INCOMPLETE；按同一权威 Session 端点与完成流验证，16 品种均缺 09:01–09:15 的 1m、09:30 的 30m、10:00 的 60m，共 272 份原件。待首个完整交易日重新核验启动与自然推进，既有午休米筐查询不改变原件身份。

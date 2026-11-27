@@ -2050,10 +2050,13 @@ def test_natural_reconciliation_still_rejects_missing_snapshot(tmp_path):
         readiness=[True, True], results=[_result("passed"), _result("passed")])
     live.snapshot = None
     result = updater.run()
-    assert result.status == "failed" and result.error_code == "LIVE_DOMINANT_MISMATCH"
+    assert result.status == "failed" and result.error_code == "LIVE_SUBSCRIPTION_SNAPSHOT_MISSING"
     assert live.cleaned == []
-    assert len(notices) == 1
-    assert _status(updater.status_path)["last_successful_trading_day"] is None
+    assert _notice_error_codes(notices) == ["LIVE_SUBSCRIPTION_SNAPSHOT_MISSING"]
+    assert live.published == [{"trading_day": "2026-08-10", "reason": "canonical_updated"}]
+    status = public_after_market_status(_status(updater.status_path))
+    assert status["last_successful_trading_day"] is None
+    assert status["last_failure"]["error_code"] == "LIVE_SUBSCRIPTION_SNAPSHOT_MISSING"
 
 
 def test_live_evidence_survives_cleanup_and_public_projection(tmp_path):
@@ -2618,8 +2621,12 @@ def test_candidate_restart_refuses_an_unknown_commit_before_provider_retry(tmp_p
     assert live.cleaned == []
 
 
-@pytest.mark.parametrize("snapshot", [None, {"jm": "JM2701"}, {**_ACTIVE_CONTRACTS, "ag": "AG2612"}])
-def test_isolated_archive_rejects_missing_extra_or_wrong_owners_before_provider(tmp_path, snapshot):
+@pytest.mark.parametrize(("snapshot", "error"), [
+    (None, "LIVE_SUBSCRIPTION_SNAPSHOT_MISSING"),
+    ({"jm": "JM2701"}, "LIVE_DOMINANT_MISMATCH"),
+    ({**_ACTIVE_CONTRACTS, "ag": "AG2612"}, "LIVE_DOMINANT_MISMATCH"),
+])
+def test_isolated_archive_rejects_missing_extra_or_wrong_owners_before_provider(tmp_path, snapshot, error):
     from contextlib import nullcontext
 
     day = date(2026, 8, 10)
@@ -2628,7 +2635,7 @@ def test_isolated_archive_rejects_missing_extra_or_wrong_owners_before_provider(
     )
     updater.archive_readback = lambda *_: nullcontext({})
     live.snapshot = snapshot
-    assert updater.run().error_code == "LIVE_DOMINANT_MISMATCH"
+    assert updater.run().error_code == error
     assert provider.calls == [] and manager.calls == [] and live.cleaned == []
 
 
