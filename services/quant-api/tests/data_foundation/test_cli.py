@@ -1196,7 +1196,7 @@ def test_audit_keeps_active_universe_selector() -> None:
     code, payload = _run(["data", "audit", "--universe", "active"], manager)
 
     assert code == 0 and payload["status"] == "passed"
-    assert len(manager.calls[0][1].products) == 60
+    assert len(manager.calls[0][1].products) == 58
 
 
 @pytest.mark.parametrize(

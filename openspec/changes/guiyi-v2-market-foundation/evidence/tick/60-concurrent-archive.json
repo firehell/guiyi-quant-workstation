@@ -1,0 +1,24 @@
+{
+  "kind": "synthetic_minute_boundary_replay_with_native_redis",
+  "products": 60,
+  "completed_by_frequency": {
+    "1m": 20400,
+    "5m": 4080,
+    "15m": 1360,
+    "30m": 710,
+    "60m": 417
+  },
+  "total_completed": 26967,
+  "paper_inputs": 21527,
+  "restart_after_minute_round": 279,
+  "minute_rounds": 559,
+  "minute_round_redis_commit_p95_ms": 641.935,
+  "minute_round_redis_commit_p99_ms": 820.154,
+  "duration_s": 181.943,
+  "redis_used_bytes": 502882072,
+  "rss_max_bytes": 188940288,
+  "cpu_seconds": 108.082,
+  "native_archive_test_exit": 0,
+  "native_archive_test_seconds": 25.862886,
+  "archive_ran_while_live_benchmark_active": true
+}

@@ -106,6 +106,19 @@ def test_trend_reversal_short_owner_segment_stays_warming(product_cases):
     assert component.segments[0].value == segment.value
 
 
+@pytest.mark.parametrize(("strategy", "frequency"), (("trend", "60m"), ("oscillation", "1d")))
+def test_registered_cup_keeps_not_applicable_and_owner_boundaries(product_cases, strategy, frequency):
+    from app.market_data.newow.auxiliary_dispatch import calculate_auxiliary_component as dispatch
+
+    case = product_cases.primitive_input(strategy, frequency)
+    bars = case.bars[:20]
+    result = dispatch(case.identity, bars, "cup_handle", as_of=bars[-1].bar.bar_end)
+    expected = calculate_auxiliary_component(case.identity, bars, "cup_handle", as_of=bars[-1].bar.bar_end)
+    assert result == expected
+    assert result.status is FeatureRuntimeStatus.NOT_APPLICABLE
+    assert all(segment.value is None for segment in result.segments)
+
+
 def _two_owner_segments(bars: tuple[ProductBar, ...]) -> tuple[ProductBar, ...]:
     split = len(bars) // 2
     return tuple(

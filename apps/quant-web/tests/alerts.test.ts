@@ -43,7 +43,7 @@ describe('persistent Alert markers', () => {
   })
 
   test('maps SuBing Event facts to S markers without formula recomputation', () => {
-    const markers = alertEventsToMarkers([subingEvent(3, 'buy'), subingEvent(4, 'sell')])
+    const markers = alertEventsToMarkers([{ ...subingEvent(3, 'buy'), formula_version: 'stored-version' }, subingEvent(4, 'sell')])
     assert.deepEqual(markers.map((item) => ({
       label: item.label,
       shape: item.shape,
@@ -64,6 +64,10 @@ describe('persistent Alert markers', () => {
     assert.match(markers[0]!.tooltip ?? '', /EMA21 上方/)
     assert.match(markers[1]!.tooltip ?? '', /MACD 死叉/)
     assert.match(markers[1]!.tooltip ?? '', /EMA21 下方/)
+    assert.deepEqual(markers.map(marker => marker.fact), [
+      { layer: 'alerts', sourceIdentity: 'alert-event:3', formulaVersion: 'stored-version', physicalContract: 'JM2601', frequency: '15m' },
+      { layer: 'alerts', sourceIdentity: 'alert-event:4', formulaVersion: null, physicalContract: 'JM2601', frequency: '15m' },
+    ])
   })
 
   test('does not reinterpret malformed SuBing facts as a sell marker', () => {

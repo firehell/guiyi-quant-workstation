@@ -127,11 +127,35 @@ def publish_history(path: Path, value: dict) -> str:
         os.unlink(temporary)
 
 
+def select_terminal_history(source: Path, *, commit: str, products: tuple[str, ...], now: datetime,
+                            recheck=lambda: None) -> dict | None:
+    """Read terminal history while holding the existing after-market guard."""
+    from app.market_data.after_market import public_after_market_status
+
+    history = read_history(source.with_name(NAME), products=products, now=now)
+    content = _bytes(source) if os.path.lexists(source) else None
+    public = public_after_market_status(json.loads(content)) if content is not None else {}
+    if content is not None and (not public or public.get("current_run") is not None):
+        raise ValueError("AFTER_MARKET_HISTORY_INVALID")
+    day = public.get("last_successful_trading_day")
+    retained_day = history["status"]["last_successful_trading_day"] if history else None
+    last_run = public.get("last_run") or {}
+    negative = public.get("last_failure") is not None or last_run.get("status") in {"failed", "interrupted"}
+    recovered = (last_run.get("status") == "passed" and history is not None
+                 and datetime.fromisoformat(last_run["finished_at"])
+                     >= datetime.fromisoformat(history["status"]["last_run"]["finished_at"]))
+    if content is not None and (negative or recovered or (day is not None and (retained_day is None or day > retained_day))):
+        history = make_history(content, commit=commit, products=products, now=now)
+    recheck()
+    if (_bytes(source) if os.path.lexists(source) else None) != content:
+        raise ValueError("AFTER_MARKET_HISTORY_CHANGED")
+    return history
+
+
+
 def retain_from_supervised(target_root: Path, *, apply: bool = False) -> str:
     from app.market_data.operational_universe import load_operational_products
     from app.market_data.runtime_status_authority import resolve_market_runtime_status_authority
-    from app.market_data.after_market import public_after_market_status
-
     authority = resolve_market_runtime_status_authority(candidate_root=target_root,
         expected_stopped_status_sha256=os.environ.get("GUIYI_EXPECTED_AFTER_MARKET_STATUS_SHA256"))
     products = load_operational_products()
@@ -140,26 +164,13 @@ def retain_from_supervised(target_root: Path, *, apply: bool = False) -> str:
         return "no_previous_success"
     source_root = authority.path.parent.parent
     authority.recheck()
-    history = read_history(authority.path.with_name(NAME), products=products, now=now)
     if target_root.resolve(strict=True) == source_root.resolve(strict=True):
         return "same_runtime"
-    content = _bytes(authority.path) if os.path.lexists(authority.path) else None
-    public = public_after_market_status(json.loads(content)) if content is not None else {}
-    if content is not None and (not public or public.get("current_run") is not None):
-        raise ValueError("AFTER_MARKET_HISTORY_INVALID")
-    day = public.get("last_successful_trading_day")
-    retained_day = history["status"]["last_successful_trading_day"] if history else None
-    negative = public.get("last_failure") is not None or (public.get("last_run") or {}).get("status") in {"failed", "interrupted"}
-    recovered = ((public.get("last_run") or {}).get("status") == "passed"
-                 and history is not None
-                 and datetime.fromisoformat(public["last_run"]["finished_at"])
-                     >= datetime.fromisoformat(history["status"]["last_run"]["finished_at"]))
-    if content is not None and (negative or recovered or (day is not None and (retained_day is None or day > retained_day))):
-        commit = subprocess.check_output(["git", "-C", str(source_root), "rev-parse", "HEAD"], text=True).strip()
-        history = make_history(content, commit=commit, products=products, now=now)
-    authority.recheck()
-    if content is not None and _bytes(authority.path) != content:
-        raise ValueError("AFTER_MARKET_HISTORY_CHANGED")
+    history = select_terminal_history(
+        authority.path,
+        commit=subprocess.check_output(["git", "-C", str(source_root), "rev-parse", "HEAD"], text=True).strip(),
+        products=products, now=now, recheck=authority.recheck,
+    )
     if history is None:
         return "no_previous_success"
     target = target_root / ".run" / NAME

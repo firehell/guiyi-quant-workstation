@@ -13,10 +13,11 @@ from app.market_data.composition import (
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.session_clock import resolved_session_windows_for_trading_day
 from app.market_data.domain import SeriesPageQuery, SeriesKind, BarFrequency
+from app.market_data.live_market import LIVE_FINALIZATION_DELAY
 from app.redis_connections import get_redis_connection
 from app.alerts.runtime import _parse_live_bar_trigger
 from app.alerts.evaluators import HtdyOriginalEvaluator
-from app.htdy_execution import signal_from_window
+from app.htdy_execution import htdy_window_digest, signal_from_window
 from guiyi_quant import htdy_account_execution as a, htdy_execution as h
 from guiyi_quant.htdy_account_execution.codec import digest
 
@@ -221,16 +222,72 @@ class MarketBridge:
                 end=trigger.bar.bar_end,
                 limit=32,
             )
-            result = signal_from_window(
-                reader,
-                window,
-                source_id="simnow-natural:"
-                + digest((trigger.symbol, trigger.bar.bar_end, snapshot.contract)),
-                observed_at=observed_at,
-            )
-            if closed_tail:
-                self.closed_tails[result.source_id] = (result.bar_end, trigger.bar.trading_day)
-            return result
+            if (
+                window.contract != snapshot.contract or window.trading_day != trigger.bar.trading_day
+                or not window.bars or window.bars[-1] != trigger.bar
+            ):
+                raise ValueError("LATEST_NATURAL_OBSERVATION_UNPROVEN")
+            original = None
+            if (journal := getattr(self, "completed_observations", None)) is not None:
+                original = self._verify_completed_original(journal, trigger, window.contract, observed_at)
+            source_id = "simnow-natural:" + digest((trigger.symbol, trigger.bar.bar_end, snapshot.contract))
+            runtime = getattr(self, "owned_live_compute", None)
+            if runtime is None:
+                result = signal_from_window(reader, window, source_id=source_id, observed_at=observed_at)
+        if runtime is not None:
+            result = self._compute_live_signal(runtime, window, original, source_id, observed_at)
+        if closed_tail:
+            self.closed_tails[result.source_id] = (result.bar_end, trigger.bar.trading_day)
+        return result
+
+    def _compute_live_signal(self, runtime, window, original, source_id, observed_at):
+        from app.compute_runtime.owned_live import OwnedLiveCommit, OwnedLiveScope
+        from guiyi_quant.reference_trading.htdy import CONTEXT_BARS
+
+        if original is None:
+            raise ValueError("HTDY_COMPLETED_ORIGINAL_UNPROVEN")
+        if len(window.bars) != CONTEXT_BARS:
+            raise ValueError("HTDY_EXECUTION_REQUIRES_60M_WINDOW32")
+        if not window.notification_eligible:
+            raise ValueError("HTDY_EXECUTION_REQUIRES_FIRST_SEEN")
+        scope = OwnedLiveScope("htdy_simulation", window.symbol, window.contract, "60m", window.trading_day)
+        commit = OwnedLiveCommit.from_original(
+            scope, original, previous_bar_end=window.bars[-2].bar_end, input_digest=htdy_window_digest(window),
+        )
+
+        def compute():
+            # Use a separate read transaction owned by the Live thread.
+            with self.reader() as (_, reader):
+                return signal_from_window(reader, window, source_id=source_id, observed_at=observed_at)
+
+        update = runtime.submit_owned_live(commit, owner=self, run=compute).result(timeout=10)
+        # A cached signal does not keep permission if recovery/authority moved.
+        with self.reader() as (_, reader):
+            reader.validate_alert_window(window, context_bars=CONTEXT_BARS)
+        return update.result
+
+    @staticmethod
+    def _verify_completed_original(journal, trigger, contract, observed_at):
+        if trigger.contract != contract:
+            raise ValueError("HTDY_COMPLETED_ORIGINAL_UNPROVEN")
+        end = trigger.bar.bar_end
+        day = trigger.bar.trading_day
+        identity = f"{day}:{contract}:{trigger.frequency.value}:{end.isoformat()}"
+        try:
+            event = journal.read_original(day, identity)
+        except ValueError as exc:
+            raise ValueError("HTDY_COMPLETED_ORIGINAL_UNPROVEN") from exc
+        if (
+            _parse_live_bar_trigger(event.channel, event.data) != trigger
+            or event.confirmed_at is None or event.raw_received_at is None
+            or not end + LIVE_FINALIZATION_DELAY <= event.confirmed_at <= observed_at
+            or not event.source_observed_at <= event.raw_received_at <= event.confirmed_at
+            or (event.source_generation is not None and event.source_observed_at < end)
+        ):
+            raise ValueError("HTDY_COMPLETED_ORIGINAL_UNPROVEN")
+        if not event.notification_eligible or not event.timely_for_forward(end, event.confirmed_at):
+            raise ValueError("HTDY_EXECUTION_REQUIRES_FIRST_SEEN")
+        return event
 
     def recovery(self, state, now):
         p = next(p for p in state.products if p.product == self.product)

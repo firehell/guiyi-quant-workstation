@@ -2,11 +2,10 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { buildNewowFixtureEnvelopeForTest, NEWOW_AS_OF } from '../e2e/newow-product.helpers.mjs'
 import { normalizeNewowProductResponse } from '../src/utils/newowProductTypes.ts'
-import { canShareNewowAuxiliary } from '../src/utils/newowSharedLayers.ts'
+import { canShareNewowAuxiliary, newowAuxiliaryDisplayCacheKey } from '../src/utils/newowSharedLayers.ts'
 import { alignNewowAuxiliaryChartModel } from '../src/components/market/detail/newow/newowProductChartPrimitives.ts'
 
-function response(section: 'chart' | 'auxiliary', strategy: 'trend' | 'oscillation') {
-  const component = 'main_force_control'
+function response(section: 'chart' | 'auxiliary', strategy: 'trend' | 'oscillation', component: 'main_force_control' | 'macd' = 'main_force_control') {
   const wire = buildNewowFixtureEnvelopeForTest(section, strategy, '1d', false, null, { component })
   wire.meta.shared_input_proof = { schema_version: 'newow_shared_input_proof_v1', market_input_sha256: 'a'.repeat(64), auxiliary_input_sha256: section === 'auxiliary' ? 'b'.repeat(64) : null }
   return normalizeNewowProductResponse(wire, { product: 'rb', strategy, frequency: '1d', seriesKind: 'actual_dominant', section, component, asOf: NEWOW_AS_OF })
@@ -41,4 +40,20 @@ test('legacy, changed full inputs, cutoff, quality, formula and owners cannot sh
     assert.equal(alignNewowAuxiliaryChartModel(chart, copy), null)
   }
   assert.equal(canShareNewowAuxiliary(chart, auxiliary, 'up_down_energy'), false)
+})
+
+test('MACD cache keys and sharing require the active display adapter and parameter digest', () => {
+  const chart = response('chart', 'oscillation')
+  const auxiliary = response('auxiliary', 'trend', 'macd')
+  assert.ok(canShareNewowAuxiliary(chart, auxiliary, 'macd'))
+  const key = newowAuxiliaryDisplayCacheKey(auxiliary)
+  for (const identity of [
+    { display_adapter_version: 'guiyi_newow_macd_display_v1' },
+    { parameters_hash: '0'.repeat(16) },
+  ]) {
+    const changed = structuredClone(auxiliary)
+    Object.assign(changed.value!, identity)
+    assert.notEqual(newowAuxiliaryDisplayCacheKey(changed), key)
+    assert.equal(canShareNewowAuxiliary(chart, changed, 'macd'), false)
+  }
 })

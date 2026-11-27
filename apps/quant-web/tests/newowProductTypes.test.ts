@@ -1042,7 +1042,7 @@ function action(id: string, kind: 'BUILD' | 'CLEAR', sequence: number, barEnd: s
   return { signal_id: id, kind, bar_end: barEnd, trading_day: barEnd.slice(0, 10), reference_price: '100.100', physical_contract: 'JM2601', segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', calculation_segment_id: 'jm:JM2601:2026-01-01T00:00:00+00:00', related_build_id: kind === 'CLEAR' ? 'build-1' : null, trade_eligibility: 'ELIGIBLE', sequence }
 }
 
-function featureStatus(status: 'ready' | 'warming', reasonCode: string | null = null) {
+function featureStatus(status: 'ready' | 'warming' | 'unavailable', reasonCode: string | null = null) {
   return { status, evidence_status: 'ACTIVE_CODE_VERIFIED', reason_code: reasonCode }
 }
 
@@ -1054,12 +1054,27 @@ test('accepts MACD as a distinct read-only branch preserving zero and per-point 
   const result = normalizeNewowProductResponse(macdWire(), { ...expected, section: 'auxiliary', component: 'macd' })
   assert.equal(result.value.component, 'macd')
   if (result.value.component !== 'macd') throw new Error('MACD expected')
-  assert.equal(result.value.display_adapter_version, 'guiyi_newow_macd_display_v1')
-  assert.equal(result.value.parameters_hash, '5dd0ebd25122eea6')
-  assert.equal(result.value.segments[0]!.data!.dif[0]!.value, 0)
+  assert.equal(result.value.formula_version, 'talib_macd_12_26_9_v1')
+  assert.equal(result.value.display_adapter_version, 'guiyi_newow_macd_display_v2')
+  assert.equal(result.value.parameters_hash, 'f9b4b4b0b4d0678d')
+  assert.equal(result.value.segments[0]!.data!.dif[1]!.value, 0)
   assert.deepEqual(result.value.segments[0]!.data!.dea[0], {
     bar_end: '2026-08-14T07:00:00Z', value: null, ready: false, valid: true, reason: 'warming_up',
   })
+})
+
+test('accepts aligned MACD unavailable points without converting them into warm-up or zero', () => {
+  const wire = macdWire()
+  const segment = wire.auxiliary.value.segments[0]!
+  segment.status = wire.auxiliary.status = featureStatus('unavailable', 'NEWOW_MACD_UNAVAILABLE')
+  for (const points of Object.values(segment.data)) {
+    points[1] = { ...points[1]!, value: null, ready: false, valid: false, reason: 'OUTPUT_NONFINITE' }
+  }
+  const result = normalizeNewowProductResponse(wire, { ...expected, section: 'auxiliary', component: 'macd' })
+  assert.equal(result.status.status, 'unavailable')
+  assert.equal(result.value?.component, 'macd')
+  if (result.value?.component !== 'macd') throw new Error('MACD expected')
+  assert.deepEqual(result.value.segments[0]!.data.histogram[1], segment.data.histogram[1])
 })
 
 test('rejects MACD malformed point states, times, identities, parameters and permission claims', () => {
@@ -1067,15 +1082,20 @@ test('rejects MACD malformed point states, times, identities, parameters and per
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.data.dif[0]!.value = NaN },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.data.dif.pop() },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.data.dif[0]!.bar_end = AS_OF },
-    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.data.dif[0]!.ready = false },
+    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.data.dif[0]!.bar_end = '2026-08-14T07:00:00.000001Z' },
+    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.data.dif[1]!.ready = false },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.data.dif[0]!.valid = false },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.data.dea[0]!.reason = null },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.physical_contract = 'RB2601' },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments.push(wire.auxiliary.value.segments[0]!) },
+    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.segments[0]!.status = featureStatus('warming', 'NEWOW_MACD_WARMING') },
+    (wire: ReturnType<typeof macdWire>) => { Object.assign(wire.auxiliary.value.segments[0]!.data.histogram[0]!, { value: 0, ready: true, reason: null }) },
+    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.formula_version = 'v1-draft' },
+    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.display_adapter_version = 'guiyi_newow_macd_display_v1' },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters.fast = 10 },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters_hash = 'bad' },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters_hash = 'a'.repeat(64) },
-    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters_hash = '5DD0EBD25122EEA6' },
+    (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.parameters_hash = 'F9B4B4B0B4D0678D' },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.formal_signal_eligible = true },
     (wire: ReturnType<typeof macdWire>) => { wire.auxiliary.value.allowed_uses = ['alert'] },
   ]
@@ -1087,14 +1107,16 @@ test('rejects MACD malformed point states, times, identities, parameters and per
 
 function macdWire() {
   const base = auxiliaryWire()
-  const time = '2026-08-14T07:00:00Z'
-  const point = (ready: boolean) => ({ bar_end: time, value: ready ? 0 : null as number | null, ready, valid: true, reason: ready ? null : 'warming_up' as string | null })
+  const barEnds = ['2026-08-14T07:00:00Z', '2026-08-15T07:00:00Z']
+  const points = () => barEnds.map((bar_end, index) => ({
+    bar_end, value: index === 0 ? null : 0, ready: index !== 0, valid: true, reason: index === 0 ? 'warming_up' : null,
+  }))
   return { ...base, auxiliary: { ...base.auxiliary, value: {
-    ...base.auxiliary.value, component: 'macd' as const, formula_version: 'v1-draft',
-    display_adapter_version: 'guiyi_newow_macd_display_v1',
-    parameters: { fast: 12, slow: 26, signal: 9, ema_seed_policy: 'sma_window', histogram_scale: 2, round_digits: 6 },
+    ...base.auxiliary.value, component: 'macd' as const, formula_version: 'talib_macd_12_26_9_v1',
+    display_adapter_version: 'guiyi_newow_macd_display_v2',
+    parameters: { fast: 12, slow: 26, signal: 9 },
     parameters_hash: kernelMacdFixture['trend:1d'].parameters_hash, page_parity: false, allowed_uses: ['research_display'],
-    segments: [{ ...base.auxiliary.value.segments[0]!, data: { dif: [point(true)], dea: [point(false)], histogram: [point(false)] } }],
+    segments: [{ ...base.auxiliary.value.segments[0]!, bar_ends: barEnds, data: { dif: points(), dea: points(), histogram: points() } }],
   } } }
 }
 

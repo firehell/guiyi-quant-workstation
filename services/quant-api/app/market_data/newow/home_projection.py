@@ -176,18 +176,27 @@ class ProjectionStore:
 
 
 class HomeProjection:
-    def __init__(self, store, products, versions, compute=None, *, now=None, overview=None):
+    def __init__(self, store, products, versions, compute=None, *, now=None, overview=None,
+                 enforce_overview_scope=False):
         if len(products) > 60 or len(set(products)) != len(products):
             raise ProjectionError()
         self.store, self.products = store, tuple(products)
         self.versions, self.compute = versions, compute
         self.overview = overview
+        self.enforce_overview_scope = enforce_overview_scope
         self.now = now or (lambda: datetime.now(UTC))
         self.source_scope = None
         self.delivery = None
 
     def read(self):
         data = self.store.load() or {'items': {}}
+        overview = data.get('overview')
+        if self.enforce_overview_scope and overview is not None and (
+            not isinstance(overview, dict) or overview.get('active_count') != len(self.products)
+            or not isinstance(overview.get('items'), list)
+            or any(not isinstance(row, dict) or row.get('symbol') not in self.products for row in overview['items'])
+        ):
+            overview = None
         try:
             versions = self.versions()
         except Exception:
@@ -236,8 +245,8 @@ class HomeProjection:
                            **({'recovery': deliveries[product]} if product in deliveries else {})})
         return {'schema_version': SCHEMA, 'generated_at': data.get('generated_at'),
                 'requested_at': self.now().isoformat(), 'page_parity': True, 'executable': False,
-                'items': output, 'overview': data.get('overview'),
-                'overview_status': 'failed' if data.get('overview_failed') else 'ready' if data.get('overview') is not None and bool(versions) and data.get('overview_versions') == versions else 'missing' if not data.get('overview') else 'stale'}
+                'items': output, 'overview': overview,
+                'overview_status': 'failed' if data.get('overview_failed') else 'ready' if overview is not None and bool(versions) and data.get('overview_versions') == versions else 'missing' if overview is None else 'stale'}
 
     def _refresh_overview(self, data):
         if self.overview is None:

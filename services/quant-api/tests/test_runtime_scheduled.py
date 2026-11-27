@@ -11,6 +11,7 @@ class Binding:
     service: str = 'weekly-audit'
     generation: int = 1
     enabled: bool = True
+    root: str = '/fixture'
 
 
 class Backend:
@@ -116,3 +117,53 @@ def test_unknown_journal_failure_keeps_binding_committed_gate(tmp_path, monkeypa
     with pytest.raises(ScheduledUpdateError, match='RECOVERY_READBACK_REQUIRED'):
         ScheduledBackend().freeze(Binding())
     assert backend.calls.count('calendar_register') == 1
+
+
+def test_archive_handoff_preserves_completed_history_and_consumed_late_claim(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+    import json
+    from types import SimpleNamespace
+
+    from app.market_data.after_market_history import NAME, read_history
+    from app.market_data.late_provider_recovery import _read as read_late_state
+    from app.runtime_scheduled import ScheduledBackend
+
+    products = ("rb",)
+    for module in ("operational_universe", "late_provider_recovery"):
+        monkeypatch.setattr(f"app.market_data.{module}.load_operational_products", lambda: products)
+    old, new = tmp_path / "old", tmp_path / "new"
+    source = old / ".run"
+    source.mkdir(parents=True, mode=0o700)
+    new.mkdir(mode=0o700)
+    status = source / "after-market-status.json"
+    status.write_text(json.dumps({
+        "schema_version": 3, "current_run": None, "last_failure": None,
+        "last_successful_trading_day": "2026-09-30",
+        "last_run": {"trading_day": "2026-09-30", "status": "passed", "attempts": 1,
+                     "started_at": "2026-09-30T18:05:00+08:00", "finished_at": "2026-09-30T18:11:00+08:00",
+                     "products": ["rb"], "error_code": None},
+    }))
+    late = source / "late-provider-recovery-status.json"
+    late.write_text(json.dumps({"schema_version": 1, "runs": {"2026-09-29": {
+        "products": ["rb"], "due_at": "2026-10-01T19:05:00+08:00", "state": "claimed",
+        "checks": 1, "error_code": "RQDATA_NOT_READY",
+    }}}))
+    late.chmod(0o600)
+    before = status.read_bytes(), late.read_bytes()
+    previous = SimpleNamespace(root=str(old), commit="a" * 40)
+    candidate = SimpleNamespace(root=str(new))
+    backend = ScheduledBackend()
+    backend.preserve_after_market(previous, candidate)
+    backend.preserve_after_market(previous, candidate)
+    target = new / ".run"
+    retained = read_history(target / NAME, products=products, now=datetime.now(UTC))
+    assert retained["source_commit"] == previous.commit
+    assert not (target / status.name).exists()
+    assert read_late_state(target / late.name) == read_late_state(late)
+    assert (status.read_bytes(), late.read_bytes()) == before
+
+    failed = json.loads(before[0])
+    failed["last_run"].update(status="failed", error_code="COMMIT_OUTCOME_UNKNOWN")
+    status.write_text(json.dumps(failed))
+    with pytest.raises(ScheduledUpdateError, match="SCHEDULED_ARCHIVE_COMMIT_READBACK_REQUIRED"):
+        backend.preserve_after_market(previous, candidate)

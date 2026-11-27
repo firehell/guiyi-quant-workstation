@@ -4,12 +4,12 @@ import NewowMainRiseProcessLabels from './NewowMainRiseProcessLabels.vue'
 import {readNewowChartDisplayTheme} from '@/utils/newowChartDisplayTheme'
 import {layoutMainRiseProcessLabels} from '@/utils/newowProcessHintDisplay'
 import NewowBreakoutOverlay from './NewowBreakoutOverlay.vue'
-import {breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
+import {BREAKOUT_VERSION,breakoutBand,type BreakoutPoint,type NewowBreakoutEvent} from '@/utils/newowBreakoutEvents'
 import NewowDisplayOverlay from './NewowDisplayOverlay.vue'
 import {displayIndexVisible,type DisplayPoint,type NewowDisplayEvent} from '@/utils/newowDisplayEvents'
 import { cautionDisplayTitle, cautionStateLabel, type CautionState } from '@/utils/newowCautionDisplay.ts'
 import ReferenceCalloutLabels from '@/components/kline/ReferenceCalloutLabels.vue'
-import { DETAIL_CHART_SESSION, detailChartTime, detailChartVolumeBars, detailChartViewport, detailChartIndex, detailChartLength, type DetailChartSession } from '@/utils/detailChartSession'
+import { DETAIL_CHART_SESSION, detailChartTime, detailChartVolumeBars, detailChartViewport, placeDetailChartViewport, detailChartIndex, detailChartLength, type DetailChartSession } from '@/utils/detailChartSession'
 import { createPriceSeriesWriter } from '@/utils/priceSeriesWriter'
 import { newowProcessHintDisplay } from '@/utils/newowProcessHintDisplay'
 import NewowChartSettings, { type NewowChartLayers } from './NewowChartSettings.vue'
@@ -18,8 +18,10 @@ import { newowFourStepMarks } from '@/utils/newowFourStepMarks'
 import { newowExtrema, newowNineTurn } from '@/utils/newowChartAnnotations'
 import { readChartAnnotationPreferences, readVisualOverlayPreferences, saveVisualOverlayPreferences, visualDonchian, retainBuildStop, retainedStopPrice, type RetainedBuildStop } from '@/utils/newowVisualOverlays'
 import { newowReferencePrice, newowSimpleDualLabel, NEWOW_CHART_PRICE_FORMAT } from '@/utils/newowPagePresentation'
-import { volumeColors, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@/utils/volumeDisplay'
-import { newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
+import { CHART_PROFILES, DISPLAY_CATALOG, mountChartHost, type ChartHost, type ChartLayer, type LayerDiagnostics, type LayerStatus } from '@guiyi/quant-chart'
+import { newowPaneId, type NewowAdditionalPane, type NewowAuxiliaryPaneComponent } from '@/utils/newowAdditionalPanes'
+import { volumePresentation, validVolume, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@guiyi/quant-chart/volume'
+import { NEWOW_BREAKOUT_DISPLAY_VERSION, newowOscillationBreakout } from '@/utils/newowBreakoutDisplay'
 import { newowChartReadout } from '@/utils/newowChartReadout'
 import { newowActionReturnDisplay, newowActionStatus } from '@/utils/newowActionReturnDisplay'
 import type { KlineReferenceCallout } from '@/types/referenceCallout'
@@ -27,18 +29,16 @@ import type { BarData } from '@/types/market'
 import { projectNewowAuxiliaryReadiness } from '@/utils/newowDetailPresentation'
 import { computed, shallowRef, inject, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
-  CandlestickSeries,
   ColorType,
   CrosshairMode,
   createChart,
   createSeriesMarkers,
-  LineSeries,
-  HistogramSeries,
+  type CreatePriceLineOptions,
   type WhitespaceData,
   type IChartApi,
-  type IPriceLine,
   type ISeriesApi,
   type ISeriesMarkersPluginApi,
+  type ISeriesPrimitive,
   type LineData,
   type CandlestickData,
   type HistogramData,
@@ -51,14 +51,16 @@ import {
 import { NewowProductBandPrimitive } from '@/components/market/detail/newow/newowProductBandPrimitive'
 import { NewowPublicPatternPrimitive } from '@/components/market/detail/newow/newowPublicPatternPrimitive'
 import { buildNewowPatternGeometry, type PatternChoice } from '@/utils/newowPatternDisplay'
+import { NEWOW_PUBLIC_PATTERNS_METADATA } from '@/utils/newowPublicPatterns'
 import { NewowTrendChannelPrimitive } from '@/components/market/detail/newow/newowTrendChannelPrimitive'
-import { NewowZhaoyaoMirrorPrimitive, buildNewowZhaoyaoMirrorData } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
-import { NewowUpDownEnergyPrimitive, buildNewowUpDownEnergyData } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
-import { NewowMainForceControlPrimitive, buildNewowMainForceData } from '@/components/market/detail/newow/newowMainForceControlPrimitive'
-import { NewowTrendReversalPrimitive, buildNewowTrendReversalData, buildNewowTrendReversalMarks } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
+import { NewowZhaoyaoMirrorPrimitive } from '@/components/market/detail/newow/newowZhaoyaoMirrorPrimitive'
+import { NewowUpDownEnergyPrimitive } from '@/components/market/detail/newow/newowUpDownEnergyPrimitive'
+import { NewowMainForceControlPrimitive } from '@/components/market/detail/newow/newowMainForceControlPrimitive'
+import { NewowTrendReversalPrimitive, buildNewowTrendReversalMarks } from '@/components/market/detail/newow/newowTrendReversalPrimitive'
+import { auxiliaryPaintCutoff, newowAuxiliaryDiagnostics, paintNewowAuxiliaryPrimitive, type NewowAuxiliaryPrimitive } from '@/components/market/detail/newow/newowAuxiliaryLayer'
 import { newowAuxiliaryPaneLayout } from '@/components/market/detail/newow/newowAuxiliaryPaneLayout'
 import { resolveChartTheme } from '@/styles/chartTheme'
-import type { NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
+import type { NewowAuxiliaryComponent, NewowFeatureStatus, NewowProductSectionResponse, NewowProductStrategy } from '@/types/newowProduct'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 import { readNewowUiPreferences, rememberNewowUiPreferences } from '@/utils/newowUiPreferences'
 import { newowComparisonCompatible } from '@/utils/newowComparison'
@@ -74,22 +76,30 @@ import {
   chartMarkerTime,
   createNewowProductChartDisposer,
   NEWOW_PRODUCT_CHART_ADAPTER_KEY,
+  newowChartSnapshotKey,
   preserveNewowViewport,
   productChartMarker,
   type NewowProductChartModel,
   type NewowProductResizeObserver,
 } from '@/components/market/detail/newow/newowProductChartPrimitives'
 
+type ChartResponse = NewowProductSectionResponse<'chart'>
+type LayerSource = Pick<LayerDiagnostics, 'sourceIdentity' | 'formulaVersion' | 'frequency' | 'dataCutoff'>
+type LayerPatch = Parameters<ChartLayer['updateDiagnostics']>[0]
+
 const props = withDefaults(defineProps<{
-  response: NewowProductSectionResponse<'chart'> | null
+  response: ChartResponse | null
   priceBars?: readonly BarData[]
   priceFrequency?: string
+  priceHistoryState?: { cached: boolean; loading: boolean; failed: boolean }
   displayOnly?: boolean
   patternSelection?:PatternChoice|null
   patternWindowKey?:string|null
   strategy: NewowProductStrategy
   targetPrice?: string | null
   absorbPrice?: string | null
+  targetPriceSource?: LayerSource
+  absorbPriceSource?: LayerSource
   referenceTrades?: readonly import('@/types/newowProduct').NewowReferenceTrade[]
   referenceTradesComplete?: boolean
   referenceStatsLoading?: boolean
@@ -98,8 +108,11 @@ const props = withDefaults(defineProps<{
   comparisonResponse?: NewowProductSectionResponse<'chart'> | null
   comparisonReferenceTrades?: readonly import('@/types/newowProduct').NewowReferenceTrade[]
   auxiliaryResponse?: NewowProductSectionResponse<'auxiliary'> | null
+  auxiliaryComponent?: NewowAuxiliaryComponent
+  auxiliaryCacheState?: LayerDiagnostics['cacheState']
   auxiliaryLifecycle?: import('@/types/newowProduct').NewowResourceLifecycle
   auxiliaryError?: string | null
+  extraAuxiliaryPanes?: readonly NewowAdditionalPane[]
   selectedSignalId: string | null
   focusRequestId?: number
   loading?: boolean
@@ -160,15 +173,21 @@ function syncDisplayPreferences() {
 watch(visualOverlays, value => { saveVisualOverlayPreferences(value); renderVisualOverlays() })
 const cursorRows = ref<string[]>([])
 const cursorTop = ref(0)
+const extraPaneHeaders = ref<Array<{ component: NewowAuxiliaryPaneComponent; title: string; top: number; status: LayerStatus; formulaVersion: string | null }>>([])
+const activeAuxiliary = shallowRef<ReturnType<ChartLayer['inspect']> | null>(null)
+const extraStatusMessages: Partial<Record<LayerStatus, string>> = {
+  loading: '加载中', warming: '预热中', invalid_source: '来源不匹配', compute_error: '计算结果不可用', missing_input: '缺少输入',
+  catalog_mismatch: '指标目录不匹配', renderer_failure: '渲染错误',
+}
+const extraPaneHeight = computed(() => pure.value ? 0 : (props.extraAuxiliaryPanes ?? []).reduce((sum, pane) => sum + (pane.height ?? 120), 0))
 function onCrosshair(event: MouseEventParams<Time>): void {
-  cursorRows.value = event.point == null ? [] : newowChartReadout(model.value, null, event.time ?? null)
+  cursorRows.value = event.point == null || priceWriteFailed.value ? [] : newowChartReadout(model.value, null, event.time ?? null)
   const chartTop = container.value?.offsetTop ?? 0
   const paneOffset = chart?.panes?.().slice(0, event.paneIndex ?? 0).reduce((height, pane) => height + pane.getHeight(), 0) ?? 0
   const cardHeight = cursorRows.value.length * 18 + 20
   cursorTop.value = chartTop + Math.max(0, Math.min((event.point?.y ?? 0) + paneOffset - 100, (container.value?.clientHeight ?? 0) - cardHeight))
 }
 const volumeBars = shallowRef<readonly DisplayVolumeBar[]>([])
-const referencePriceLines = new Map<string, IPriceLine>()
 const stageRoot = ref<HTMLElement | null>(null)
 const fullscreen = ref(false)
 const fullscreenError = ref<string | null>(null)
@@ -197,6 +216,9 @@ const showActions = ref(true)
 const showStructure = ref(true)
 const showHints = ref(true)
 const model = computed(() => props.response === null ? null : buildNewowProductChartModel(props.response))
+const priceWriteFailed = ref(false)
+const strategySource = computed(() => !priceWriteFailed.value && !props.displayOnly && !props.strategySwitching
+  && props.response?.meta.identity.strategy === props.strategy ? props.response : null)
 const settingsIdentity = computed(() => {
   const value = model.value
   return value ? identityKey(value) : props.strategy
@@ -247,9 +269,17 @@ function dualStepDescription(id: string): string {
 
 const allReferenceTrades = computed(() => mergeNewowDualReferences([...(props.referenceTrades ?? []), ...(comparisonActive.value ? props.comparisonReferenceTrades ?? [] : [])]))
 const comparisonStats = computed(() => newowDualVisibleStatistics(positionedComparison.value, allReferenceTrades.value))
-const auxiliaryModel = computed(() => alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
-const auxiliaryReadiness = computed(() => projectNewowAuxiliaryReadiness(props.auxiliaryResponse?.value, props.response?.value?.bars.at(-1)))
-const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(props.auxiliaryLifecycle ?? 'not_requested', auxiliaryModel.value !== null, props.auxiliaryError ?? null, auxiliaryReadiness.value?.message ?? null))
+const auxiliaryModel = computed(() => props.auxiliaryLifecycle === 'input_conflict'
+  ? null : alignNewowAuxiliaryChartModel(props.response, props.auxiliaryResponse ?? null))
+const auxiliarySourceConflict = computed(() => props.auxiliaryLifecycle === 'input_conflict'
+  || Boolean(props.response?.value && props.auxiliaryResponse?.value && !auxiliaryModel.value))
+const auxiliaryReadiness = computed(() => auxiliaryModel.value
+  ? projectNewowAuxiliaryReadiness(props.auxiliaryResponse?.value, props.response?.value?.bars.at(-1)) : null)
+const auxiliaryPresentation = computed(() => resolveNewowAuxiliaryRenderState(
+  auxiliarySourceConflict.value ? 'input_conflict' : props.auxiliaryLifecycle ?? 'not_requested',
+  auxiliaryModel.value !== null, auxiliarySourceConflict.value ? '辅助指标与当前合约计算段未对齐' : props.auxiliaryError ?? null,
+  auxiliaryReadiness.value?.message ?? null,
+))
 const mainLineColors: Record<string, string> = { b: '#F59E0B', a: '#2563EB', upper: '#16A34A', lower: '#DC2626', ma35: '#F59E0B', ma45: '#2563EB', ma10_display_v1: 'rgba(255,105,180,.7)' }
 const legend = computed(() => [...new Map(model.value?.mainLines.filter(line => line.key !== 'ma10_display_v1').map(line => [line.key, line]) ?? []).values()])
 const mainLegendLabel = computed(() => ({ trend: '趋势带', oscillation: '震荡区间', main_rise: '主升浪' })[props.strategy])
@@ -259,6 +289,7 @@ const adapter = inject(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
   createResizeObserver: (callback) => new ResizeObserver(callback),
 })
 
+let host: ChartHost | null = null
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
@@ -267,9 +298,57 @@ const dualBackground = new NewowDualBackgroundPrimitive()
 const trendChannel = new NewowTrendChannelPrimitive()
 const publicPattern = new NewowPublicPatternPrimitive()
 const priceAnnotations = new NewowPriceAnnotationPrimitive()
+
+function chartLayerSource(response: ChartResponse | null, dataCutoff: string | null = null): LayerSource {
+  return {
+    sourceIdentity: response?.meta.data_revision_identity ?? response?.meta.input_content_sha256 ?? null,
+    formulaVersion: response?.meta.identity.formula_versions.join(' / ') || null,
+    frequency: response?.meta.identity.frequency ?? null,
+    dataCutoff,
+  }
+}
+
+function chartLayerStatus(response: ChartResponse | null, hasOutput: boolean, feature = response?.status): LayerStatus {
+  if (feature?.reason_code === 'NEWOW_TREND_CHANNEL_OWNER_CONFLICT' || feature?.reason_code === 'NEWOW_TREND_CHANNEL_ORDER_CONFLICT') return 'invalid_source'
+  if (feature?.status === 'warming' || feature?.reason_code === 'NEWOW_TREND_CHANNEL_WARMUP_INSUFFICIENT') return 'warming'
+  if (hasOutput && feature?.status === 'ready') return 'ready'
+  if (props.loading || props.strategySwitching) return 'loading'
+  return 'missing_input'
+}
+
+function lastFrameStatus(response: ChartResponse | null): NewowFeatureStatus | undefined {
+  const value = response?.value
+  const last = value?.bars.at(-1)
+  return value && last ? lastMatching(value.frames, frame => frame.bar_end === last.bar_end)?.status : undefined
+}
+
+function displayVersion(indicator: string): string | null {
+  const source = DISPLAY_CATALOG[indicator]?.source
+  return source?.type === 'display_transform' ? source.version : null
+}
+
+function writeMainDiagnostics(id: string, indicator: string, response: ChartResponse | null, patch: LayerPatch): void {
+  const current = host?.inspectLayer(id)
+  if (current?.status === 'renderer_failure' || current?.status === 'catalog_mismatch' || current?.status === 'retired') return
+  host?.layer(id, indicator, 'main').updateDiagnostics({
+    ...chartLayerSource(response),
+    status: chartLayerStatus(response, false),
+    lastError: response?.status.reason_code ?? null,
+    warmup: null,
+    ...patch,
+  })
+}
+
+function lastMatching<T>(items: readonly T[], matches: (item: T) => boolean): T | undefined {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const item = items[i]!
+    if (matches(item)) return item
+  }
+}
+
 const marks = computed<NewowPriceAnnotation[]>(() => {
   const value = model.value
-  if (!value || props.displayOnly || props.strategySwitching || props.loading) return []
+  if (!value || priceWriteFailed.value || props.displayOnly || props.strategySwitching || props.loading) return []
   const bars = value.bars.map(bar => ({ ...bar, owner: JSON.stringify(
     [bar.physicalContract, bar.segmentId, bar.calculationSegmentId],
   ) }))
@@ -288,18 +367,75 @@ const marks = computed<NewowPriceAnnotation[]>(() => {
   })) : []
   return [...extrema, ...nine].sort((a, b) => a.index - b.index)
 })
+function syncPricePrimitive(id: string, indicator: string, primitive: ISeriesPrimitive<Time>, show: boolean, update?: () => void) {
+  if (!host || !candles) return
+  if (!show) {
+    host.removeLayer(id)
+    update?.()
+    return
+  }
+  const anchor = candles
+  host.renderLayer(id, indicator, 'main', 'primitive', layer => {
+    if (!layer.hasResource(primitive)) layer.primitive(anchor, primitive)
+    update?.()
+  })
+}
 function renderPriceAnnotations() {
-  priceAnnotations.setData(marks.value, pageTheme.value === 'dark')
+  const id = 'annotations', indicator = 'newow_annotations'
+  const source = props.loading ? null : strategySource.value
+  const enabled = annotations.value.extrema || (!pure.value && annotations.value.nineTurn)
+  syncPricePrimitive(id, indicator, priceAnnotations, marks.value.length > 0,
+    () => priceAnnotations.setData(marks.value, pageTheme.value === 'dark'))
+  writeMainDiagnostics(id, indicator, source, {
+    status: enabled ? chartLayerStatus(source, !!source?.value?.bars.length) : 'hidden',
+    formulaVersion: source ? displayVersion(indicator) : null,
+    dataCutoff: source?.value?.bars.at(-1)?.bar_end ?? null,
+  })
 }
 watch([marks, pageTheme], renderPriceAnnotations, { flush: 'post' })
-function renderPattern(){
- publicPattern.setData(null)
- const choice=props.patternSelection
- if(pure.value||!choice||!model.value||props.loading||props.strategySwitching||choice.windowKey!==props.patternWindowKey)return
- // Every source bar must still be exactly present in the accepted owner window.
- const accepted=new Map(model.value.bars.map(b=>[b.barEnd,b]))
- if(!choice.bars.every(b=>{const current=accepted.get(b.barEnd);return current&&current.sourceIdentity===b.sourceIdentity&&current.physicalContract===b.physicalContract&&current.segmentId===b.segmentId&&current.calculationSegmentId===b.calculationSegmentId}))return
- try{publicPattern.setData(buildNewowPatternGeometry(choice,model.value.identity.frequency))}catch{publicPattern.setData(null)}
+function renderPattern() {
+  const choice = props.patternSelection
+  const value = model.value
+  const source = strategySource.value
+  const id = 'pattern', indicator = 'newow_pattern'
+  if (pure.value || !choice || !value || !source || props.loading) {
+    syncPricePrimitive(id, indicator, publicPattern, false, () => publicPattern.setData(null))
+    writeMainDiagnostics(id, indicator, null, {
+      status: pure.value || !choice ? 'hidden' : chartLayerStatus(null, false),
+    })
+    return
+  }
+  // Selection must still belong to the accepted calculation window and price revision.
+  const accepted = new Map(value.bars.map(bar => [bar.barEnd, bar]))
+  const owner = choice.bars[0]
+  const priceKeys = ['open', 'high', 'low', 'close'] as const
+  if (choice.windowKey !== props.patternWindowKey || !owner || !choice.bars.every(bar => {
+    const current = accepted.get(bar.barEnd)
+    return current && current.sourceIdentity === bar.sourceIdentity
+      && current.physicalContract === bar.physicalContract && current.physicalContract === owner.physicalContract
+      && current.segmentId === bar.segmentId && current.segmentId === owner.segmentId
+      && current.calculationSegmentId === bar.calculationSegmentId && current.calculationSegmentId === owner.calculationSegmentId
+      && current.tradingDay === bar.tradingDay && current.volume === bar.volume
+      && priceKeys.every(key => current[key] === bar[key])
+  })) {
+    syncPricePrimitive(id, indicator, publicPattern, false, () => publicPattern.setData(null))
+    writeMainDiagnostics(id, indicator, null, { status: 'invalid_source', lastError: 'NEWOW_PATTERN_WINDOW_MISMATCH' })
+    return
+  }
+  const patternSource = {
+    formulaVersion: NEWOW_PUBLIC_PATTERNS_METADATA.version,
+    dataCutoff: choice.bars.at(-1)!.barEnd,
+  }
+  let geometry: ReturnType<typeof buildNewowPatternGeometry>
+  try {
+    geometry = buildNewowPatternGeometry(choice, value.identity.frequency)
+  } catch {
+    syncPricePrimitive(id, indicator, publicPattern, false, () => publicPattern.setData(null))
+    writeMainDiagnostics(id, indicator, source, { ...patternSource, status: 'compute_error', lastError: 'NEWOW_PATTERN_GEOMETRY_FAILED' })
+    return
+  }
+  syncPricePrimitive(id, indicator, publicPattern, true, () => publicPattern.setData(geometry))
+  writeMainDiagnostics(id, indicator, source, { ...patternSource, status: 'ready' })
 }
 watch(()=>[props.patternSelection,props.patternWindowKey,props.loading,props.strategySwitching],renderPattern)
 const zhaoyaoMirror = new NewowZhaoyaoMirrorPrimitive()
@@ -308,7 +444,8 @@ const mainForceControl = new NewowMainForceControlPrimitive()
 const trendReversal = new NewowTrendReversalPrimitive()
 let auxiliaryAnchor: ISeriesApi<'Line'> | null = null
 let auxiliaryZeroLine: { applyOptions(options: { color: string }): void } | null = null
-const auxiliaryLines = new Map<string, ISeriesApi<'Line'> | ISeriesApi<'Histogram'>>()
+type AuxiliaryLines = Map<string, ISeriesApi<'Line'> | ISeriesApi<'Histogram'>>
+const auxiliaryLines: AuxiliaryLines = new Map()
 let actionMarkers: ISeriesMarkersPluginApi<Time> | null = null
 let observer: NewowProductResizeObserver | null = null
 let renderedBars: NewowProductChartModel['bars'] = []
@@ -319,40 +456,72 @@ let nearLeftBoundary = false
 let paginationArmed = false
 let paginationArmFrame: number | null = null
 let actionProjectionFrame: number | null = null
+let paneHeaderFrame: number | null = null
 let actionProjectionScheduled = false
 let programmaticRange: { from: number; to: number } | null = null
 let resolvedSignalKey: string | null = null
 let resolvedFocusRequestKey: string | null = null
-const visualLines = new Map<string, ISeriesApi<'Line'>>()
-let visualStopLine: IPriceLine | null = null
 let retainedStop: RetainedBuildStop | null = null
 function renderVisualOverlays(): void {
-  if (!chart || !candles) return
-  for (const line of visualLines.values()) chart.removeSeries(line)
-  visualLines.clear()
-  if (visualStopLine) candles.removePriceLine(visualStopLine)
-  visualStopLine = null
+  if (!chart || !candles || !host) return
+  host.removeLayer('donchian')
+  host.removeLayer('stop')
   const value = model.value
-  if (pure.value || !value || props.displayOnly || props.loading || props.strategySwitching || props.response?.status.status !== 'ready' || value.identity.strategy !== props.strategy) { retainedStop = null; return }
+  const source = strategySource.value
+  if (pure.value || !value || props.loading || source?.status.status !== 'ready') {
+    retainedStop = null
+    for (const id of ['donchian', 'stop'] as const) writeMainDiagnostics(id, `newow_${id}`, props.loading ? null : source, {
+      status: pure.value || (id === 'donchian' && !visualOverlays.value.donchian) ? 'hidden' : chartLayerStatus(source, false),
+    })
+    return
+  }
   const owner = (b: NewowProductChartModel['bars'][number]) => `${b.physicalContract}:${b.segmentId}:${b.calculationSegmentId}`
   if (visualOverlays.value.donchian) {
-    const points = visualDonchian(value.bars.map(b => ({ time: b.barEnd, high: b.high, low: b.low, owner: owner(b) })), visualOverlays.value.window)
-    for (const [side,color] of [['upper','rgba(52,199,89,0.7)'],['lower','rgba(255,59,48,0.7)']] as const) {
-      const line = chart.addSeries(LineSeries,{ priceFormat: NEWOW_CHART_PRICE_FORMAT, color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false })
-      line.setData(points.map((p,i) => ({ time:chartMarkerTime(p.time,value.identity.frequency,value.bars[i]!.tradingDay), ...(p[side] === null ? {} : {value:p[side]!}) })))
-      visualLines.set(side,line)
+    const required = visualOverlays.value.window
+    const points = visualDonchian(value.bars.map(b => ({ time: b.barEnd, high: b.high, low: b.low, owner: owner(b) })), required)
+    const options = { priceFormat: NEWOW_CHART_PRICE_FORMAT, lineWidth: 1 as const, lineStyle: 2 as const, priceLineVisible: false, lastValueVisible: false }
+    host.renderLayer('donchian', 'newow_donchian', 'main', 'band', layer => {
+      const lines = layer.band(
+        { ...options, color: 'rgba(52,199,89,0.7)' }, { ...options, color: 'rgba(255,59,48,0.7)' },
+      )
+      for (const side of ['upper', 'lower'] as const) {
+        lines[side].setData(points.map((p, i) => ({ time: chartMarkerTime(p.time, value.identity.frequency, value.bars[i]!.tradingDay), ...(p[side] === null ? {} : { value: p[side]! }) })))
+      }
+    })
+    const current = value.bars.at(-1)
+    let available = 0
+    for (let i = value.bars.length - 1; current && i >= 0 && available < required; i--) {
+      const bar = value.bars[i]!
+      if (owner(bar) !== owner(current) || !Number.isFinite(bar.high) || !Number.isFinite(bar.low) || bar.high < bar.low) break
+      available++
     }
-  }
+    writeMainDiagnostics('donchian', 'newow_donchian', source, {
+      formulaVersion: displayVersion('newow_donchian'),
+      status: current ? available === required ? 'ready' : 'warming' : 'missing_input',
+      warmup: { available, required },
+      dataCutoff: lastMatching(points, point => point.upper !== null)?.time ?? null,
+    })
+  } else writeMainDiagnostics('donchian', 'newow_donchian', null, { status: 'hidden' })
   const anchorModel = comparisonActive.value ? trackModels.value.find(m => m.identity.strategy === 'oscillation') : value
-  if (!anchorModel) { retainedStop = null; return }
+  const anchorSource = anchorModel === value ? source : props.comparisonResponse ?? null
+  if (!anchorModel || !anchorSource) {
+    retainedStop = null
+    writeMainDiagnostics('stop', 'newow_stop', null, { status: 'missing_input' })
+    return
+  }
   const range = chart.timeScale().getVisibleLogicalRange()
   // Logical indexes belong to the primary candle axis; partner windows can begin earlier.
   const bars = value.bars.filter((bar,i) => { const logical = chart ? detailChartIndex(chart, chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay), i) : i; return !range || (logical >= Math.ceil(range.from) && logical <= Math.floor(range.to)) })
   retainedStop = retainBuildStop(retainedStop, `${identityKey(value)}:${comparisonActive.value ? 'dual' : 'single'}`, anchorModel.actions.map(a => { const b = anchorModel.bars.find(b => b.barEnd === a.barEnd && b.physicalContract === a.physicalContract && b.segmentId === a.segmentId); return { time:a.barEnd, owner:b ? owner(b) : '', price:a.referencePrice, action:a.kind } }),bars.map(b => ({time:b.barEnd,owner:owner(b)})))
   const price = retainedStopPrice(retainedStop, 0.07)
-  if (price !== null) visualStopLine = candles.createPriceLine({price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
+  if (price !== null) renderPriceLevel('stop', 'newow_stop', {price,color:'#3B82F6',lineStyle:2,lineWidth:1,title:'止损价（−7%）',axisLabelVisible:true})
+  writeMainDiagnostics('stop', 'newow_stop', anchorSource, {
+    status: chartLayerStatus(anchorSource, price !== null),
+    formulaVersion: displayVersion('newow_stop'),
+    dataCutoff: price !== null ? retainedStop?.anchor.time ?? null : null,
+  })
 }
-const mainLines = new Map<string, ISeriesApi<'Line'>>()
+const mainLines = new Map<string, ISeriesApi<'Line'> | null>()
 
 onMounted(async () => {
   await nextTick()
@@ -363,7 +532,7 @@ onMounted(async () => {
     for(const target of [document.documentElement,document.body])if(target)themeObserver.observe(target,{attributes:true,attributeFilter:['data-theme']})
   }
   const theme = resolveChartTheme(container.value)
-  chart = (detailSession?.acquire ?? adapter.createChart)(container.value, {
+  host = mountChartHost(container.value, {
     width: container.value.clientWidth,
     height: container.value.clientHeight,
     layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text, panes: { enableResize: false, separatorColor: '#EBEDF0' } },
@@ -372,23 +541,21 @@ onMounted(async () => {
     crosshair: { mode: CrosshairMode.Normal },
     localization: { timeFormatter: formatChartTimeInShanghai },
     timeScale: { borderColor: theme.axis, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
-  })
-  candles = chart.addSeries(CandlestickSeries, {
+  }, detailSession?.acquire ?? adapter.createChart)
+  chart = host.chart
+  candles = host.layer('price', 'price', 'main').candles({
     priceFormat: NEWOW_CHART_PRICE_FORMAT,
     upColor: theme.candleUp, downColor: theme.candleDown,
     borderUpColor: theme.candleUp, borderDownColor: theme.candleDown,
     wickUpColor: theme.candleUp, wickDownColor: theme.candleDown,
   })
   chart.panes()[0]!.setStretchFactor(5)
-  candles.attachPrimitive(band)
   dualBackground.setDark(pageTheme.value==='dark')
-  candles.attachPrimitive(dualBackground)
-  candles.attachPrimitive(trendChannel)
-  candles.attachPrimitive(publicPattern)
   // Public detail v3.4.49: volume shares the price pane on its own hidden scale.
-  volume = chart.addSeries(HistogramSeries, { priceScaleId: 'volume', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false }, 0)
+  const profile = comparisonActive.value ? 'newow_dual' : `newow_${props.strategy}` as const
+  const volumePolicy = CHART_PROFILES[profile].volume
+  volume = host.layer('volume', `${volumePolicy}_volume`, 'volume').histogram({ priceScaleId: 'volume', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false })
   volume.priceScale().applyOptions(VOLUME_SCALE_OPTIONS)
-  candles.attachPrimitive(priceAnnotations)
   syncAuxiliaryPane()
   if (typeof document !== 'undefined') {
     document.addEventListener('fullscreenchange', onFullscreenChange)
@@ -398,7 +565,6 @@ onMounted(async () => {
     window.addEventListener('pageshow', syncDisplayPreferences)
     window.addEventListener('storage', syncDisplayPreferences)
   }
-  actionMarkers = adapter.createSeriesMarkers(candles as never)
   chart.subscribeCrosshairMove?.(onCrosshair)
   chart.timeScale().subscribeVisibleLogicalRangeChange(onRangeChange)
   observer = adapter.createResizeObserver(resize)
@@ -406,6 +572,7 @@ onMounted(async () => {
   if (stageRoot.value) observer.observe(stageRoot.value)
   if (auxiliaryToolbar.value) observer.observe(auxiliaryToolbar.value)
   renderModel(model.value)
+  renderEventDiagnostics()
   renderPriceAnnotations()
   resize()
 })
@@ -419,6 +586,7 @@ onUnmounted(createNewowProductChartDisposer({
     rememberViewport()
     if (paginationArmFrame !== null) cancelAnimationFrame(paginationArmFrame)
     if (actionProjectionFrame !== null) cancelAnimationFrame(actionProjectionFrame)
+    if (paneHeaderFrame !== null) cancelAnimationFrame(paneHeaderFrame)
     if (typeof document !== 'undefined') {
       document.removeEventListener('fullscreenchange', onFullscreenChange)
       document.removeEventListener('visibilitychange', syncDisplayPreferences)
@@ -427,25 +595,23 @@ onUnmounted(createNewowProductChartDisposer({
       window.removeEventListener('pageshow', syncDisplayPreferences)
       window.removeEventListener('storage', syncDisplayPreferences)
     }
-    candles?.detachPrimitive(band)
-    candles?.detachPrimitive(dualBackground)
-    candles?.detachPrimitive(trendChannel)
-    candles?.detachPrimitive(publicPattern)
-    candles?.detachPrimitive(priceAnnotations)
-    auxiliaryAnchor?.detachPrimitive(zhaoyaoMirror)
-    auxiliaryAnchor?.detachPrimitive(upDownEnergy)
-    auxiliaryAnchor?.detachPrimitive(mainForceControl)
-    auxiliaryAnchor?.detachPrimitive(trendReversal)
-    referencePriceLines.clear()
-    visualLines.clear(); visualStopLine = null
-    chart?.remove()
-    chart = null; candles = null; volume = null; auxiliaryAnchor = null; auxiliaryZeroLine = null
+    host?.dispose()
+    host = null
+    chart = null; candles = null; volume = null; auxiliaryAnchor = null; auxiliaryZeroLine = null; actionMarkers = null
     mainLines.clear(); auxiliaryLines.clear()
+    failedExtraAxes.clear(); failedAuxiliaryAxis = null
   },
 }))
 
-watch([model, () => props.strategySwitching, () => props.priceBars, () => props.displayOnly], ([value]) => { renderModel(value) })
-watch([() => props.targetPrice, () => props.absorbPrice, () => props.loading, () => props.strategy], renderReferencePrices, { flush: 'post' })
+watch([model, () => props.strategy, () => props.strategySwitching, () => props.priceBars,
+  () => props.priceHistoryState, () => props.priceFrequency, () => props.displayOnly], ([value]) => { renderModel(value) })
+watch(() => strategySource.value?.value?.trend_channel?.points.at(-1)?.status.reason_code,
+  () => renderStructure(strategySource.value ? model.value : null))
+watch([strategySource, partnerModel, pure, showActions, showHints, detailLabels, showBreakoutShapes,
+  showBreakoutWicks, trendTrack, oscillationTrack, () => props.loading, () => props.response?.status.status],
+renderEventDiagnostics, { flush: 'post' })
+watch([() => props.targetPrice, () => props.absorbPrice, () => props.targetPriceSource, () => props.absorbPriceSource,
+  () => props.loading, () => props.strategy], renderReferencePrices, { flush: 'post' })
 watch(showStructure, () => renderModel(model.value))
 watch(pure, () => {
   cursorRows.value = []
@@ -454,12 +620,13 @@ watch(pure, () => {
   resize()
 }, { flush: 'post' })
 watch(showBreakoutShapes, () => { renderReferencePrices(); renderVolume(model.value) })
-watch(showActions, () => { renderMarkers(model.value); scheduleActionProjection() })
+watch([showActions, () => props.loading], () => { renderMarkers(model.value); scheduleActionProjection() })
 watch([model, allReferenceTrades], () => { cursorRows.value = []; scheduleActionProjection() }, { flush: 'post' })
 watch([detailLabels, showHints], scheduleActionProjection, { flush: 'post' })
 watch([() => props.loading, () => props.strategySwitching, () => props.strategy, () => props.response?.status.status, () => props.displayOnly], renderVisualOverlays)
 watch([partnerModel, trendTrack, oscillationTrack, comparisonBackground], () => renderModel(model.value))
-watch([auxiliaryModel, auxiliaryPresentation], () => { cursorRows.value = []; resize() }, { flush: 'post' })
+watch([auxiliaryModel, auxiliaryPresentation, () => props.auxiliaryComponent, () => props.auxiliaryCacheState,
+  () => props.extraAuxiliaryPanes], () => { cursorRows.value = []; resize() }, { flush: 'post' })
 watch([() => props.selectedSignalId, () => props.focusRequestId], () => {
   renderMarkers(model.value)
   resolveSelectedSignal()
@@ -472,55 +639,135 @@ function identityKey(value: NewowProductChartModel): string {
 function axisKey(bars: NewowProductChartModel['bars']): string { return JSON.stringify(bars.map(bar => [bar.barEnd, bar.physicalContract, bar.calculationSegmentId])) }
 function rememberViewport(): void {
   if (!renderedIdentity || !chart) return
+  const range = detailSession ? detailChartViewport(chart) : retainedVisibleRange ?? chart.timeScale().getVisibleLogicalRange()
   rememberNewowUiPreferences(`newow:${renderedIdentity.product}:${renderedIdentity.strategy}:${renderedIdentity.frequency}`, { chart: {
-    axis: axisKey(renderedBars), range: retainedVisibleRange ?? chart.timeScale().getVisibleLogicalRange(), detail: detailLabels.value,
+    axis: axisKey(renderedBars), range, detail: detailLabels.value,
     actions: showActions.value, structure: showStructure.value, hints: showHints.value,
     breakouts: showBreakoutShapes.value, wicks: showBreakoutWicks.value, trendTrack: trendTrack.value,
     oscillationTrack: oscillationTrack.value, comparisonBackground: comparisonBackground.value,
   } })
 }
+function renderPriceLevel(id: string, indicator: string, options: CreatePriceLineOptions): void {
+  const anchor = candles
+  if (anchor) host?.renderLayer(id, indicator, 'main', 'price_level_zone', layer => {
+    layer.priceLevel(anchor, options)
+  })
+}
+
 function renderReferencePrices(): void {
-  if (!candles) return
-  for (const line of referencePriceLines.values()) candles.removePriceLine?.(line)
-  referencePriceLines.clear()
-  if (pure.value || !model.value) return
-  for (const [key, value, color, title] of [
-    ['target', props.targetPrice, '#ff4d9d', '目标价'],
-    ['absorb', props.absorbPrice, '#ff3b30', '吸筹价'],
+  if (!candles || !host) return
+  host.removeLayer('target-price')
+  host.removeLayer('absorb-price')
+  host.removeLayer('breakout-reference')
+  const chartSource = strategySource.value
+  for (const [id, value, source, color, title] of [
+    ['target-price', props.targetPrice, props.targetPriceSource, '#ff4d9d', '目标价'],
+    ['absorb-price', props.absorbPrice, props.absorbPriceSource, '#ff3b30', '吸筹价'],
   ] as const) {
-    if (value == null || !/^\d+(\.\d+)?$/.test(value)) continue
-    const price = Number(value)
-    if (!Number.isFinite(price) || price <= 0) continue
-    referencePriceLines.set(key, candles.createPriceLine({ price, color, title, lineWidth: 1, lineStyle: 1,
-      axisLabelVisible: true, axisLabelColor: color, axisLabelTextColor: '#ffffff' }))
+    const price = value != null && /^\d+(\.\d+)?$/.test(value) ? Number(value) : NaN
+    const visible = !pure.value && !!chartSource && !!model.value && Number.isFinite(price) && price > 0
+    const indicator = 'newow_price_reference'
+    if (visible) renderPriceLevel(id, indicator, { price, color, title, lineWidth: 1, lineStyle: 1,
+      axisLabelVisible: true, axisLabelColor: color, axisLabelTextColor: '#ffffff' })
+    writeMainDiagnostics(id, indicator, null, {
+      ...(visible ? source : undefined),
+      status: pure.value ? 'hidden' : chartLayerStatus(chartSource, visible),
+      renderer: 'price_level_zone',
+    })
   }
-  const breakout = showBreakoutShapes.value && !props.displayOnly && !props.loading && !props.strategySwitching && props.strategy === model.value.identity.strategy
-    && props.response?.status.status === 'ready' ? newowOscillationBreakout(model.value) : null
-  if (breakout) referencePriceLines.set('breakout', candles.createPriceLine({
+  const breakout = !pure.value && showBreakoutShapes.value && !props.loading && chartSource?.status.status === 'ready' && model.value
+    ? newowOscillationBreakout(model.value) : null
+  if (breakout) renderPriceLevel('breakout-reference', 'newow_breakout_reference', {
     price: breakout.price, color: '#FF9800', title: `突破 ${breakout.displayScore}/7`,
     lineWidth: 1, lineStyle: 2, axisLabelVisible: true, axisLabelColor: '#FF9800', axisLabelTextColor: '#ffffff',
-  }))
+  })
+  if (props.strategy === 'oscillation') writeMainDiagnostics('breakout-reference', 'newow_breakout_reference', chartSource, {
+    status: pure.value || !showBreakoutShapes.value ? 'hidden' : chartLayerStatus(chartSource, breakout !== null),
+    formulaVersion: chartSource ? NEWOW_BREAKOUT_DISPLAY_VERSION : null,
+    dataCutoff: breakout ? model.value?.bars.at(-1)?.barEnd ?? null : null,
+  })
 }
 
 const candleWriter = createPriceSeriesWriter<CandlestickData<Time>>()
 const volumeWriter = createPriceSeriesWriter<HistogramData<Time> | WhitespaceData<Time>>()
 const anchorWriter = createPriceSeriesWriter<{ time: Time }>()
 
-function renderVolume(value:NewowProductChartModel|null):void {
-  if(!volume||!value||props.strategySwitching||props.displayOnly)return
-  const input = detailChartVolumeBars(chart!, value.bars.map(bar => ({ ...bar, time: bar.barEnd })))
-  volumeBars.value = input
-  const colors = volumeColors(input, pageTheme.value, !pure.value && showBreakoutShapes.value)
-  volumeWriter.write(volume,input.map((bar,index)=>({time:detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, value.identity.frequency),...(validVolume(bar)?{value:bar.volume,color:colors[index]}:{})})),`${value.identity.product}:${value.identity.frequency}`)
+function writePriceWindow(points: CandlestickData<Time>[], identity: string, diagnostics: LayerPatch, physicalContract?: string): boolean {
+  if (!host || !candles) return false
+  const layer = host.layer('price', 'price', 'main')
+  try {
+    candleWriter.write(candles, points, identity)
+    priceWriteFailed.value = false
+    layer.updateDiagnostics({ ...diagnostics, formulaVersion: null, renderer: 'candles' })
+    detailSession?.recordBaseLayer('candles', { ...layer.inspect(), physicalContract })
+    return true
+  } catch {
+    priceWriteFailed.value = true
+    cursorRows.value = []
+    layer.updateDiagnostics({ ...chartLayerSource(null), status: 'renderer_failure',
+      frequency: diagnostics.frequency, cacheState: null, lastError: 'CHART_RENDERER_UPDATE_FAILED' })
+    return false
+  }
 }
+
+function historyBarDiagnostics(bar: Pick<BarData, 'time' | 'sourceBarSha256'> | undefined): LayerPatch {
+  const state = props.priceHistoryState
+  return {
+    status: bar ? 'ready' : state?.loading ? 'loading' : state?.failed ? 'compute_error' : 'missing_input',
+    sourceIdentity: bar?.sourceBarSha256 ?? null, dataCutoff: bar?.time ?? null, frequency: props.priceFrequency ?? null,
+    cacheState: bar && state ? state.cached ? 'hit' : 'miss' : null,
+    lastError: state?.failed ? 'MARKET_PRICE_WINDOW_UNAVAILABLE' : null,
+  }
+}
+
+function writeVolumeWindow(input: readonly DisplayVolumeBar[], frequency: string, identity: string,
+  enabled: boolean, diagnostics: LayerPatch): void {
+  if (!host || !volume) return
+  const layer = host.layer('volume', 'newow_volume', 'volume')
+  const { colors } = volumePresentation('newow', input, { theme: pageTheme.value, enabled })
+  try {
+    volumeWriter.write(volume, input.map((bar, index) => ({
+      time: detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, frequency),
+      ...(validVolume(bar) ? { value: bar.volume, color: colors[index] } : {}),
+    })), identity)
+    volumeBars.value = input
+    layer.updateDiagnostics({ ...diagnostics, renderer: 'histogram' })
+    detailSession?.recordBaseLayer('volume', layer.inspect())
+  } catch {
+    volumeBars.value = []
+    layer.updateDiagnostics({ ...chartLayerSource(null), status: 'renderer_failure', frequency,
+      cacheState: null, lastError: 'CHART_RENDERER_UPDATE_FAILED' })
+  }
+}
+
+function renderVolume(value: NewowProductChartModel | null): void {
+  if (!chart || !value) return
+  const input = detailChartVolumeBars(chart, value.bars.map(bar => ({ ...bar, time: bar.barEnd })))
+  const latest = lastMatching<DisplayVolumeBar>(input, validVolume)
+  const source = latest && value.bars.some(bar => bar.barEnd === latest.time && bar.volume === latest.volume
+    && bar.physicalContract === latest.physicalContract)
+    ? props.response : null
+  const coloring = Boolean(strategySource.value && !pure.value && showBreakoutShapes.value)
+  writeVolumeWindow(input, value.identity.frequency, `${value.identity.product}:${value.identity.frequency}`, coloring, {
+    ...chartLayerSource(latest ? source : null, latest?.time ?? null), frequency: value.identity.frequency,
+    formulaVersion: coloring ? displayVersion('newow_volume') : null,
+    status: latest ? 'ready' : chartLayerStatus(source, false), cacheState: props.displayOnly && latest ? 'hit' : null,
+    lastError: null,
+  })
+}
+function reportRenderedEnd(end?: string, contract?: string, frequency?: string) {
+  if (!stageRoot.value) return
+  stageRoot.value.dataset.klineEnd = end ?? ''
+  stageRoot.value.dataset.klineContract = contract ?? ''
+  stageRoot.value.dataset.klineFrequency = frequency ?? ''
+}
+
 function renderModel(value: NewowProductChartModel | null): void {
   processOverlays.value = []
   cycleCountOverlays.value = []
   if (chart === null || candles === null) return
-  renderReferencePrices()
-  renderVisualOverlays()
-  renderPattern()
-  if (value === null) {
+  if (!auxiliaryAnchor && !pure.value) syncAuxiliaryPane()
+  if (!value?.bars.length) {
     rememberViewport()
     paginationArmed = false
     if (renderedIdentity !== null && renderedBars.length > 0) {
@@ -530,29 +777,41 @@ function renderModel(value: NewowProductChartModel | null): void {
     // Keep only the price facts while switching strategy, never its old indicators or signals.
     if (!props.strategySwitching) {
       const preview = props.priceBars ?? []
-
-      const points = preview.map(bar => ({ time: (props.priceFrequency ?? '').endsWith('m')
-        ? Math.floor(Date.parse(bar.time) / 1000) as import('lightweight-charts').UTCTimestamp
-        : chartMarkerTime(bar.time, '1d', bar.trading_day ?? bar.time.slice(0, 10)), open: bar.open, high: bar.high, low: bar.low, close: bar.close }))
-      candleWriter.write(candles, points, 'preview')
-
-      if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, [], 'cleared')
+      const last = preview.at(-1)
+      const retained = !last ? detailSession?.readBaseLayer('candles') : undefined
+      if (retained) {
+        host?.layer('price', 'price', 'main').updateDiagnostics({
+          ...retained, status: 'ready', lastError: null,
+        })
+        reportRenderedEnd(retained.dataCutoff ?? undefined, retained.physicalContract, retained.frequency ?? undefined)
+      } else {
+        const written = writePriceWindow(preview.map(bar => ({
+          time: detailChartTime(bar, props.priceFrequency ?? '1d'), open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+        })), 'preview', historyBarDiagnostics(last), last?.physicalContract)
+        reportRenderedEnd(written ? last?.time : undefined, written ? last?.physicalContract : undefined, props.priceFrequency)
+      }
+      writeAuxiliaryAxis(null, 'cleared')
+      const retainedVolume = !last ? detailSession?.readBaseLayer('volume') : undefined
+      if (retainedVolume) {
+        volumeBars.value = detailChartVolumeBars(chart, [])
+        host?.layer('volume', 'newow_volume', 'volume').updateDiagnostics({
+          ...retainedVolume, status: 'ready', lastError: null,
+        })
+      } else {
+        const previewVolume = preview.length ? detailChartVolumeBars(chart, preview) : preview
+        const latest = lastMatching<DisplayVolumeBar>(previewVolume, validVolume)
+        writeVolumeWindow(previewVolume, props.priceFrequency ?? '1d', 'preview', false, {
+          ...historyBarDiagnostics(latest), formulaVersion: null,
+        })
+      }
     }
-    const previewVolume = props.strategySwitching ? volumeBars.value : detailChartVolumeBars(chart, props.priceBars ?? [])
-    volumeBars.value = previewVolume.map(bar => ({ ...bar, confirmed: false }))
-    const previewColors = volumeColors(volumeBars.value, pageTheme.value, false)
-    if (volume) volumeWriter.write(volume, volumeBars.value.map((bar, index) => ({
-      time: detailChartTime({ time: bar.time, trading_day: bar.tradingDay ?? bar.trading_day }, props.priceFrequency ?? '1d'),
-      ...(validVolume(bar) ? { value: bar.volume, color: previewColors[index] } : {}),
-    })), 'preview')
-    band.setData([])
-    dualBackground.setData([])
-    trendChannel.setData([])
+    renderReferencePrices()
+    renderVisualOverlays()
+    renderPattern()
+    renderStructure(null)
     renderAuxiliary()
-    for (const series of mainLines.values()) chart.removeSeries(series)
-    mainLines.clear()
-    actionMarkers?.setMarkers([])
-    positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
+    renderMarkers(null)
+    projectActionLabels(null)
     resolvedSignalKey = null
     resolvedFocusRequestKey = null
     return
@@ -590,43 +849,48 @@ function renderModel(value: NewowProductChartModel | null): void {
   const resetViewport = previousModel !== null && !retainsPreviousAxis
   rendering = true
   const priceIdentity = `${value.identity.product}:${value.identity.frequency}`
-  candleWriter.write(candles, value.bars.map((bar) => ({
+  const last = value.bars.at(-1)
+  const written = writePriceWindow(value.bars.map(bar => ({
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
-  })), priceIdentity)
+    physicalContract: props.displayOnly || props.strategySwitching ? undefined : bar.physicalContract.toUpperCase(),
+  })), priceIdentity, {
+    ...chartLayerSource(last ? props.response : null, last?.barEnd ?? null),
+    frequency: value.identity.frequency, status: last ? 'ready' : chartLayerStatus(props.response, false),
+    cacheState: props.displayOnly && last ? 'hit' : null, lastError: null,
+  }, last?.physicalContract)
+  reportRenderedEnd(written ? last?.barEnd : undefined, written ? last?.physicalContract : undefined, value.identity.frequency)
   renderVolume(value)
-  if (auxiliaryAnchor) anchorWriter.write(auxiliaryAnchor, value.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay) })), priceIdentity)
-  const trendModel = trackModels.value.find(item => item.identity.strategy === 'trend')
-  band.setData(!pure.value && showStructure.value && !comparisonActive.value ? value.bandAreas : [])
-  dualBackground.setData(!pure.value && comparisonActive.value && showStructure.value && comparisonBackground.value
-    ? (trendModel?.bandAreas.filter(area => area.color === 'rgba(54, 90, 245, 0.35)').map(area => area.time) ?? []) : [])
-  const channelModel = comparisonActive.value ? trackModels.value.find(item => item.identity.strategy === 'oscillation') : value
-  trendChannel.setData((!pure.value && showStructure.value ? channelModel?.channelPoints ?? [] : []).map((point) => ({
-    time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay),
-    upper: point.upper,
-    lower: point.lower,
-  })))
+  renderReferencePrices()
+  renderVisualOverlays()
+  renderPattern()
+  writeAuxiliaryAxis(written ? value : null, priceIdentity)
+  renderStructure(strategySource.value ? value : null)
   renderAuxiliary()
-  syncMainLines(comparisonActive.value ? { ...value, mainLines: trackModels.value.flatMap(item => item.mainLines) } : value)
-  renderMarkers(value)
+  renderMarkers(written ? value : null)
+  if (!written) {
+    rendering = false
+    projectActionLabels(null)
+    return
+  }
   const sharedViewport = detailChartViewport(chart)
   if (sharedViewport) {
     followLatest.value = false
     setRange(sharedViewport)
   } else if (renderedIdentity !== null && initialPreferences?.range && initialPreferences.axis === axisKey(value.bars)) {
     followLatest.value = false
-    setRange(initialPreferences.range)
+    setRange(initialPreferences.range, true)
   } else if (resetViewport || previousModel === null || renderedBars.length === 0) {
     followLatest.value = true
     resolvedSignalKey = null
     resolvedFocusRequestKey = null
     const range = initialNewowChartLogicalRange(value.bars.length, container.value?.clientWidth ?? 1000)
-    if (range === null) chart.timeScale().fitContent()
-    else setRange(range)
+    if (range === null) placeDetailChartViewport(chart, null)
+    else setRange(range, true)
   } else if (prepended > 0 && previousRange !== null) {
-    setRange({ from: previousRange.from + prepended, to: previousRange.to + prepended })
+    setRange({ from: previousRange.from + prepended, to: previousRange.to + prepended }, true)
   } else if (previousRange !== null) {
-    setRange(previousRange)
+    setRange(previousRange, true)
   }
   renderedBars = value.bars
   renderedIdentity = { ...value.identity }
@@ -637,19 +901,86 @@ function renderModel(value: NewowProductChartModel | null): void {
   resolveSelectedSignal()
 }
 
-function syncMainLines(value: NewowProductChartModel): void {
-  if (chart === null) return
-  const active = new Set((!pure.value && showStructure.value ? value.mainLines : []).map((line) => line.id))
-  for (const [id, series] of mainLines) {
+function renderStructure(value: NewowProductChartModel | null): void {
+  if (!host) return
+  const shown = !pure.value && showStructure.value
+  const dual = comparisonActive.value
+  const primary = strategySource.value
+  const secondary = value && dual ? props.comparisonResponse ?? null : null
+  const trendSource = primary?.meta.identity.strategy === 'trend' ? primary : secondary
+  const trendModel = value?.identity.strategy === 'trend' ? value : partnerModel.value
+  const channelModel = dual && value?.identity.strategy !== 'oscillation' ? partnerModel.value : value
+  const channelSource = channelModel === value ? primary : secondary
+  const primaryBand = props.strategy !== 'oscillation' && !dual
+  const bandAreas = shown && primaryBand ? value?.bandAreas ?? [] : []
+  const bandIndicator = props.strategy === 'main_rise' ? 'newow_main_rise' : 'newow_trend'
+  if (lastBandIndicator !== bandIndicator) {
+    syncPricePrimitive('strategy-band', lastBandIndicator, band, false)
+    host.removeLayer('strategy-band')
+  }
+  lastBandIndicator = bandIndicator
+  syncPricePrimitive('strategy-band', bandIndicator, band, bandAreas.length > 0, () => band.setData(bandAreas))
+  if (primaryBand) writeMainDiagnostics('strategy-band', bandIndicator, primary, {
+    status: shown ? chartLayerStatus(primary, bandAreas.length > 0, lastFrameStatus(primary)) : 'hidden',
+    renderer: 'primitive',
+    dataCutoff: bandAreas.at(-1)?.barEnd ?? null,
+  })
+  else host.removeLayer('strategy-band')
+
+  const backgroundTimes = value && shown && dual && comparisonBackground.value
+    ? trendModel?.bandAreas.filter(area => area.color === 'rgba(54, 90, 245, 0.35)').map(area => area.time) ?? [] : []
+  syncPricePrimitive('comparison-background', 'newow_dual_background', dualBackground, backgroundTimes.length > 0,
+    () => dualBackground.setData(backgroundTimes))
+  if (dual) writeMainDiagnostics('comparison-background', 'newow_dual_background', trendSource, {
+    status: shown && comparisonBackground.value ? chartLayerStatus(trendSource, Boolean(trendModel?.bandAreas.length), lastFrameStatus(trendSource)) : 'hidden',
+    formulaVersion: trendSource ? displayVersion('newow_dual_background') : null,
+    dataCutoff: trendSource?.value?.bars.at(-1)?.bar_end ?? null,
+  })
+  else host.removeLayer('comparison-background')
+
+  const channelIndicator = dual || props.strategy !== 'trend' ? 'newow_oscillation' : 'newow_trend'
+  if (lastChannelIndicator !== channelIndicator) {
+    syncPricePrimitive('strategy-channel', lastChannelIndicator, trendChannel, false)
+    host.removeLayer('strategy-channel')
+  }
+  lastChannelIndicator = channelIndicator
+  const channelPoints = value && shown ? channelModel?.channelPoints ?? [] : []
+  syncPricePrimitive('strategy-channel', channelIndicator, trendChannel, channelPoints.length > 0, () => trendChannel.setData(channelPoints.map(point => ({
+    time: chartMarkerTime(point.barEnd, value!.identity.frequency, point.tradingDay),
+    upper: point.upper, lower: point.lower,
+  }))))
+  const trendChannelSource = channelSource?.value?.trend_channel
+  const featureStatus = channelIndicator === 'newow_trend' ? trendChannelSource?.points.at(-1)?.status : lastFrameStatus(channelSource)
+  if (dual || props.strategy !== 'main_rise') writeMainDiagnostics('strategy-channel', channelIndicator, channelSource, {
+    status: shown ? chartLayerStatus(channelSource, channelPoints.length > 0, featureStatus) : 'hidden',
+    renderer: 'primitive',
+    formulaVersion: trendChannelSource?.formula_version ?? chartLayerSource(channelSource).formulaVersion,
+    dataCutoff: channelPoints.at(-1)?.barEnd ?? null,
+    lastError: featureStatus?.reason_code ?? channelSource?.status.reason_code ?? null,
+  })
+  else host.removeLayer('strategy-channel')
+
+  syncMainLines(shown && value && primary
+    ? [{ model: value, source: primary }, ...(partnerModel.value && secondary ? [{ model: partnerModel.value, source: secondary }] : [])]
+    : [])
+}
+let lastBandIndicator = 'newow_trend'
+let lastChannelIndicator = 'newow_oscillation'
+
+function syncMainLines(tracks: readonly { model: NewowProductChartModel; source: ChartResponse }[]): void {
+  if (host === null) return
+  const active = new Set(tracks.flatMap(track => track.model.mainLines.map(line => line.id)))
+  for (const id of mainLines.keys()) {
     if (active.has(id)) continue
-    chart.removeSeries(series)
+    host.removeLayer(`main:${id}`)
     mainLines.delete(id)
   }
 
-  for (const line of !pure.value && showStructure.value ? value.mainLines : []) {
-    let series = mainLines.get(line.id)
-    if (series === undefined) {
-      series = chart.addSeries(LineSeries, {
+  for (const { model: value, source } of tracks) for (const line of value.mainLines) {
+    const displayId = ['a', 'b'].includes(line.key) ? 'newow_trend'
+      : ['upper', 'lower'].includes(line.key) ? 'newow_oscillation' : 'newow_main_rise'
+    const written = host.renderLayer(`main:${line.id}`, displayId, 'main', 'line', layer => {
+      const series = mainLines.get(line.id) ?? layer.line({
         priceFormat: NEWOW_CHART_PRICE_FORMAT,
         color: mainLineColors[line.key] ?? '#64748B',
         lineWidth: ['a', 'b', 'ma35', 'ma45', 'ma10_display_v1'].includes(line.key) ? 1 : 2,
@@ -659,24 +990,105 @@ function syncMainLines(value: NewowProductChartModel): void {
         priceLineVisible: false,
       })
       mainLines.set(line.id, series)
-    }
-    series.setData(line.points.map((point): LineData<Time> => ({
-      time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay), value: point.value,
-    })))
+      series.setData(line.points.map((point): LineData<Time> => ({
+        time: chartMarkerTime(point.barEnd, value.identity.frequency, point.tradingDay), value: point.value,
+      })))
+      layer.updateDiagnostics({
+        ...chartLayerSource(source, line.points.at(-1)?.barEnd ?? null),
+        renderer: 'line', status: 'ready',
+      })
+    })
+    if (!written) mainLines.set(line.id, null)
   }
 }
 
 function renderMarkers(value: NewowProductChartModel | null): void {
-  if (chart === null || actionMarkers === null || value === null) return
-  if (pure.value || comparisonActive.value || props.displayOnly) { actionMarkers.setMarkers([]); return }
-  const actions: SeriesMarker<Time>[] = [...(showActions.value ? value.actions : [])]
+  if (!host || !candles) return
+  const anchor = candles
+  const hidden = pure.value || comparisonActive.value || !showActions.value
+  const response = value === null ? null : strategySource.value
+  const latest = response ? value?.bars.at(-1) : null
+  const featureStatus = response?.status?.status
+  const actions: SeriesMarker<Time>[] = hidden || !response || value === null ? [] : [...value.actions]
     .sort((left, right) => Date.parse(left.barEnd) - Date.parse(right.barEnd) || (left.sequence ?? -1) - (right.sequence ?? -1))
-    .map((item) => ({ ...productChartMarker(
-      item,
-      props.selectedSignalId,
-      chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay),
-    ), text: '' }))
-  actionMarkers.setMarkers(actions)
+    .map(item => ({ ...productChartMarker(item, props.selectedSignalId,
+      chartMarkerTime(item.barEnd, value.identity.frequency, item.tradingDay)), text: '' }))
+  const written = host.renderLayer('actions', 'newow_actions', 'main', 'marker', layer => {
+    if (actionMarkers && !layer.hasResource(actionMarkers)) {
+      layer.remove(actionMarkers)
+      actionMarkers = null
+    }
+    actionMarkers ??= layer.markers(anchor, adapter.createSeriesMarkers)
+    actionMarkers.setMarkers(actions)
+    layer.updateDiagnostics({
+      status: hidden ? 'hidden' : latest && featureStatus === 'ready' ? 'ready'
+        : featureStatus === 'warming' ? 'warming' : props.loading || props.strategySwitching ? 'loading' : 'missing_input',
+      ...chartLayerSource(latest ? response : null, latest?.barEnd ?? null),
+    })
+  })
+  if (!written) actionMarkers = null
+}
+
+function renderEventDiagnostics(): void {
+  if (!host) return
+  const primary = strategySource.value
+  const partner = primary && comparisonActive.value ? props.comparisonResponse ?? null : null
+  const current = primary?.value
+  const dual = comparisonActive.value
+  function record(id: string, indicator: string, visible: boolean, source: ChartResponse | null,
+    available: boolean, formulaVersion?: string | null) {
+    const inputReady = available && source?.status.status === 'ready'
+    const status = pure.value || !visible ? 'hidden' : chartLayerStatus(source, inputReady)
+    writeMainDiagnostics(id, indicator, source, {
+      status,
+      dataCutoff: inputReady ? source.value?.bars.at(-1)?.bar_end ?? null : null,
+      ...(formulaVersion !== undefined ? { formulaVersion } : {}),
+    })
+  }
+  record('hints', 'newow_hints', showHints.value && !dual, primary, current?.hints !== undefined)
+  record('detail', 'newow_detail', detailLabels.value && showActions.value, primary,
+    current?.actions !== undefined, primary ? displayVersion('newow_detail') : null)
+  record('caution', 'newow_caution', true, primary, current?.caution_events !== undefined,
+    current?.caution_events?.at(-1)?.formula_version ?? null)
+
+  const breakoutAvailable = current?.breakout_events !== undefined
+  const breakoutVersion = breakoutAvailable ? BREAKOUT_VERSION : null
+  if (props.strategy === 'oscillation') {
+    record('breakout-markers', 'newow_breakouts', showBreakoutShapes.value, primary, breakoutAvailable, breakoutVersion)
+    record('wick-markers', 'newow_wicks', showBreakoutWicks.value, primary, breakoutAvailable, breakoutVersion)
+    record('attack', 'newow_attack', showHints.value, primary, current?.hints !== undefined)
+  } else for (const id of ['breakout-markers', 'wick-markers', 'attack']) host.removeLayer(id)
+  if (props.strategy === 'main_rise') record('process', 'newow_process', showHints.value && !dual, primary, current?.hints !== undefined)
+  else host.removeLayer('process')
+
+  for (const strategy of ['trend', 'oscillation'] as const) {
+    const id = `comparison-actions:${strategy}`
+    if (!dual) { host.removeLayer(id); continue }
+    const response = primary?.meta.identity.strategy === strategy ? primary : partner
+    const visible = showActions.value && (strategy === 'trend' ? trendTrack.value : oscillationTrack.value)
+    record(id, 'newow_actions', visible, response, response?.value?.actions !== undefined)
+  }
+}
+
+function recordDisplayPaint(events: readonly NewowDisplayEvent[] | null): void {
+  if (!host) return
+  const primary = strategySource.value
+  const partner = primary && comparisonActive.value ? props.comparisonResponse ?? null : null
+  for (const [id, response] of [['display-events', primary], ['comparison-display-events', partner]] as const) {
+    if (id === 'comparison-display-events' && !response) { host.removeLayer(id); continue }
+    const source = new Set(response?.value?.display_events?.map(event => event.event_id))
+    const painted = (events ?? []).filter(event => source.has(event.event_id))
+    const last = painted.reduce<NewowDisplayEvent | undefined>((latest, event) =>
+      !latest || Date.parse(event.bar_end) > Date.parse(latest.bar_end) ? event : latest, undefined)
+    const failed = events === null && Boolean(response) && !pure.value
+    host.layer(id, 'newow_display_events', 'main').updateDiagnostics({
+      ...chartLayerSource(last ? response : null, last?.bar_end ?? null),
+      renderer: 'marker',
+      formulaVersion: last ? [...new Set(painted.map(event => event.formula_version))].join(' / ') : null,
+      status: failed ? 'renderer_failure' : pure.value ? 'hidden' : chartLayerStatus(response, Boolean(last)),
+      lastError: failed ? 'CHART_RENDERER_PAINT_FAILED' : null,
+    })
+  }
 }
 
 function projectActionLabels(value: NewowProductChartModel | null = model.value): void {
@@ -686,7 +1098,7 @@ function projectActionLabels(value: NewowProductChartModel | null = model.value)
   attackOverlays.value = []
   processOverlays.value = []
   cycleCountOverlays.value = []
-  if (pure.value || props.displayOnly || props.strategySwitching || chart === null || candles === null || container.value === null || value === null) {
+  if (pure.value || !strategySource.value || chart === null || candles === null || container.value === null || value === null) {
     positionedActions.value = []; positionedComparison.value = []; comparisonSwitches.value = []; comparisonDominant.value = null
     return
   }
@@ -897,11 +1309,12 @@ function onRangeChange(range: LogicalRange | null): void {
   nearLeftBoundary = nearLeft
 }
 
-function setRange(range: { from: number; to: number }): void {
+function setRange(range: { from: number; to: number }, automatic = false): void {
   paginationArmed = false
   programmaticRange = range
   nearLeftBoundary = range.from < firstLogicalIndex() + 10
-  chart?.timeScale().setVisibleLogicalRange(range as LogicalRange)
+  if (chart && automatic) placeDetailChartViewport(chart, range)
+  else chart?.timeScale().setVisibleLogicalRange(range as LogicalRange)
   armPagination()
 }
 
@@ -927,107 +1340,351 @@ function scrollToLatest(): void {
   armPagination()
 }
 
+const auxiliaryPaneKey = 'newow-selected'
+const auxiliaryPane = { auxiliary: auxiliaryPaneKey } as const
+let failedAuxiliaryAxis: LayerDiagnostics | null = null
+let attachedAuxiliaryComponent: NewowAuxiliaryComponent | null = null
 function syncAuxiliaryPane(): void {
-  if (!chart) return
+  if (!host) return
   if (pure.value) {
-    if (auxiliaryAnchor) {
-      for (const series of auxiliaryLines.values()) chart.removeSeries(series)
-      auxiliaryLines.clear()
-      auxiliaryAnchor.detachPrimitive(zhaoyaoMirror)
-      auxiliaryAnchor.detachPrimitive(upDownEnergy)
-      auxiliaryAnchor.detachPrimitive(mainForceControl)
-      auxiliaryAnchor.detachPrimitive(trendReversal)
-      chart.removeSeries(auxiliaryAnchor)
-      auxiliaryAnchor = null
-      auxiliaryZeroLine = null
-      renderedAuxiliaryKey = null
+    for (const [component, pane] of extraPanes) {
+      host.removeAuxiliary(pane.pane.auxiliary)
+      extraPanes.delete(component)
     }
+    host.removeAuxiliary(auxiliaryPaneKey)
+    failedExtraAxes.clear()
+    failedAuxiliaryAxis = null
+    auxiliaryLines.clear()
+    auxiliaryAnchor = null
+    auxiliaryZeroLine = null
+    attachedAuxiliaryComponent = null
+    activeAuxiliary.value = null
+    renderedAuxiliaryKey = null
     return
   }
   if (auxiliaryAnchor) return
+  host.addAuxiliary(auxiliaryPaneKey)
   // Whitespace pins the secondary timeline without inventing zero values.
-  auxiliaryAnchor = chart.addSeries(LineSeries, {
-    lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
-  }, 1)
-  auxiliaryZeroLine = auxiliaryAnchor.createPriceLine({
-    price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false,
+  const written = host.renderLayer('auxiliary-axis', 'auxiliary_axis', auxiliaryPane, 'line', axis => {
+    auxiliaryAnchor = axis.line({
+      lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false,
+    })
+    auxiliaryZeroLine = axis.priceLevel(auxiliaryAnchor, {
+      price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false,
+    })
   })
-  auxiliaryAnchor.attachPrimitive(zhaoyaoMirror)
-  auxiliaryAnchor.attachPrimitive(upDownEnergy)
-  auxiliaryAnchor.attachPrimitive(mainForceControl)
-  auxiliaryAnchor.attachPrimitive(trendReversal)
-}
-const reversalMarks = computed(() => {
-  const response = props.auxiliaryResponse?.value
-  return model.value && auxiliaryModel.value?.component === 'trend_reversal' && response?.component === 'trend_reversal'
-    ? buildNewowTrendReversalMarks(model.value, response.segments) : []
-})
-
-function resize(): void {
-  if (chart !== null && container.value !== null) {
-    const layout = newowAuxiliaryPaneLayout(container.value.clientHeight, auxiliaryToolbar.value?.offsetHeight ?? 0)
-    chart.panes()[0]!.setStretchFactor(layout.mainHeight)
-    chart.panes()[1]?.setStretchFactor(layout.auxiliaryHeight)
-    // Repaint synchronously so native pane heights include the shared time axis.
-    chart.resize(container.value.clientWidth, container.value.clientHeight, true)
-    auxiliaryTop.value = container.value.offsetTop + chart.panes()[0]!.getHeight()
-    renderAuxiliary()
-    projectActionLabels()
+  if (!written) {
+    recordAuxiliaryAxisFailure()
+  } else {
+    failedAuxiliaryAxis = null
+    const existingExtras = [...extraPanes.values()].sort((left, right) =>
+      host!.paneIndex(left.pane) - host!.paneIndex(right.pane))
+    host.orderAuxiliaries([auxiliaryPaneKey, ...existingExtras.map(item => item.pane.auxiliary)])
   }
 }
 
+function clearSelectedAuxiliary(): void {
+  host?.removeLayer('auxiliary-selected')
+  auxiliaryLines.clear()
+  attachedAuxiliaryComponent = null
+  renderedAuxiliaryKey = null
+  renderedAuxiliaryResponse = null
+  renderedAuxiliaryChart = null
+  selectedAuxiliaryCutoff = null
+}
+
+function recordAuxiliaryAxisFailure(): void {
+  auxiliaryAnchor = null
+  auxiliaryZeroLine = null
+  failedAuxiliaryAxis = host?.inspectLayer('auxiliary-axis') ?? null
+  activeAuxiliary.value = failedAuxiliaryAxis
+  host?.removeAuxiliary(auxiliaryPaneKey)
+}
+
+function auxiliaryAxisDiagnostics(value: NewowProductChartModel | null): LayerPatch {
+  const cutoff = value?.bars.at(-1)?.barEnd ?? null
+  return {
+    ...chartLayerSource(cutoff ? props.response : null, cutoff),
+    frequency: value?.identity.frequency ?? null,
+    formulaVersion: displayVersion('auxiliary_axis'),
+    status: cutoff ? 'ready' : 'missing_input',
+  }
+}
+
+function writeAuxiliaryAxis(value: NewowProductChartModel | null, identity: string): void {
+  const anchor = auxiliaryAnchor
+  if (!host || !anchor) return
+  const written = host.renderLayer('auxiliary-axis', 'auxiliary_axis', auxiliaryPane, 'line', axis => {
+    try {
+      anchorWriter.write(anchor, value?.bars.map(bar => ({
+        time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
+      })) ?? [], identity)
+    } catch (error) {
+      // The selected primitive must detach before the host releases its axis.
+      clearSelectedAuxiliary()
+      throw error
+    }
+    axis.updateDiagnostics(auxiliaryAxisDiagnostics(value))
+  })
+  if (!written) {
+    clearSelectedAuxiliary()
+    recordAuxiliaryAxisFailure()
+  }
+}
+const reversalMarks = computed(() => {
+  const value = model.value
+  const response = props.auxiliaryResponse?.value
+  return value && auxiliaryModel.value?.component === 'trend_reversal' && response?.component === 'trend_reversal'
+    ? buildNewowTrendReversalMarks(value, response.segments) : []
+})
+const primitives = {
+  zhaoyao_mirror: zhaoyaoMirror, up_down_energy: upDownEnergy, main_force_control: mainForceControl, trend_reversal: trendReversal,
+}
+const mirrorEvents = computed(() => (props.response?.value?.caution_events ?? []).flatMap(event => {
+  const main = model.value
+  const bar = event.detail_visible ? main?.bars.find(item => item.barEnd === event.bar_end) : undefined
+  return main && bar ? [{ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay), tentative: event.tentative, state: event.display_state }] : []
+}))
+const primitiveConstructors = {
+  zhaoyao_mirror: NewowZhaoyaoMirrorPrimitive, up_down_energy: NewowUpDownEnergyPrimitive,
+  main_force_control: NewowMainForceControlPrimitive, trend_reversal: NewowTrendReversalPrimitive,
+}
+const extraPanes = new Map<NewowAuxiliaryPaneComponent, {
+  pane: { auxiliary: string }; anchor: ISeriesApi<'Line'>; primitive: NewowAuxiliaryPrimitive | null;
+  lines: AuxiliaryLines; snapshot: string | null; response: NewowProductSectionResponse<'auxiliary'> | null; dataCutoff: string | null;
+}>()
+const failedExtraAxes = new Map<NewowAuxiliaryPaneComponent, LayerDiagnostics>()
+function renderExtraAuxiliaries() {
+  if (!host) return
+  const panes = pure.value ? [] : props.extraAuxiliaryPanes ?? []
+  const active = new Set(panes.map(pane => pane.component))
+  for (const component of failedExtraAxes.keys()) if (!active.has(component)) failedExtraAxes.delete(component)
+  for (const [component, existing] of extraPanes) {
+    if (active.has(component)) continue
+    host.removeAuxiliary(existing.pane.auxiliary)
+    extraPanes.delete(component)
+  }
+  const main = priceWriteFailed.value ? null : model.value
+  for (const item of panes) {
+    const id = newowPaneId(item.component)
+    const axisId = `${id}:axis`
+    let current = extraPanes.get(item.component)
+    if (!current) {
+      const pane = host.addAuxiliary(id)
+      let anchor: ISeriesApi<'Line'> | undefined
+      const initialized = host.renderLayer(axisId, 'auxiliary_axis', pane, 'line', axis => {
+        anchor = axis.line({ lineVisible: false, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false })
+        if (item.component === 'macd') axis.priceLevel(anchor, { price: 0, color: '#D0D5DD', lineWidth: 1, lineStyle: 2, axisLabelVisible: false })
+      })
+      if (!initialized || !anchor) {
+        const failure = host.inspectLayer(axisId)
+        if (failure) failedExtraAxes.set(item.component, failure)
+        host.removeAuxiliary(pane.auxiliary)
+        continue
+      }
+      failedExtraAxes.delete(item.component)
+      const primitive = item.component === 'macd' ? null : new primitiveConstructors[item.component]()
+      current = { pane, anchor, primitive, lines: new Map(), snapshot: null, response: null, dataCutoff: null }
+      extraPanes.set(item.component, current)
+    }
+    const aligned = !main || item.lifecycle === 'input_conflict' ? null : alignNewowAuxiliaryChartModel(props.response, item.response)
+    const value = aligned?.component === item.component ? aligned : null
+    const height = item.height ?? 120
+    const key = JSON.stringify([newowChartSnapshotKey(props.response), main?.bars[0]?.barEnd, main?.bars.at(-1)?.barEnd, value, mirrorEvents.value, height, pageTheme.value])
+    const response = value === null ? null : item.response
+    const pane = current
+    const changed = pane.snapshot !== key || response !== pane.response
+    if (changed) {
+      const axisWritten = host.renderLayer(axisId, 'auxiliary_axis', pane.pane, 'line', axis => {
+        try {
+          pane.anchor.setData(main?.bars.map(bar => ({ time: chartMarkerTime(bar.barEnd, main.identity.frequency, bar.tradingDay) })) ?? [])
+        } catch (error) {
+          // Detach the optional indicator before releasing its timeline anchor.
+          host?.removeLayer(id)
+          throw error
+        }
+        axis.updateDiagnostics(auxiliaryAxisDiagnostics(main))
+      })
+      if (!axisWritten) {
+        const failure = host.inspectLayer(axisId)
+        if (failure) failedExtraAxes.set(item.component, failure)
+        host.removeAuxiliary(pane.pane.auxiliary)
+        extraPanes.delete(item.component)
+        continue
+      }
+    }
+    const written = host.renderLayer(id, id, pane.pane, pane.primitive ? 'primitive' : 'histogram', layer => {
+      if (changed) {
+        if (pane.primitive) {
+          if (!value) layer.remove(pane.primitive)
+          else if (!layer.hasResource(pane.primitive)) layer.primitive(pane.anchor, pane.primitive, positionPaneHeaders)
+          pane.dataCutoff = paintNewowAuxiliaryPrimitive(pane.primitive, value, response, main, 20, { mirrorEvents: mirrorEvents.value })
+        } else {
+          renderMacdLines(layer, pane.lines, value, 20 / height)
+          pane.dataCutoff = auxiliaryPaintCutoff(main, value?.series.map(series => series.points.at(-1)?.time) ?? [])
+        }
+        pane.snapshot = key
+        pane.response = response
+      }
+      layer.updateDiagnostics(newowAuxiliaryDiagnostics({ chart: props.response, response: item.response, aligned: value !== null,
+        lifecycle: item.lifecycle, error: item.error, dataCutoff: pane.dataCutoff }))
+    })
+    if (!written) {
+      pane.snapshot = null
+      pane.response = null
+      pane.dataCutoff = null
+      pane.lines.clear()
+    }
+  }
+  orderAuxiliaryPanes()
+}
+
+function orderAuxiliaryPanes(): void {
+  if (!host || pure.value) return
+  const activeExtras = (props.extraAuxiliaryPanes ?? []).flatMap(item =>
+    extraPanes.has(item.component) ? [newowPaneId(item.component)] : [])
+  host.orderAuxiliaries(auxiliaryAnchor ? [auxiliaryPaneKey, ...activeExtras] : activeExtras)
+}
+
+function positionPaneHeaders(): void {
+  if (!chart || !host || !container.value) return
+  const nativePanes = chart.panes()
+  const nativeTop = container.value.offsetTop
+  const containerTop = container.value.getBoundingClientRect?.().top ?? null
+  const offset = (index: number) => {
+    const row = nativePanes[index]?.getHTMLElement?.()
+    return nativeTop + (row && containerTop !== null ? row.getBoundingClientRect().top - containerTop
+      : nativePanes.slice(0, index).reduce((sum, pane) => sum + pane.getHeight(), 0))
+  }
+  auxiliaryTop.value = offset(1)
+  extraPaneHeaders.value = [...extraPanes]
+    .sort(([, left], [, right]) => host!.paneIndex(left.pane) - host!.paneIndex(right.pane))
+    .map(([component, pane]) => {
+      const diagnostic = host!.inspectLayer(newowPaneId(component))
+      return {
+        component, title: DISPLAY_CATALOG[newowPaneId(component)]!.label,
+        top: offset(host!.paneIndex(pane.pane)), status: diagnostic?.status ?? 'missing_input',
+        formulaVersion: diagnostic?.formulaVersion ?? null,
+      }
+    })
+}
+
+function resize(): void {
+  if (!chart || !host || !container.value) return
+  const layout = newowAuxiliaryPaneLayout(container.value.clientHeight, auxiliaryToolbar.value?.offsetHeight ?? 0)
+  renderExtraAuxiliaries()
+  chart.panes()[0]!.setStretchFactor(Math.max(200, layout.mainHeight - extraPaneHeight.value))
+  chart.panes()[1]?.setStretchFactor(layout.auxiliaryHeight)
+  for (const [component, pane] of extraPanes) {
+    const height = props.extraAuxiliaryPanes?.find(item => item.component === component)?.height ?? 120
+    chart.panes()[host.paneIndex(pane.pane)]?.setStretchFactor(height)
+  }
+  chart.resize(container.value.clientWidth, container.value.clientHeight, true)
+  positionPaneHeaders()
+  // Swapping panes updates the native DOM on the chart's next frame.
+  if (extraPanes.size && paneHeaderFrame === null && typeof requestAnimationFrame !== 'undefined') {
+    paneHeaderFrame = requestAnimationFrame(() => { paneHeaderFrame = null; positionPaneHeaders() })
+  }
+  renderAuxiliary()
+  projectActionLabels()
+}
+
 let renderedAuxiliaryKey: string | null = null
+let renderedAuxiliaryResponse: NewowProductSectionResponse<'auxiliary'> | null | undefined
+let renderedAuxiliaryChart: ChartResponse | null = null
+let selectedAuxiliaryCutoff: string | null = null
 function renderAuxiliary(): void {
-  if (!chart || pure.value) return
-  const active = new Set<string>()
-  const value = auxiliaryPresentation.value.showRetainedValue ? auxiliaryModel.value : null
+  if (!host || !auxiliaryAnchor || pure.value) return
+  const response = props.auxiliaryResponse
+  const pending = props.auxiliaryLifecycle === 'loading' || props.strategySwitching
+  const component = props.auxiliaryComponent ?? response?.value?.component ?? (pending ? attachedAuxiliaryComponent : null)
+  const value = auxiliaryPresentation.value.showRetainedValue && auxiliaryModel.value?.component === component ? auxiliaryModel.value : null
+  const current = host.inspectLayer('auxiliary-selected')
   // A strategy switch does not revoke the last accepted market indicator.
   // The new generation must prove compatibility before it can replace this layer.
-  if (value === null && (props.strategySwitching || props.auxiliaryLifecycle === 'loading')) return
-  const theme = resolveChartTheme(container.value ?? document.documentElement)
-  const colors: Record<string, string> = { dif: '#FF6B2C', dea: '#365AF5', var4: '#FF6B2C', ma10: '#365AF5', var3: '#9333EA', ma120: '#667085', entry: '#FF403A', wash: '#F5B726', distribution: '#22B95D', markup: '#FF6B2C', exit: '#365AF5', inducement: '#9333EA', peaks: '#B45309', caution: '#667085', band_entry: '#FF403A', rebound_entry: '#F5B726', oversold_entry: '#22B95D' }
-  const mirror = value?.component === 'zhaoyao_mirror'
-  const energy = value?.component === 'up_down_energy'
-  const control = value?.component === 'main_force_control'
-  const reversal = value?.component === 'trend_reversal'
-  auxiliaryZeroLine?.applyOptions({ color: mirror || energy || control || reversal ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
+  if (!value && component === attachedAuxiliaryComponent && renderedAuxiliaryResponse && current && current.status !== 'renderer_failure'
+      && !auxiliarySourceConflict.value && pending && (props.strategySwitching || props.response === renderedAuxiliaryChart)) {
+    host.layer('auxiliary-selected', current.indicatorId, auxiliaryPane).updateDiagnostics({ status: 'loading', cacheState: 'hit' })
+    activeAuxiliary.value = host.inspectLayer('auxiliary-selected')
+    return
+  }
+  if (component !== attachedAuxiliaryComponent) {
+    clearSelectedAuxiliary()
+    attachedAuxiliaryComponent = component
+  }
+  const primitive = component && component in primitives ? primitives[component as keyof typeof primitives] : null
+  const displayId = primitive ? `newow.${component}` : component === 'macd' ? 'macd' : null
+  if (!displayId) {
+    activeAuxiliary.value = null
+    return
+  }
+  const anchor = auxiliaryAnchor
+  const accepted = value ? response : null
   const { topInset, auxiliaryHeight } = newowAuxiliaryPaneLayout(container.value?.clientHeight ?? 700, auxiliaryToolbar.value?.offsetHeight ?? 0)
-  const displayEvents = (props.response?.value?.caution_events ?? []).flatMap(e=>{
-    const bar=e.detail_visible ? model.value?.bars.find(b=>b.barEnd===e.bar_end) : undefined
-    return bar ? [{time:chartMarkerTime(bar.barEnd,model.value!.identity.frequency,bar.tradingDay),tentative:e.tentative,state:e.display_state}] : []
+  const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, mirrorEvents.value, primitive ? model.value?.bars : null])
+  const written = host.renderLayer('auxiliary-selected', displayId, auxiliaryPane, primitive ? 'primitive' : 'histogram', layer => {
+    auxiliaryZeroLine?.applyOptions({ color: primitive ? 'rgba(0, 0, 0, 0)' : '#D0D5DD' })
+    if (nextKey !== renderedAuxiliaryKey || accepted !== renderedAuxiliaryResponse) {
+      if (primitive) {
+        if (!value) layer.remove(primitive)
+        else if (!layer.hasResource(primitive)) layer.primitive(anchor, primitive, () => {
+          activeAuxiliary.value = host?.inspectLayer('auxiliary-selected') ?? null
+        })
+        selectedAuxiliaryCutoff = paintNewowAuxiliaryPrimitive(primitive, value, accepted, model.value, topInset, { mirrorEvents: mirrorEvents.value })
+      } else {
+        renderMacdLines(layer, auxiliaryLines, value, topInset / auxiliaryHeight)
+        selectedAuxiliaryCutoff = auxiliaryPaintCutoff(model.value, value?.series.map(series => series.points.at(-1)?.time) ?? [])
+      }
+      renderedAuxiliaryKey = nextKey
+      renderedAuxiliaryResponse = accepted
+      renderedAuxiliaryChart = value ? props.response : null
+    }
+    layer.updateDiagnostics({ ...newowAuxiliaryDiagnostics({ chart: props.response, response, aligned: value !== null,
+      lifecycle: props.auxiliaryLifecycle ?? 'not_requested', error: props.auxiliaryError ?? null, dataCutoff: selectedAuxiliaryCutoff }),
+      cacheState: value ? props.auxiliaryCacheState ?? null : null })
   })
-  const nextKey = JSON.stringify([value, topInset, auxiliaryHeight, displayEvents, reversal ? reversalMarks.value : null, mirror || energy ? model.value?.bars : null])
-  if (nextKey === renderedAuxiliaryKey) return
-  renderedAuxiliaryKey = nextKey
-  zhaoyaoMirror.setData(mirror ? buildNewowZhaoyaoMirrorData(value.series, displayEvents) : [], topInset)
-  upDownEnergy.setData(energy && model.value ? buildNewowUpDownEnergyData(value.series, model.value.bars) : [],
-    topInset)
-  mainForceControl.setData(control && props.auxiliaryResponse?.value?.component === 'main_force_control'
-    ? buildNewowMainForceData(value.series, props.auxiliaryResponse.value.segments) : [],
-    topInset)
-  trendReversal.setData(reversal ? buildNewowTrendReversalData(value.series) : [],
-    topInset, reversal ? reversalMarks.value : [])
+  if (!written) {
+    renderedAuxiliaryKey = null
+    renderedAuxiliaryResponse = null
+    renderedAuxiliaryChart = null
+    selectedAuxiliaryCutoff = null
+    auxiliaryLines.clear()
+  }
+  activeAuxiliary.value = host.inspectLayer('auxiliary-selected')
+}
+
+function renderMacdLines(
+  layer: ChartLayer,
+  lines: AuxiliaryLines,
+  value: ReturnType<typeof alignNewowAuxiliaryChartModel>,
+  topMargin: number,
+): void {
+  const theme = resolveChartTheme(container.value ?? document.documentElement)
+  const active = new Set<string>()
   for (const item of value?.series ?? []) {
-    if (mirror || energy || control || reversal) continue
-    const id = `${value!.component}:${item.id}`
+    const id = item.id
     active.add(id)
-    let series = auxiliaryLines.get(id)
+    let series = lines.get(id)
+    const histogram = item.key === 'histogram'
     if (!series) {
-      const options = { color: colors[item.key] ?? '#667085', lineWidth: 1 as const, lastValueVisible: false, priceLineVisible: false,
+      const options = { color: item.key === 'dif' ? '#FF6B2C' : '#365AF5', lineWidth: 1 as const, lastValueVisible: false, priceLineVisible: false,
         autoscaleInfoProvider: (base: () => import('lightweight-charts').AutoscaleInfo | null) => {
           const info = base()
           return info?.priceRange == null ? info : { ...info, priceRange: { minValue: Math.min(0, info.priceRange.minValue), maxValue: Math.max(0, info.priceRange.maxValue) } }
         },
       }
-      series = item.key === 'histogram' ? chart.addSeries(HistogramSeries, options, 2) : chart.addSeries(LineSeries, options, 2)
-      auxiliaryLines.set(id, series)
+      series = histogram ? layer.histogram(options) : layer.line(options)
+      lines.set(id, series)
     }
-    series.priceScale().applyOptions({ scaleMargins: { top: topInset / auxiliaryHeight, bottom: 0.06 } })
-    series.setData(item.points.map(point => ({ time: point.time, value: point.value, ...(item.key === 'histogram' ? { color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : {}) })))
+    series.priceScale().applyOptions({ scaleMargins: { top: topMargin, bottom: 0.06 } })
+    series.setData(item.points.map(point => ({ time: point.time, value: point.value,
+      ...(histogram ? { color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : {}),
+    })))
   }
-  for (const [id, series] of auxiliaryLines) {
+  for (const [id, series] of lines) {
     if (active.has(id)) continue
-    chart.removeSeries(series); auxiliaryLines.delete(id)
+    layer.remove(series)
+    lines.delete(id)
   }
 }
 
@@ -1037,7 +1694,14 @@ function onFullscreenChange(): void {
 }
 
 
-defineExpose({ revealSignal, scrollToLatest })
+function inspectLayers() {
+  return [
+    ...(host?.diagnostics() ?? []), ...(failedAuxiliaryAxis ? [failedAuxiliaryAxis] : []),
+    ...failedExtraAxes.values(), ...(detailSession?.inspectExecutionLayers() ?? []),
+  ]
+}
+
+defineExpose({ revealSignal, scrollToLatest, inspectLayers })
 </script>
 
 <template>
@@ -1047,6 +1711,13 @@ defineExpose({ revealSignal, scrollToLatest })
     class="newow-product-chart-stage"
     :data-auxiliary-component="auxiliaryModel?.component ?? ''"
     :data-auxiliary-state="auxiliaryPresentation.mode"
+    :data-chart-package="activeAuxiliary?.packageVersion"
+    :data-auxiliary-indicator="activeAuxiliary?.indicatorId"
+    :data-auxiliary-renderer="activeAuxiliary?.renderer"
+    :data-auxiliary-formula="activeAuxiliary?.formulaVersion"
+    :data-auxiliary-cutoff="activeAuxiliary?.dataCutoff"
+    :data-volume-policy="volume ? 'newow' : undefined"
+    :data-volume-bar-count="volumeBars.filter(validVolume).length"
     :data-band-area-count="model?.bandAreas.length ?? 0"
     :data-channel-point-count="model?.channelPoints.length ?? 0"
     data-testid="newow-product-chart-stage"
@@ -1092,6 +1763,7 @@ defineExpose({ revealSignal, scrollToLatest })
     </details>
     <div
       ref="container"
+      :style="{ '--extra-pane-height': `${extraPaneHeight}px` }"
       class="newow-product-chart-stage__chart"
       @pointermove="scheduleActionProjection"
       @pointerup="scheduleActionProjection"
@@ -1099,7 +1771,7 @@ defineExpose({ revealSignal, scrollToLatest })
       @dblclick="scheduleActionProjection"
     />
     <NewowBreakoutOverlay :points="breakoutPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :shapes="showBreakoutShapes" :wicks="showBreakoutWicks" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-breakout="emit('select-breakout',$event)" />
-    <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" />
+    <NewowDisplayOverlay :points="displayPoints" :width="actionOverlayWidth" :height="actionOverlayHeight" :style="{left:actionOverlayLeft+'px',top:actionOverlayTop+'px'}" @select-display="emit('select-display',$event)" @paint="recordDisplayPaint" />
     <div class="newow-caution-overlay" :class="{dark:pageTheme==='dark'}" :style="{ left: `${actionOverlayLeft}px`, top: `${actionOverlayTop}px`, width: `${actionOverlayWidth}px`, height: `${actionOverlayHeight}px` }" aria-label="小心：历史回看提示，会重绘，非交易信号">
       <button v-for="item in cautionOverlays" :key="item.key" type="button" data-testid="newow-caution-trigger" :class="{ tentative: item.tentative, invalidated: item.state === 'invalidated' }" :style="{left:`${item.x}px`,top:`${item.y}px`}" :title="item.title" :aria-label="item.title" :aria-expanded="selectedCautionKey === item.key" @pointerdown.stop @click.stop="selectedCautionKey = selectedCautionKey === item.key ? null : item.key" @keydown.esc.stop="selectedCautionKey = null"><svg class="caution-capsule" aria-hidden="true" width="32" height="16" viewBox="0 0 32 16"><rect x="0" y="0" width="32" height="16" rx="8" /><line v-if="item.state === 'invalidated'" class="caution-withdrawal" x1="3" y1="13" x2="29" y2="3" /></svg><svg class="caution-leader" aria-hidden="true" width="32" height="10" viewBox="0 0 32 10"><line :x1="item.stemX" y1="0" :x2="item.stemX" :y2="item.stemEnd" :stroke-dasharray="item.tentative || item.state === 'invalidated' ? '1 3' : '3 3'" /></svg><span>小心</span></button>
     </div>
@@ -1129,7 +1801,11 @@ defineExpose({ revealSignal, scrollToLatest })
       <ReferenceCalloutLabels :draw-lines="false" :items="positionedComparison.map(item => ({ position: item, title: dualStepTitle(detailLabels ? actionTitle(item.callout, item.origin) : newowSimpleDualLabel(item.origin, item.callout.above, item.callout.price), item.callout.id), detail: detailLabels ? actionDisplay(item.callout, item.origin).text : undefined, unpaired: item.callout.title.includes('无入场'), direction: actionDisplay(item.callout, item.origin).direction, origin: item.origin, labelClass: 'newow-product-chart-stage__action-label', ariaLabel: `${dualStepDescription(item.callout.id)}${item.origin === 'trend' ? '趋势策略' : '震荡策略'}，${actionTitle(item.callout, item.origin)}，${actionDisplay(item.callout, item.origin).text}，${item.callout.time}，${item.callout.physicalContract}`, tooltip: `${dualStepDescription(item.callout.id)}${item.origin === 'trend' ? '趋势策略' : '震荡策略'} · ${actionTitle(item.callout, item.origin)} · ${actionDisplay(item.callout, item.origin).text} · ${item.callout.time} · ${item.callout.physicalContract} · ${item.callout.id}` }))" />
     </div>
     <aside v-if="!pure && cursorRows.length" class="newow-product-chart-stage__cursor-card" :style="{ top: `${cursorTop}px` }" aria-label="同一时间主副图读数"><div v-for="(row, index) in cursorRows" :key="index">{{ row }}</div></aside>
-    <div v-show="!pure" ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
+    <div v-show="!pure" ref="auxiliaryToolbar" class="newow-product-chart-stage__auxiliary-toolbar" :style="{ top: `${auxiliaryTop}px` }"><slot name="auxiliary-controls" :diagnostic="activeAuxiliary" :inspect-layers="inspectLayers"><button @click="emit('explain-auxiliary')">{{ auxiliaryModel?.component === 'macd' ? 'MACD · DIF / DEA' : '辅助指标' }} ⓘ</button></slot></div>
+    <div v-for="pane in extraPaneHeaders" v-show="!pure" :key="pane.component" class="newow-product-chart-stage__extra-header" :style="{ top: `${pane.top}px` }" :data-auxiliary-pane="pane.component" :data-auxiliary-status="pane.status" :data-auxiliary-formula="pane.formulaVersion">
+      {{ pane.title }}<span v-if="pane.status !== 'ready'"> · {{ extraStatusMessages[pane.status] ?? pane.status }}</span>
+      <span v-if="pane.component === 'zhaoyao_mirror'"> · 回看重绘</span>
+    </div>
     <p v-if="fullscreenError || (!pure && auxiliaryPresentation.message && auxiliaryPresentation.message !== '当前可计算')" class="newow-product-chart-stage__auxiliary-status" role="status">{{ fullscreenError ?? auxiliaryPresentation.message }}</p>
     <p v-if="loading && response === null" class="newow-product-chart-stage__status" role="status">{{ strategySwitching ? '正在切换策略，更新指标与信号…' : '正在读取 Newow 主图…' }}</p>
     <p v-else-if="response?.value === null" class="newow-product-chart-stage__status" role="status">当前组合主图不可用。</p>
@@ -1147,7 +1823,7 @@ defineExpose({ revealSignal, scrollToLatest })
 .newow-product-chart-stage { --gy-chart-bg:var(--gy-bg-panel); --gy-chart-text:var(--gy-text-muted); --gy-chart-grid:#F2F4F7; --gy-chart-axis:#EBEDF0; --gy-up:#FF403A; --gy-down:#22B95D; position:relative; min-width:0; height:auto; min-height:clamp(580px, 70vh, 920px); display:flex; flex-direction:column; border:1px solid #ebedf0; background:var(--gy-bg-panel); }
 .newow-product-chart-stage:fullscreen { height:100vh; width:100vw; padding:12px; box-sizing:border-box; }
 .newow-product-chart-stage:fullscreen .newow-product-chart-stage__chart { height:0; flex:1 1 auto; min-height:0; }
-.newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(400px,48vh,650px) + 350px); min-height:690px; }
+.newow-product-chart-stage__chart { width:100%; flex:1 0 auto; height:calc(clamp(400px,48vh,650px) + 350px + var(--extra-pane-height, 0px)); min-height:690px; }
 .newow-product-chart-stage__action-callouts { position:absolute; pointer-events:none; z-index:9; overflow:hidden; }
 .newow-product-chart-stage__action-callouts svg { width:100%; height:100%; position:absolute; inset:0; stroke:#9B8169; stroke-width:1; }
 .newow-product-chart-stage__dual-summary { display:flex; align-items:center; flex-wrap:wrap; gap:4px 12px; margin:0; padding:3px 12px 7px; background:#fafafa; color:var(--gy-text-muted); font-size:11px; font-weight:600; line-height:1.5; }
@@ -1173,9 +1849,10 @@ details { position:relative; } details[open] { z-index:6; } details[open] > butt
 .newow-product-chart-stage__hint-kind.is-entry { color:#16A34A; }
 .newow-product-chart-stage__hint-kind.is-cycle { color:#D97706; }
 .newow-product-chart-stage__hint-kind.is-neutral { color:#64748B; }
+.newow-product-chart-stage__extra-header { position: absolute; left: 8px; z-index: 3; height: 20px; color: var(--gy-text-muted); background: var(--gy-bg-panel); font-size: 11px; pointer-events: none; }
 .newow-product-chart-stage__auxiliary-status { margin:0; padding:6px 12px; color:#b45309; font-size:12px; }
 .newow-product-chart-stage__status { position:absolute; z-index:5; top:64px; left:12px; margin:0; color:#b45309; background:var(--gy-bg-panel); }
-@media(max-width:640px) { .newow-product-chart-stage { height:auto; } .newow-product-chart-stage__chart { height:700px; min-height:700px; } }
+@media(max-width:640px) { .newow-product-chart-stage { height:auto; } .newow-product-chart-stage__chart { height:calc(700px + var(--extra-pane-height, 0px)); min-height:700px; } }
 </style>
 
 <style scoped>

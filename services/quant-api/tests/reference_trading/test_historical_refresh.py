@@ -299,16 +299,18 @@ def test_real_published_repository_route_is_active_and_not_blocked(tmp_path, req
     from app.reference_trading.contracts import manifest_sha256
     engine = request.getfixturevalue("reference_postgresql") if backend == "postgresql" else None
     factory, repo, identity, revision, checkpoint = setup_source(engine)
+    if activate:
+        bootstrap = NewowForwardBootstrap(factory)
+        plan = plan_for(bootstrap, identity)
+        bootstrap.apply(plan, expected_plan_hash=plan['plan_hash'], now=NOW)
+    # Route discovery reads the version and bounds only. Set those fields
+    # after bootstrapping, which requires a complete manifest on PostgreSQL.
     with factory.begin() as session:
         rev = session.get(ReferenceRevision, (identity.stream_id, revision))
         batch = session.get(ReferenceBatch, rev.checkpoint_batch_id)
         manifest = {**batch.dependency_manifest, 'query_since': '2023-01-01', 'reader': reader_version}
         batch.dependency_manifest = manifest
         rev.dependency_digest = manifest_sha256(manifest)
-    if activate:
-        bootstrap = NewowForwardBootstrap(factory)
-        plan = plan_for(bootstrap, identity)
-        bootstrap.apply(plan, expected_plan_hash=plan['plan_hash'], now=NOW)
     runner = build_historical_refresh(factory, state_path=tmp_path / 'refresh.json')
     routes = runner._routes()
     assert len(routes) == 1

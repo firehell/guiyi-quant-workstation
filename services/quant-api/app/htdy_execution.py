@@ -31,15 +31,19 @@ def signal_from_window(
         raise ValueError("HTDY_EXECUTION_REQUIRES_FIRST_SEEN")
     candidates = HtdyOriginalEvaluator().evaluate_candidates(market_read, window)
     directions = candidates[0].observation_types if candidates else ()
+    return Signal(source_id, window.symbol.upper(), window.contract, window.cutoff,
+                  observed_at, window.bars[-2].bar_end, directions, htdy_window_digest(window))
+
+
+def htdy_window_digest(window: MarketReadWindow) -> str:
+    """Fingerprint the same original H1 context used by the execution signal."""
     payload = [{
         "bar_end": bar.bar_end.isoformat(), "trading_day": bar.trading_day.isoformat(),
         "contract": contract, "open": str(bar.open), "high": str(bar.high),
         "low": str(bar.low), "close": str(bar.close), "volume": str(bar.volume),
         "turnover": str(bar.turnover), "open_interest": str(bar.open_interest),
     } for bar, contract in zip(window.bars, window.bar_contracts, strict=True)]
-    digest = sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
-    return Signal(source_id, window.symbol.upper(), window.contract, window.cutoff,
-                  observed_at, window.bars[-2].bar_end, directions, digest)
+    return sha256(json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
 def start_account_operational(account_id: str, at: datetime, readback):

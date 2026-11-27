@@ -1,3 +1,4 @@
+import { NEWOW_MACD_DISPLAY_ADAPTER_VERSION, NEWOW_MACD_FORMULA_VERSION } from '../types/newowProduct.ts'
 import type { NewowAuxiliaryComponent, NewowProductIdentity, NewowProductMeta, NewowProductSectionResponse } from '../types/newowProduct.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
 import { newowReferenceModelVersion } from './newowProductTypes.ts'
@@ -5,7 +6,7 @@ import { newowReferenceModelVersion } from './newowProductTypes.ts'
 // A retained display must match this client's supported active kernel version.
 // Unknown/new formulas continue through the normal fresh-response path only.
 const SHARED_AUXILIARY_FORMULAS: Readonly<Record<NewowAuxiliaryComponent, string>> = {
-  macd: 'v1-draft',
+  macd: NEWOW_MACD_FORMULA_VERSION,
   main_force_control: 'newow_main_force_control_page_v1',
   up_down_energy: 'newow_up_down_energy_page_v1',
   trend_reversal: 'newow_trend_reversal_core_1_0_0_futures_segment_v1',
@@ -25,9 +26,11 @@ export function newowChartDisplayCacheKey(identity: NewowProductIdentity): strin
 }
 
 export function newowAuxiliaryDisplayCacheKey(response: NewowProductSectionResponse<'auxiliary'>): string {
+  const layer = response.value
+  const macdIdentity = layer?.component === 'macd' ? [layer.display_adapter_version, layer.parameters_hash] : []
   return `newow:${response.meta.identity.product}:display:auxiliary:${JSON.stringify([
-    sharedMarketKey(response.meta), response.value?.component, response.value?.formula_version,
-    response.meta.shared_input_proof?.auxiliary_input_sha256,
+    sharedMarketKey(response.meta), layer?.component, layer?.formula_version,
+    response.meta.shared_input_proof?.auxiliary_input_sha256, ...macdIdentity,
   ])}`
 }
 
@@ -72,8 +75,8 @@ export function canShareNewowAuxiliary(
     || layer.formula_version !== SHARED_AUXILIARY_FORMULAS[layer.component]) return false
   if (layer.component === 'cup_handle' && (chart.meta.identity.strategy !== 'trend'
     || auxiliary.meta.identity.strategy !== 'trend' || chart.meta.identity.frequency !== '1d')) return false
-  if (layer.component === 'macd' && (layer.display_adapter_version !== 'guiyi_newow_macd_display_v1'
-    || layer.parameters_hash !== '5dd0ebd25122eea6')) return false
+  if (layer.component === 'macd' && (layer.display_adapter_version !== NEWOW_MACD_DISPLAY_ADAPTER_VERSION
+    || layer.parameters_hash !== 'f9b4b4b0b4d0678d')) return false
   const owners = new Map(chart.value.bars.map(bar => [bar.bar_end, `${bar.physical_contract}|${bar.calculation_segment_id}`]))
   let overlap = false
   for (const segment of layer.segments) for (const barEnd of segment.bar_ends) {

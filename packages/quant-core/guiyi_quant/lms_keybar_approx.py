@@ -48,17 +48,17 @@ class NextCloseObservation:
     rule_version: str = VERSION
 
 
-def _check(bar: Bar) -> None:
+def _check(bar: Bar, interval=INTERVAL) -> None:
     if not isinstance(bar, Bar):
         raise ValueError('BAR_REQUIRED')
     bar.__post_init__()
-    if bar.completed is not True or bar.start is None or bar.end - bar.start != INTERVAL:
-        raise ValueError('COMPLETED_5M_REQUIRED')
+    if bar.completed is not True or bar.start is None or bar.end - bar.start != interval:
+        raise ValueError('COMPLETED_5M_REQUIRED' if interval == INTERVAL else 'COMPLETED_RESEARCH_PERIOD_REQUIRED')
 
 
-def _pair(previous: Bar, current: Bar) -> None:
-    _check(previous)
-    _check(current)
+def _pair(previous: Bar, current: Bar, interval=INTERVAL) -> None:
+    _check(previous, interval)
+    _check(current, interval)
     if previous.contract != current.contract:
         raise ValueError('CONTRACT_BOUNDARY')
     if current.end <= previous.end or current.start < previous.end:
@@ -72,9 +72,22 @@ def classify(previous: Bar | None, current: Bar) -> Frame:
     This version accepts completed physical 5m Bars only. Session gaps are allowed;
     source coverage/session provenance remains the frozen export's responsibility.
     """
-    _check(current)
+    return _classify(previous, current, INTERVAL, VERSION)
+
+
+def classify_research_period(previous: Bar | None, current: Bar, *, minutes: int) -> Frame:
+    """Reuse unchanged 5m geometry as an explicitly versioned analysis on other periods."""
+    if type(minutes) is not int or minutes not in (1, 5, 15):
+        raise ValueError('UNKNOWN_RESEARCH_PERIOD')
+    if minutes == 5:
+        return classify(previous, current)
+    return _classify(previous, current, timedelta(minutes=minutes), 'lms-keybar-timeframe-hypothesis-v1')
+
+
+def _classify(previous: Bar | None, current: Bar, interval, version) -> Frame:
+    _check(current, interval)
     if previous is not None:
-        _pair(previous, current)
+        _pair(previous, current, interval)
     values = (current.open, current.high, current.low, current.close)
     # Exact subtraction and x3 even when the caller changes Decimal precision.
     precision = max(v.adjusted() for v in values) - min(v.as_tuple().exponent for v in values) + 4
@@ -92,7 +105,7 @@ def classify(previous: Bar | None, current: Bar) -> Frame:
     inside = None if previous is None else (
         current.high < previous.high and current.low > previous.low
     )
-    return Frame(current, previous, inside, pinbar, body, upper, lower)
+    return Frame(current, previous, inside, pinbar, body, upper, lower, version)
 
 
 def observe_next(frame: Frame, signal: Bar, following: Bar) -> NextCloseObservation:

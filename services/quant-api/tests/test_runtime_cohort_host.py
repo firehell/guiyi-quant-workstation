@@ -574,6 +574,47 @@ def test_preserve_indexes_private_originals_without_promoting_weekly_or_moving_s
     assert stat.S_IMODE((attempt / "originals").stat().st_mode) == 0o700
 
 
+@pytest.mark.parametrize("late_status", ["pending", "claimed"])
+def test_market_source_cutover_preserves_old_archive_without_activating_it(tmp_path, monkeypatch, late_status):
+    from app.market_data.after_market_history import make_history, publish_history
+
+    host, plan, attempt, old, new = preserve_host(tmp_path, monkeypatch)
+    plan["market_source_handover"] = {}
+    host._source_products = ("jm", "pd", "pt")
+    raw = json.dumps({
+        "schema_version": 3,
+        "current_run": None,
+        "last_run": {"trading_day": "2026-09-30", "status": "passed", "attempts": 1,
+                     "started_at": "2026-09-30T18:05:00+08:00", "finished_at": "2026-09-30T18:11:00+08:00",
+                     "products": list(host._source_products), "error_code": None},
+        "last_successful_trading_day": "2026-09-30",
+        "last_failure": None,
+    }).encode()
+    status = old / ".run/after-market-status.json"
+    status.write_bytes(raw)
+    history = old / ".run/after-market-history.json"
+    publish_history(history, make_history(raw, commit="a" * 40, products=host._source_products, now=host.now()))
+    with history.open("ab") as existing:
+        existing.write(b" " * (1024 * 1024))
+    assert host.bytes(history) == history.read_bytes()
+    late = old / ".run/late-provider-recovery-status.json"
+    late.write_text(json.dumps({"schema_version": 1, "runs": {"2026-10-23": {
+        "products": list(host._source_products), "due_at": "2026-10-25T19:05:00+08:00",
+        "state": late_status, "error_code": "RQDATA_NOT_READY",
+    }}}))
+    if late_status == "claimed":
+        with pytest.raises(CohortError, match="COHORT_LATE_STATE_READBACK_REQUIRED"):
+            host.preserve(plan, attempt)
+    else:
+        assert host.preserve(plan, attempt)["history_retained"] is True
+    originals = attempt / "originals"
+    files = {row["source"]: row["file"] for row in json.loads((originals / "index.json").read_text())["files"]
+             if row["present"]}
+    for path in (status, history, late):
+        assert (originals / files[str(path)]).read_bytes() == path.read_bytes()
+        assert not (new / ".run" / path.name).exists()
+
+
 def test_preserve_stable_state_busy_fails_without_copying_or_resetting_it(
     tmp_path, monkeypatch
 ):
@@ -944,3 +985,38 @@ def test_native_commit_checks_deadline_after_all_schema_and_session_readbacks(tm
     with pytest.raises(CohortError, match="COHORT_DOWNTIME_EXCEEDED"):
         host.commit(plan)
     assert writes == []
+
+
+@pytest.mark.parametrize("location", ["current", "retained", "retained_with_newer_pass"])
+def test_market_source_rejects_unknown_natural_archive(tmp_path, monkeypatch, location):
+    from app.market_data.after_market_history import make_history, publish_history
+
+    host, plan, attempt, old, new = preserve_host(tmp_path, monkeypatch)
+    plan["market_source_handover"] = {}
+    host._source_products = ("jm",)
+    raw = json.dumps({
+        "schema_version": 3,
+        "current_run": None,
+        "last_run": {"trading_day": "2026-09-30", "status": "failed", "attempts": 1,
+                     "started_at": "2026-09-30T18:05:00+08:00", "finished_at": "2026-09-30T18:11:00+08:00",
+                     "products": ["jm"], "error_code": "COMMIT_OUTCOME_UNKNOWN"},
+        "last_failure": None,
+    }).encode()
+    if location == "current":
+        (old / ".run/after-market-status.json").write_bytes(raw)
+    else:
+        history = make_history(raw, commit="a" * 40, products=("jm",), now=host.now())
+        publish_history(old / ".run/after-market-history.json", history)
+    if location == "retained_with_newer_pass":
+        current = json.loads(raw)
+        current["last_run"].update(
+            trading_day="2026-10-01", status="passed", error_code=None,
+            started_at="2026-10-01T18:05:00+08:00", finished_at="2026-10-01T18:11:00+08:00",
+        )
+        current["last_successful_trading_day"] = "2026-10-01"
+        (old / ".run/after-market-status.json").write_text(json.dumps(current))
+
+    with pytest.raises(CohortError, match="COHORT_AFTER_MARKET_READBACK_REQUIRED"):
+        host.preserve(plan, attempt)
+    assert not (new / ".run/after-market-status.json").exists()
+    assert not (new / ".run/after-market-history.json").exists()

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import SubingTradeComparison from './SubingTradeComparison.vue'
 import SubingReplayChart from './SubingReplayChart.vue'
 import { label } from './labels'
 
@@ -117,11 +118,13 @@ watch(() => props.mode, (mode, _, onCleanup) => {
   <div class="portfolio">
     <header class="heading">
       <h1>苏冰决策 <small>16品种共享模型账户</small></h1>
+    <p v-if="mode === 'status'">事实来源 · 苏冰独立 Paper 模型账本</p>
       <button type="button" :disabled="loading" @click="refresh(snapshot?.index)">刷新</button>
     </header>
     <p class="model-context">{{ mode === 'status' ? '持续观察' : '历史回放' }} · 同一16品种共享资金与风险模型 · 自动下单关闭</p>
     <p v-if="snapshot?.run_id" class="model-context">{{ mode === 'status' ? '持续运行' : '历史结果' }}身份：{{ snapshot.run_id }}</p>
     <p v-if="error" class="notice" role="alert">读取失败。{{ snapshot ? '正在显示最后一次读取的快照。' : '暂无可用快照。' }}</p>
+    <SubingTradeComparison v-if="mode === 'history'" />
     <section class="panel overview" aria-label="共享账户摘要">
       <div>组合权益<strong>{{ money(combined?.equity) }}</strong></div>
       <div>日内净损益<strong>{{ money(dayNet) }}</strong></div>
@@ -130,6 +133,11 @@ watch(() => props.mode, (mode, _, onCleanup) => {
       <div>{{ states[snapshot?.status] ?? (loading ? '读取中' : '运行状态') }}<strong>{{ stamp(snapshot?.observed_at ?? snapshot?.worker_at) }}</strong></div>
     </section>
     <p v-if="snapshot?.worker_code" class="notice" role="status">{{ snapshot.worker_code }}</p>
+    <ul v-if="snapshot?.missing_observations?.length" aria-label="缺失观察">
+      <li v-for="gap in snapshot.missing_observations" :key="gap.product + gap.frequency">
+        {{ gap.contract ?? gap.product }} · {{ gap.frequency }} · 首个缺口 {{ stamp(gap.first_missing_at) }} · 缺 {{ gap.count }} 根
+      </li>
+    </ul>
     <p v-if="snapshot?.next_open" class="model-context">最早检查执行事实时间 {{ stamp(snapshot.next_open) }}</p>
     <p v-if="combined?.valuation_unproven?.length" class="notice">待核对估值：{{ combined.valuation_unproven.join('、') }}</p>
     <p v-if="snapshot?.window">历史窗口 {{ snapshot.window.join(' — ') }} · {{ snapshot.length ? '当前回放时刻快照' : '组合窗口结果' }}；历史结果与持续账户独立记账。</p>

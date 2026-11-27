@@ -1,0 +1,318 @@
+{
+  "cache_scope": "first application read after decoded-cache clear/reconnection; no host disk-cache flush",
+  "concurrent_day_updates": {
+    "canonical": {
+      "first_client_cpu_ms": 57.563,
+      "first_read_ms": 57.526,
+      "logical_rows_per_update": 465,
+      "reader": "rb-MAIN-1m",
+      "warm": {
+        "client_cpu_mean_ms": 17.825,
+        "p50_ms": 4.824,
+        "p95_ms": 58.818,
+        "p99_ms": 60.24,
+        "runs": 25
+      },
+      "writer": "cu-MAIN-1m",
+      "writer_runs": 8,
+      "writer_wall_ms": 572.503
+    },
+    "native_postgresql": {
+      "first_client_cpu_ms": 42.746,
+      "first_read_ms": 42.825,
+      "logical_rows_per_update": 465,
+      "reader": "rb-MAIN-1m",
+      "warm": {
+        "client_cpu_mean_ms": 45.488,
+        "p50_ms": 42.546,
+        "p95_ms": 51.663,
+        "p99_ms": 174.397,
+        "runs": 25
+      },
+      "writer": "cu-MAIN-1m",
+      "writer_runs": 8,
+      "writer_wall_ms": 682.797
+    }
+  },
+  "environment": {
+    "frozen_manifest_sha256": "7d12403a8f4cd5435a4fc6fe34f0b6d36d83bc1b97f6a103a5d2ae12c3dec31a",
+    "host_version": "27.2.1",
+    "machine": "arm64",
+    "versions": {
+      "peewee": "3.18.3",
+      "pyarrow": "24.0.0",
+      "sqlalchemy": "2.0.51",
+      "vnpy": "4.4.0",
+      "vnpy_postgresql": "1.1.2"
+    }
+  },
+  "native_columns": {
+    "close_price": "real/NO",
+    "datetime": "timestamp without time zone/NO",
+    "exchange": "character varying/NO",
+    "high_price": "real/NO",
+    "id": "integer/NO",
+    "interval": "character varying/NO",
+    "low_price": "real/NO",
+    "open_interest": "real/NO",
+    "open_price": "real/NO",
+    "symbol": "character varying/NO",
+    "turnover": "real/NO",
+    "volume": "real/NO"
+  },
+  "native_mismatch_fields": {
+    "turnover": 40034
+  },
+  "parquet_bytes": 6964749,
+  "peak_client_rss_bytes": 584433664,
+  "pg_server_version": "16.15",
+  "reads": {
+    "canonical/100000": {
+      "first_client_cpu_ms": 1260.463,
+      "first_read_ms": 1252.095,
+      "warm": {
+        "client_cpu_mean_ms": 21.634,
+        "p50_ms": 21.738,
+        "p95_ms": 36.306,
+        "p99_ms": 43.648,
+        "runs": 25
+      }
+    },
+    "canonical/500": {
+      "first_client_cpu_ms": 58.368,
+      "first_read_ms": 60.457,
+      "warm": {
+        "client_cpu_mean_ms": 1.147,
+        "p50_ms": 2.128,
+        "p95_ms": 3.244,
+        "p99_ms": 3.312,
+        "runs": 25
+      }
+    },
+    "canonical/5000": {
+      "first_client_cpu_ms": 58.246,
+      "first_read_ms": 58.52,
+      "warm": {
+        "client_cpu_mean_ms": 2.011,
+        "p50_ms": 3.588,
+        "p95_ms": 4.711,
+        "p99_ms": 4.95,
+        "runs": 25
+      }
+    },
+    "canonical/frequency/15m": {
+      "first_client_cpu_ms": 10.53,
+      "first_read_ms": 10.955,
+      "warm": {
+        "client_cpu_mean_ms": 1.236,
+        "p50_ms": 2.304,
+        "p95_ms": 3.486,
+        "p99_ms": 5.239,
+        "runs": 25
+      }
+    },
+    "canonical/frequency/1d": {
+      "first_client_cpu_ms": 14.688,
+      "first_read_ms": 12.104,
+      "warm": {
+        "client_cpu_mean_ms": 2.945,
+        "p50_ms": 4.234,
+        "p95_ms": 5.019,
+        "p99_ms": 7.371,
+        "runs": 25
+      }
+    },
+    "canonical/frequency/1m": {
+      "first_client_cpu_ms": 58.834,
+      "first_read_ms": 59.691,
+      "warm": {
+        "client_cpu_mean_ms": 1.274,
+        "p50_ms": 2.752,
+        "p95_ms": 3.484,
+        "p99_ms": 3.527,
+        "runs": 25
+      }
+    },
+    "canonical/frequency/1w": {
+      "first_client_cpu_ms": 22.792,
+      "first_read_ms": 13.963,
+      "warm": {
+        "client_cpu_mean_ms": 4.664,
+        "p50_ms": 5.745,
+        "p95_ms": 6.322,
+        "p99_ms": 6.704,
+        "runs": 25
+      }
+    },
+    "canonical/frequency/30m": {
+      "first_client_cpu_ms": 10.573,
+      "first_read_ms": 10.263,
+      "warm": {
+        "client_cpu_mean_ms": 1.449,
+        "p50_ms": 2.468,
+        "p95_ms": 4.102,
+        "p99_ms": 5.49,
+        "runs": 25
+      }
+    },
+    "canonical/frequency/5m": {
+      "first_client_cpu_ms": 12.885,
+      "first_read_ms": 14.206,
+      "warm": {
+        "client_cpu_mean_ms": 0.951,
+        "p50_ms": 1.983,
+        "p95_ms": 2.921,
+        "p99_ms": 3.038,
+        "runs": 25
+      }
+    },
+    "canonical/frequency/60m": {
+      "first_client_cpu_ms": 9.374,
+      "first_read_ms": 8.719,
+      "warm": {
+        "client_cpu_mean_ms": 1.535,
+        "p50_ms": 2.733,
+        "p95_ms": 3.486,
+        "p99_ms": 5.331,
+        "runs": 25
+      }
+    },
+    "canonical/multi_product_25000": {
+      "first_client_cpu_ms": 491.091,
+      "first_read_ms": 503.837,
+      "warm": {
+        "client_cpu_mean_ms": 9.685,
+        "p50_ms": 17.419,
+        "p95_ms": 22.06,
+        "p99_ms": 23.392,
+        "runs": 25
+      }
+    },
+    "native_postgresql/100000": {
+      "first_client_cpu_ms": 780.816,
+      "first_read_ms": 834.396,
+      "warm": {
+        "client_cpu_mean_ms": 752.203,
+        "p50_ms": 811.472,
+        "p95_ms": 874.774,
+        "p99_ms": 896.987,
+        "runs": 25
+      }
+    },
+    "native_postgresql/500": {
+      "first_client_cpu_ms": 8.758,
+      "first_read_ms": 21.719,
+      "warm": {
+        "client_cpu_mean_ms": 5.657,
+        "p50_ms": 8.561,
+        "p95_ms": 13.204,
+        "p99_ms": 25.076,
+        "runs": 25
+      }
+    },
+    "native_postgresql/5000": {
+      "first_client_cpu_ms": 38.569,
+      "first_read_ms": 50.68,
+      "warm": {
+        "client_cpu_mean_ms": 38.77,
+        "p50_ms": 36.823,
+        "p95_ms": 40.887,
+        "p99_ms": 151.369,
+        "runs": 25
+      }
+    },
+    "native_postgresql/frequency/15m": "UNSUPPORTED_INTERVAL",
+    "native_postgresql/frequency/1d": {
+      "first_client_cpu_ms": 4.044,
+      "first_read_ms": 8.639,
+      "warm": {
+        "client_cpu_mean_ms": 1.769,
+        "p50_ms": 2.23,
+        "p95_ms": 3.115,
+        "p99_ms": 3.632,
+        "runs": 25
+      }
+    },
+    "native_postgresql/frequency/1m": {
+      "first_client_cpu_ms": 5.874,
+      "first_read_ms": 11.811,
+      "warm": {
+        "client_cpu_mean_ms": 3.62,
+        "p50_ms": 4.124,
+        "p95_ms": 4.952,
+        "p99_ms": 6.68,
+        "runs": 25
+      }
+    },
+    "native_postgresql/frequency/1w": {
+      "first_client_cpu_ms": 3.405,
+      "first_read_ms": 9.062,
+      "warm": {
+        "client_cpu_mean_ms": 0.837,
+        "p50_ms": 1.177,
+        "p95_ms": 1.409,
+        "p99_ms": 1.428,
+        "runs": 25
+      }
+    },
+    "native_postgresql/frequency/30m": "UNSUPPORTED_INTERVAL",
+    "native_postgresql/frequency/5m": "UNSUPPORTED_INTERVAL",
+    "native_postgresql/frequency/60m": {
+      "first_client_cpu_ms": 6.012,
+      "first_read_ms": 10.818,
+      "warm": {
+        "client_cpu_mean_ms": 3.556,
+        "p50_ms": 4.093,
+        "p95_ms": 4.332,
+        "p99_ms": 5.217,
+        "runs": 25
+      }
+    },
+    "native_postgresql/multi_product_25000": {
+      "first_client_cpu_ms": 177.618,
+      "first_read_ms": 202.175,
+      "warm": {
+        "client_cpu_mean_ms": 192.563,
+        "p50_ms": 199.277,
+        "p95_ms": 313.184,
+        "p99_ms": 337.137,
+        "runs": 25
+      }
+    }
+  },
+  "recovery": {
+    "canonical_commit_visibility": "passed",
+    "canonical_rollback_reopen": "passed",
+    "native_failed_chunk_rollback_reopen": "passed",
+    "native_rejects_null": "confirmed"
+  },
+  "table_bytes": {
+    "dbbardata": 21520384,
+    "dbbaroverview": 49152,
+    "dbtickdata": 24576,
+    "dbtickoverview": 24576,
+    "market_datasets": 57344,
+    "market_partitions": 163840
+  },
+  "wall_seconds": 49.043,
+  "writes": {
+    "canonical": {
+      "extra_interval_rows": 18000,
+      "extra_interval_write_ms": 823.957,
+      "increment_client_cpu_ms": 126.916,
+      "increment_ms": 129.688,
+      "increment_rows": 345,
+      "initial_client_cpu_ms": 4291.912,
+      "initial_rows": 136406,
+      "initial_wall_ms": 4774.345
+    },
+    "native_postgresql": {
+      "increment_client_cpu_ms": 8.498,
+      "increment_ms": 35.337,
+      "increment_rows": 345,
+      "initial_client_cpu_ms": 3012.713,
+      "initial_rows": 136406,
+      "initial_wall_ms": 6380.559
+    }
+  }
+}

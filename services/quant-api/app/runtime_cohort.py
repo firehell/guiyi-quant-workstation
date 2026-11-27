@@ -69,6 +69,16 @@ def require(value, code):
         raise CohortError(code)
 
 
+def terminal_cohort_state(directory, state):
+    if state.get("phase") not in TERMINAL:
+        return False
+    if "market_forward_sha256" not in state:
+        return True
+    from app.runtime_market_forward_recovery import verified_forward_pointer
+
+    return verified_forward_pointer(directory, state)
+
+
 def registry(value, *, historical=False, history_directory=None, history_verifier=None):
     from app.runtime_bindings import historical_binding
 
@@ -116,7 +126,64 @@ def _release_layout(candidate_root, tag, previous, *, historical=False):
         raise CohortError("COHORT_RELEASE_ROOT_INVALID") from None
 
 
-def freeze_cohort(host, *, candidate_root, tag, commit):
+def _market_host(host):
+    # Production hosts must opt in explicitly. The ordinary one-instance host
+    # compares stream IDs directly and cannot service this plan.
+    methods = (
+        "freeze_market_source_handover", "check_market_source_plan", "preserve_market_source",
+        "stage_market_source", "check_staged_market_source", "verify_market_source_restore",
+        "market_source_consumers_ready", "verify_market_source",
+    )
+    require(all(callable(getattr(host, name, None)) for name in methods),
+            "COHORT_MARKET_SOURCE_HANDOVER_REQUIRED")
+
+
+def _valid_market_intent(value):
+    fields = {
+        "old_instance", "target_instance", "old_day", "target_day", "catalog_sha256",
+        "tqkq_sha256", "subing_sha256",
+    }
+    if type(value) is not dict or set(value) not in (fields, fields | {"host_sha256"}):
+        return False
+    from datetime import date
+    try:
+        old_day, target_day = (date.fromisoformat(value[field]) for field in ("old_day", "target_day"))
+    except (TypeError, ValueError):
+        return False
+    return (
+        old_day.isoformat() == value["old_day"] and target_day.isoformat() == value["target_day"]
+        and old_day < target_day and value["old_instance"] != value["target_instance"]
+        and all(isinstance(value[field], str) and re.fullmatch(r"[0-9a-f]{64}", value[field])
+                for field in value if field not in {"old_day", "target_day"})
+    )
+
+
+def _require_forward_application_release(tag, previous):
+    from app.market_release_identity import APPLICATION_TAG, market_release_version
+
+    def version(value):
+        require(re.fullmatch(APPLICATION_TAG, value) is not None, "COHORT_TAG_INVALID")
+        return tuple(map(int, value[1:].split(".")))
+
+    old_versions = [
+        version(binding.tag) for binding in previous.services.values()
+        if market_release_version(binding.tag) is None
+    ]
+    require(
+        version(tag) > max(old_versions, default=(0, 0, 0)),
+        "COHORT_FORWARD_RELEASE_REQUIRED",
+    )
+
+
+
+def freeze_cohort(host, *, candidate_root, tag, commit, market_source=False):
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    # This existing controller compares old and new stream IDs in one Redis.
+    # A source transition crosses instances and needs its own cutoff proof.
+    require(not formal_tick_requested(), "COHORT_MARKET_SOURCE_HANDOVER_REQUIRED")
+    if market_source:
+        _market_host(host)
     previous = host.bindings()
     require(
         previous is not None and complete_service_set(previous.services),
@@ -124,22 +191,13 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
     )
     state = _read(host.directory / "cohort-release.json")
     require(
-        state is None or state.get("phase") in TERMINAL,
+        state is None or terminal_cohort_state(host.directory, state),
         "COHORT_RECOVERY_READBACK_REQUIRED",
     )
     _release_layout(candidate_root, tag, previous)
     host.verify_release(candidate_root, tag, commit)
 
-    def version(value):
-        require(
-            re.fullmatch(r"v\d+\.\d+\.\d+", value) is not None, "COHORT_TAG_INVALID"
-        )
-        return tuple(map(int, value[1:].split(".")))
-
-    require(
-        version(tag) > max(version(v.tag) for v in previous.services.values()),
-        "COHORT_FORWARD_RELEASE_REQUIRED",
-    )
+    _require_forward_application_release(tag, previous)
     contracts = host.contracts(candidate_root)
     for old in previous.services.values():
         host.verify_release(Path(old.root), old.tag, old.commit)
@@ -180,7 +238,11 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
         require(callable(verifier), "COHORT_SCHEMA_CHANGE_UNSUPPORTED")
         result["schema_compatibility"] = verifier(previous, new)
     freeze_reference = getattr(host, "freeze_reference_receiving_handover", None)
-    if callable(freeze_reference):
+    if market_source:
+        intent = host.freeze_market_source_handover(previous, new, result["window"])
+        require(_valid_market_intent(intent), "COHORT_MARKET_SOURCE_PLAN_INVALID")
+        result["market_source_handover"] = intent
+    elif callable(freeze_reference):
         reference_intent = freeze_reference(new)
         if reference_intent is not None:
             result["reference_receiving_handover"] = reference_intent
@@ -189,7 +251,8 @@ def freeze_cohort(host, *, candidate_root, tag, commit):
 
 
 def validate(
-    plan, now, *, historical=False, history_directory=None, history_verifier=None
+    plan, now, *, historical=False, history_directory=None, history_verifier=None,
+    allow_market_source=False,
 ):
     try:
         require(
@@ -277,6 +340,13 @@ def validate(
             require(
                 "schema_compatibility" not in plan, "COHORT_SCHEMA_PROOF_UNEXPECTED"
             )
+        if "market_source_handover" in plan:
+            require(allow_market_source, "COHORT_MARKET_SOURCE_RECOVERY_REQUIRED")
+            require(
+                _valid_market_intent(plan["market_source_handover"])
+                and "reference_receiving_handover" not in plan,
+                "COHORT_MARKET_SOURCE_PLAN_INVALID",
+            )
         if "reference_receiving_handover" in plan:
             from app.reference_trading.receiving_handover import (
                 valid_receiving_handover_intent,
@@ -289,11 +359,7 @@ def validate(
                 ),
                 "COHORT_REFERENCE_BACKLOG_UNPROVEN",
             )
-        require(
-            tuple(map(int, next(iter(new.services.values())).tag[1:].split(".")))
-            > max(tuple(map(int, v.tag[1:].split("."))) for v in old.services.values()),
-            "COHORT_FORWARD_RELEASE_REQUIRED",
-        )
+        _require_forward_application_release(next(iter(new.services.values())).tag, old)
         return old, new
     except (KeyError, TypeError, OverflowError) as error:
         raise CohortError("COHORT_PLAN_INVALID") from error
@@ -314,11 +380,18 @@ def _check_reference_handover(host, plan, proof):
 
 
 def apply_cohort(host, plan):
-    old, _new = validate(plan, host.now())
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    require(not formal_tick_requested(), "COHORT_MARKET_SOURCE_HANDOVER_REQUIRED")
+
+    market_source = "market_source_handover" in plan
+    old, _new = validate(plan, host.now(), allow_market_source=market_source)
+    if market_source:
+        _market_host(host)
     with deployment_lock(runtime_dir=host.directory):
         current = _read(host.directory / "cohort-release.json")
         require(
-            current is None or current.get("phase") in TERMINAL,
+            current is None or terminal_cohort_state(host.directory, current),
             "COHORT_RECOVERY_READBACK_REQUIRED",
         )
         require(
@@ -326,6 +399,8 @@ def apply_cohort(host, plan):
             "COHORT_REGISTRY_DRIFT",
         )
         host.check_plan(plan)
+        if market_source:
+            host.check_market_source_plan(plan)
         _check_schema(host, plan)
         attempts = host.directory / "cohort-attempts"
         require(not attempts.is_symlink(), "COHORT_ATTEMPT_DIRECTORY_UNSAFE")
@@ -370,7 +445,7 @@ def apply_cohort(host, plan):
             state["effects"]["prewarm"] = host.prewarm(plan)
             persist("prewarmed")
             host.check_plan(plan)
-            validate(plan, host.now())
+            validate(plan, host.now(), allow_market_source=market_source)
             host.deadline = monotonic() + plan["downtime_seconds"]
 
             def step(name, action):
@@ -391,23 +466,32 @@ def apply_cohort(host, plan):
                 )  # Fresh installed proof before any owner stop.
                 step("old_exited", lambda: host.stop_old(plan, proof))
                 step("preserve", lambda: host.preserve(plan, attempt))
+                if market_source:
+                    retained = step("market_source_preserve",
+                                    lambda: host.preserve_market_source(plan, proof, attempt))
+                    staged = step("market_source_stage",
+                                  lambda: host.stage_market_source(plan, proof, retained))
                 step("install", lambda: host.install(plan, attempt))
-                validate(plan, host.now())
+                validate(plan, host.now(), allow_market_source=market_source)
                 require(monotonic() < host.deadline, "COHORT_DOWNTIME_EXCEEDED")
                 _check_schema(
                     host, plan
                 )  # Revalidate after install, before CAS intent.
                 _check_reference_handover(host, plan, proof)
-                validate(plan, host.now())
+                if market_source:
+                    host.check_staged_market_source(plan, proof, retained, staged)
+                validate(plan, host.now(), allow_market_source=market_source)
                 require(monotonic() < host.deadline, "COHORT_DOWNTIME_EXCEEDED")
                 persist("committing")
                 committed = True  # Unknown CAS result is never an automatic rollback.
                 host.commit(plan)
                 persist("committed")
             step("consumers", lambda: host.start_consumers(plan))
-            step("consumers_ready", lambda: host.consumers_ready(plan, proof))
+            consumers_ready = host.market_source_consumers_ready if market_source else host.consumers_ready
+            verify = host.verify_market_source if market_source else host.verify
+            step("consumers_ready", lambda: consumers_ready(plan, proof))
             step("feed", lambda: host.start_feed(plan))
-            readback = step("verified", lambda: host.verify(plan, proof))
+            readback = step("verified", lambda: verify(plan, proof))
             step("calendars_on", lambda: host.restore_calendars(plan))
             host.assert_protected(plan)
             persist("switched")
@@ -448,6 +532,17 @@ def apply_cohort(host, plan):
                 raise CohortError("COHORT_OUTCOME_UNKNOWN_READBACK_REQUIRED") from None
             try:
                 if suspended:
+                    if market_source:
+                        # A lost stage reply has no completion effect. The
+                        # durable phase, not host process memory, fences restore.
+                        require(
+                            state["failed_phase"] != "market_source_stage"
+                            or "market_source_stage" in state["effects"],
+                            "MARKET_SOURCE_STAGE_READBACK_REQUIRED",
+                        )
+                        require(host.bindings() == old and host.binding_hash() == plan["registry_sha256"],
+                                "COHORT_REGISTRY_DRIFT")
+                        host.verify_market_source_restore(plan, state["effects"])
                     host.restore_old(plan)
                 persist("cancelled")
             except Exception:
@@ -483,10 +578,39 @@ def _sync_resolution_directory(path):
         os.close(fd)
 
 
+def market_source_recovery_direction(plan, state, observed_registry):
+    """Classify an independent registry readback without starting either source."""
+    require("market_source_handover" in plan, "COHORT_MARKET_SOURCE_PLAN_INVALID")
+    old, new = validate(plan, datetime.fromisoformat(plan["created_at"]), allow_market_source=True)
+    post_intent = {
+        "committing", "committed", "consumers", "consumers_complete", "consumers_ready",
+        "consumers_ready_complete", "feed", "feed_complete", "verified", "verified_complete",
+        "calendars_on", "calendars_on_complete", "outcome_unknown",
+    }
+    pre_intent = {
+        "claimed", "prewarmed", "calendars_off", "calendars_off_complete", "drain", "drain_complete",
+        "old_exited", "old_exited_complete", "preserve", "preserve_complete", "market_source_preserve",
+        "market_source_preserve_complete", "market_source_stage", "market_source_stage_complete",
+        "install", "install_complete", "restore_unknown",
+    }
+    phase = state.get("phase")
+    require(
+        state.get("schema_version") == 1 and state.get("plan_sha256") == plan["plan_sha256"]
+        and phase in (pre_intent | post_intent),
+        "COHORT_MARKET_SOURCE_RECOVERY_REQUIRED",
+    )
+    if observed_registry == new and phase in post_intent:
+        return "forward_only"
+    if observed_registry == old and phase in pre_intent:
+        return "target_readback_required"
+    return "binding_readback_required"
+
+
 def resolve_restored_cohort(host, plan_path):
     """Audit an externally restored pre-CAS attempt; never execute its plan."""
     with deployment_lock(runtime_dir=host.directory):
         plan_raw, plan = _resolution_source(Path(plan_path))
+        require("market_source_handover" not in plan, "COHORT_MARKET_SOURCE_RECOVERY_REQUIRED")
         # Reuse all identity/contract validation at the historical creation time.
         # Expiry is ignored only in this audit; apply_cohort has no such bypass.
         created = datetime.fromisoformat(plan["created_at"])
@@ -653,7 +777,7 @@ def main(argv=None):
     p = sub.add_parser("resolve-restored")
     p.add_argument("--plan", required=True, type=Path)
     p = sub.add_parser("warmup")
-    p.add_argument("service", choices=(*CONTINUOUS, *sorted(OPTIONAL_CONTINUOUS)))
+    p.add_argument("service", choices=(*CONTINUOUS, *sorted(OPTIONAL_CONTINUOUS), "market-source-staged"))
     args = parser.parse_args(argv)
     try:
         if args.mode == "warmup":
@@ -662,7 +786,22 @@ def main(argv=None):
             from app.core.env import PROJECT_ROOT
             from app.version import APP_VERSION
 
-            if args.service == "alert":
+            if args.service == "market-source-staged":
+                from app.db.session import SessionLocal
+                from app.db.readonly import readonly_transaction
+                from app.market_data.composition import build_market_feed_service
+                from app.market_data.market_foundation_scope import formal_tick_requested
+                from app.market_data.newow.market_reference_after_close import warmup_formal_receipts
+                from app.market_data.tick_runtime import open_formal_tick_dispatch
+                from datetime import UTC
+
+                require(formal_tick_requested(), "COHORT_MARKET_SOURCE_HANDOVER_REQUIRED")
+                with (SessionLocal() as session, readonly_transaction(session, timeout_seconds=20),
+                      open_formal_tick_dispatch() as dispatch):
+                    feed = build_market_feed_service(session, tick_dispatch=dispatch)
+                    require(feed.quiescent(datetime.now(UTC)), "MARKET_SOURCE_STAGED_FEED_NOT_QUIESCENT")
+                proof = warmup_formal_receipts()
+            elif args.service == "alert":
                 from app.alerts.composition import warmup_alert_runtime
 
                 proof = warmup_alert_runtime(

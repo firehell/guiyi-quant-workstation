@@ -117,7 +117,7 @@ flowchart LR
 - `/market` 的市场/消息 Tab 分别消费 overview、`GET /api/runtime/health`、有界历史 Alert Events 与独立 completed 1m 报价。首页成功快照在详情往返间复用，失效后后台刷新；消息不阻塞市场。首页只允许一个 server 固定 operational Scope 的批量 WebSocket，无 per-product HTTP 或写入；详情原有单品种 WebSocket 不作为60品种 fanout 使用。
 - 分钟报价 overlay 使用现有 Live/Calendar/Session/MainContractMap 与 MDS 读取能力，先订阅后快照，按交易日/物理合约身份重建并处理同日 availability 恢复；同合约昨收涨跌幅由后端 Decimal 计算。它不覆写 completed D1/W1 overview，不让 Redis 成为历史行情 authority，也不把休市、断线或历史收盘标成 tick 实时。
 - 消息历史是 registry-owned immutable Event 的有界日期/规则/品种查询与稳定游标投影；事件生成、尝试通知、实际收件分开，不新增 Event writer、删除/重发、Scope 或通知入口。
-- `active_products.txt` 是研究能力边界；`operational_products.txt` 是 Market/Alert Runtime 外层授权边界。
+- V2 的 `active_products.txt` 定义 58 个研究品种，`operational_products.txt` 定义 Market/Alert Runtime 范围。数据和策略入口共用退役名单。
 - Alert 独立于 Market Catalog。一个 `single Alert Runtime` 按 Rule dispatch 到 HTDY `first_seen` 与 `SubingThs15mEvaluator` `exact`，不新增进程。SuBing 只使用同物理 rank1 合约的 completed `actual_dominant` 15m；首次/换月重建经 `MarketReadService -> MarketDataService` 取得同合约 lifecycle Canonical prefix，再严格合并当日 completed Live，缺 history 即 fail-closed；Event 持久化后最多尝试一次 transport。
 - Web 的正式 SuBing `S↑/S↓` 只来自 immutable Event，通用 Overlay 不增加 SuBing（`no SuBing overlay`）；API、Web 与 formatter 不复制公式。独立历史参考服务经现有 `ActualDominantResearchSegmentLoader` 和 `MarketDataService` 获取完整主力区段、物理生命周期 Bar 及 coverage，复用同一个 Kernel 后进入纯 Decimal 参考投影。`GET /api/v1/market/{symbol}/subing/reference` 提供单品种只读响应，进程内单并发、30 秒协作式预算；输入 hash 绑定游标、统计与信号，历史参考不依赖 Alert Rule/Scope、Redis 或 Event 写入。
 - 默认关闭的 Live recovery worker 属于既有 Market Runtime；复用 RQData adapter、Session 与聚合器，
@@ -239,6 +239,6 @@ manage/trade实现有各自执行限制，不能由observe运行推导交易开�
 
 `/api/simulation/monitor/*` 只读 worker 原子投影；overview 的完整权益历史以只读 SQLite 读取同账户 `accounts/<account_id>/dispatch.sqlite`，校验账户/profile 并精确截止于该投影已发布的权益尾点，不读取尚未发布的新尾点。历史无法核验时仅曲线明确不可用，账户监控保留。不创建 SDK 或交易操作。Web 模拟交易 Tab 和 HTDY 快期记录消费此入口；旧 `/api/simnow/monitor/*` 不再挂载，旧 SimNow 历史原件保留。
 
-## 苏冰独立开发持续模型
+## 苏冰16品种共享 Paper 模型
 
-`app.subing_model` 组合MDS完整物理前缀、既有completed ObservationStream和共享 `guiyi_quant.subing_account.AccountEngine`。同一增量账户消费统一候选决策，沿用原费用/风险/退出；历史批量入口不变。隔离开发PostgreSQL保存不可变输入、知识时刻、模型决策/成交与hash链，状态投影可逐事件重建；不依赖正式Runtime或Broker。只读状态API不驱动worker，Web持续模式与登记历史回放分开。14品种非JM只观察；事实中断保留保护义务并停止撮合，换月不自动移仓。详细合同与启动恢复入口见[苏冰开发模型](SUBING_DEVELOPMENT_MODEL.md)。
+`app.subing_portfolio_worker` 从 MDS 取得物理合约与预热输入，消费既有 completed ObservationStream。`PortfolioJournal` 按分钟提交不可变事实与共享账户状态。16 品种共享资金，每品种最多一手；事实中断时保留保护义务，换月需显式处理。历史14品种和单JM账户按原身份重放。工作台的持续模式读取已提交快照，历史模式读取登记回放，本地研究对照可直接导入。详细合同与启动恢复入口见[苏冰共享模型](SUBING_DEVELOPMENT_MODEL.md)。

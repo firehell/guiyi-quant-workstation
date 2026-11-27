@@ -192,6 +192,7 @@ def _updater(
     consumer_audit=None,
     consumer_revision=None,
     consumer_check_keys=("newow_d1",),
+    research_update=None,
 ):
     manager = _Manager(trading_day, results, metadata_day=metadata_day)
     rqdata = _RQData(readiness)
@@ -214,6 +215,7 @@ def _updater(
         consumer_audit=consumer_audit,
         consumer_revision=consumer_revision,
         consumer_check_keys=consumer_check_keys,
+        research_update=research_update,
     )
     return updater, manager, rqdata, sleeps, notices, live_store
 
@@ -597,6 +599,22 @@ def test_production_builder_defers_provider_client_until_run(tmp_path, monkeypat
     monkeypatch.setattr(redis_connections, "get_redis_connection", lambda: object())
     manager = SimpleNamespace(provider=Provider(), catalog=SimpleNamespace(canonical_root=tmp_path))
     module.build_after_market_updater(manager, failure_notification=False)
+
+
+def test_bar_after_market_never_enters_guarded_run_on_tick_redis(tmp_path, monkeypatch):
+    from app.market_data import after_market
+    from app import redis_connections
+
+    monkeypatch.delenv("GUIYI_MARKET_SOURCE", raising=False)
+    monkeypatch.setattr(redis_connections, "get_redis_connection", lambda: SimpleNamespace(
+        mget=lambda *_: [b"formal-tick-marker", None],
+    ))
+    monkeypatch.setattr(after_market, "after_market_recovery_guard", lambda **_: nullcontext())
+    manager = SimpleNamespace(provider=object(), catalog=SimpleNamespace(canonical_root=tmp_path))
+    updater = after_market.build_after_market_updater(manager, failure_notification=False)
+    monkeypatch.setattr(updater, "_run_guarded", lambda: pytest.fail("bar update on Tick Redis"))
+    with pytest.raises(ValueError, match="MARKET_BAR_WRITER_NAMESPACE_CONFLICT"):
+        updater.run()
 
 
 def test_provider_factory_runs_after_durable_current_run_and_init_failure_has_one_terminal(tmp_path):
@@ -1547,6 +1565,25 @@ def test_success_reconciles_rank1_publishes_state_and_cleans_live(tmp_path) -> N
     assert notices == []
 
 
+@pytest.mark.parametrize("maintenance_status", ("passed", "failed"))
+def test_backtest_consumer_requires_durable_success(tmp_path, maintenance_status):
+    day = date(2026, 8, 10)
+    captured = []
+
+    def update(path, trading_day):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert payload["last_successful_trading_day"] == trading_day.isoformat()
+        assert payload["last_run"]["status"] == "passed"
+        captured.append(trading_day)
+
+    updater, *_ = _updater(
+        tmp_path, trading_day=day, readiness=[True],
+        results=[_result(maintenance_status)], research_update=update,
+    )
+    assert updater.run().status == maintenance_status
+    assert captured == ([day] if maintenance_status == "passed" else [])
+
+
 def test_cleanup_failure_does_not_retry_or_report_success(tmp_path) -> None:
     """Catches a failed Live cleanup being recorded as a completed after-market run."""
     updater, _manager, _rqdata, sleeps, notices, live_store = _updater(
@@ -2409,3 +2446,165 @@ def test_home_strategy_projection_runs_only_after_cleanup_and_cannot_retry_maint
     assert calls == ['projection']
     assert len(manager.calls) == 1
     assert sleeps == [] and notices == []
+
+
+
+def test_candidate_archive_rejects_unverified_scope_before_live_cleanup(tmp_path):
+    from contextlib import contextmanager
+
+    day = date(2026, 8, 10)
+    updater, manager, _, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[True], results=[_result("passed", applied=1)],
+    )
+    manager.publication_evidence = [_capacity_publication()]
+
+    @contextmanager
+    def rejected(products, trading_day, publications):
+        assert products == _ACTIVE_PRODUCTS
+        assert trading_day == day
+        assert publications == manager.publication_evidence
+        raise ValueError("source scope incomplete")
+        yield
+
+    updater.archive_readback = rejected
+    assert updater.run().error_code == "CANONICAL_READBACK_UNVERIFIED"
+    assert live.cleaned == []
+    assert live.published == []
+    status = public_after_market_status(_status(updater.status_path))
+    assert status["last_successful_trading_day"] is None
+
+
+def test_candidate_archive_reconciles_repeat_using_same_day_cleanup_proof(tmp_path):
+    from contextlib import contextmanager
+
+    day = date(2026, 8, 10)
+    updater, manager, _, _, notices, live = _updater(
+        tmp_path, trading_day=day, readiness=[True, False, False, True],
+        results=[_result("noop"), _result("noop")],
+    )
+    manager.publication_evidence = []
+
+    @contextmanager
+    def readback(products, trading_day, publications):
+        assert trading_day == day
+        assert publications == []
+        yield {product: "a" * 64 for product in products}
+
+    updater.archive_readback = readback
+    updater.notification_transport = None
+    assert updater.run().status == "passed"
+    assert updater.run().error_code == "RQDATA_NOT_READY"
+    assert public_after_market_status(_status(updater.status_path))["last_run"]["status"] == "failed"
+    assert updater.run().status == "passed"
+    evidence = public_after_market_status(_status(updater.status_path))["last_run"]["live_evidence"]
+    assert evidence["canonical_readback"] == {product: "a" * 64 for product in _ACTIVE_PRODUCTS}
+    assert live.cleaned == [day]
+    assert notices == []
+
+
+def test_candidate_keeps_unretained_success_status_for_safe_restart(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+
+    from app.market_data import market_archive
+
+    day = date(2026, 8, 10)
+    updater, manager, provider, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[True], results=[_result("noop")],
+    )
+    manager.publication_evidence = []
+    updater.archive_readback = lambda products, *_: nullcontext({product: "a" * 64 for product in products})
+    original = market_archive.retain_archive_receipt
+
+    def unavailable(path, *, now):
+        if path.exists():
+            raise OSError("Archive receipt storage unavailable")
+        return original(path, now=now)
+
+    monkeypatch.setattr(market_archive, "retain_archive_receipt", unavailable)
+    assert updater.run().error_code == "MARKET_ARCHIVE_RECEIPT_UNAVAILABLE"
+    retained_preimage = updater.status_path.read_bytes()
+    assert updater.run().error_code == "MARKET_ARCHIVE_RECEIPT_UNAVAILABLE"
+    assert updater.status_path.read_bytes() == retained_preimage
+    assert provider.calls == [day] and live.cleaned == [day]
+
+
+def test_candidate_restart_after_exact_day_cleanup_uses_readback_without_provider_retry(tmp_path):
+    from contextlib import contextmanager
+
+    day = date(2026, 8, 10)
+    updater, manager, provider, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[True], results=[_result("noop")],
+    )
+    manager.publication_evidence = []
+
+    @contextmanager
+    def readback(products, trading_day, publications):
+        assert trading_day == day
+        assert publications == []
+        yield {product: "a" * 64 for product in products}
+
+    updater.archive_readback = readback
+    read = live.cleanup_readback
+
+    def stop_after_cleanup(_day):
+        raise KeyboardInterrupt
+
+    live.cleanup_readback = stop_after_cleanup
+    with pytest.raises(KeyboardInterrupt):
+        updater.run()
+    assert live.cleaned == [day]
+    live.cleanup_readback = read
+    assert updater.run().status == "passed"
+    assert provider.calls == [day]
+    assert live.cleaned == [day]
+
+
+def test_candidate_restart_refuses_an_unknown_commit_before_provider_retry(tmp_path):
+    from contextlib import contextmanager
+    from app.market_data.storage import StorageError
+
+    day = date(2026, 8, 10)
+    updater, manager, provider, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[True], results=[],
+    )
+    manager.publication_evidence = []
+
+    def unknown(*_args, **_kwargs):
+        raise StorageError("COMMIT_OUTCOME_UNKNOWN")
+
+    @contextmanager
+    def readback(*_args):
+        raise AssertionError("No proof binding an unknown commit to the run")
+        yield
+
+    manager.update = unknown
+    updater.archive_readback = readback
+    assert updater.run().error_code == "COMMIT_OUTCOME_UNKNOWN"
+    original = updater.status_path.read_bytes()
+    assert updater.run().error_code == "COMMIT_OUTCOME_UNKNOWN"
+    assert updater.status_path.read_bytes() == original
+    assert provider.calls == [day]
+    assert live.cleaned == []
+
+
+@pytest.mark.parametrize("snapshot", [None, {"jm": "JM2701"}, {**_ACTIVE_CONTRACTS, "ag": "AG2612"}])
+def test_isolated_archive_rejects_missing_extra_or_wrong_owners_before_provider(tmp_path, snapshot):
+    from contextlib import nullcontext
+
+    day = date(2026, 8, 10)
+    updater, manager, provider, _, _, live = _updater(
+        tmp_path, trading_day=day, readiness=[], results=[],
+    )
+    updater.archive_readback = lambda *_: nullcontext({})
+    live.snapshot = snapshot
+    assert updater.run().error_code == "LIVE_DOMINANT_MISMATCH"
+    assert provider.calls == [] and manager.calls == [] and live.cleaned == []
+
+
+def test_isolated_archive_scope_requires_an_exact_explicit_list():
+    from app.market_data.market_archive import isolated_archive_products
+
+    assert isolated_archive_products("rb,jm") == ("rb", "jm")
+    for raw in ("", "rb,", "rb,rb", "RB", "rb, jm", "unregistered"):
+        with pytest.raises(ValueError, match="MARKET_ARCHIVE_SCOPE_INVALID"):
+            isolated_archive_products(raw)

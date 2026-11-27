@@ -35,6 +35,7 @@ from app.market_data.market_home_projection import (
 )
 from app.market_data.market_home_live import MarketHomeLiveService
 from app.market_data.market_phase import MarketPhaseResolver
+from app.market_data.market_display_preview import MarketPreviewReader
 from app.market_data.market_read_service import MarketReadService
 from app.market_data.market_research_service import MarketResearchService
 from app.market_data.operational_universe import (
@@ -248,15 +249,33 @@ def build_market_home_projection(session: Session) -> MarketHomeProjection:
     )
 
 
-def build_market_read_service(session: Session, *, redis: RedisClient | None = None,
-                              check_cancelled=None) -> MarketReadService:
+def build_market_read_service(
+    session: Session, *, redis: RedisClient | None = None,
+    check_cancelled=None, preview_reader: MarketPreviewReader | None = None,
+    after_market_status_path: Path | None = None,
+) -> MarketReadService:
     """Compose Market reads with an optional transient Redis Live overlay."""
 
+    from app.market_data.market_foundation_scope import FormalMarketReadRedis, formal_tick_requested
+
+    connection = redis if redis is not None else cast(RedisClient, get_redis_connection())
+    market_data = build_market_data_service(session, check_cancelled=check_cancelled)
+    if formal_tick_requested():
+        from app.market_data.tick_preview_redis import RedisTickPreviewReader
+
+        connection = FormalMarketReadRedis(connection, session.get_bind().url, canonical_root())
+        preview_reader = RedisTickPreviewReader(connection, sessions=market_data.session_windows)
+        if after_market_status_path is None:
+            from app.market_data.market_archive import formal_after_market_status_path
+
+            after_market_status_path = formal_after_market_status_path()
     return MarketReadService(
-        market_data=build_market_data_service(session, check_cancelled=check_cancelled),
+        market_data=market_data,
         phase_resolver=MarketPhaseResolver(session),
         operational_products=load_operational_products(),
-        live_store=RedisLiveStore(redis if redis is not None else cast(RedisClient, get_redis_connection())),
+        live_store=RedisLiveStore(connection),
+        preview_reader=preview_reader,
+        after_market_status_path=after_market_status_path,
     )
 
 
@@ -278,20 +297,39 @@ def open_market_home_live_service() -> Iterator[MarketHomeLiveService]:
     with SessionLocal() as session:
         redis = get_redis_connection()
         try:
+            from app.market_data.market_foundation_scope import FormalMarketReadRedis, formal_tick_requested
+
+            connection = cast(RedisClient, redis)
+            if formal_tick_requested():
+                connection = FormalMarketReadRedis(redis, session.get_bind().url, canonical_root())
             yield MarketHomeLiveService(
                 market_data=build_market_data_service(session),
                 phase_resolver=MarketPhaseResolver(session),
-                live_store=RedisLiveStore(cast(RedisClient, redis)),
+                live_store=RedisLiveStore(connection),
                 operational_products=load_operational_products(),
             )
         finally:
             redis.close()
 
 
-def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveMarketService:
+def build_live_market_service(session: Session, *, _feed: bool = False, tick_dispatch=None) -> LiveMarketService:
     """Compose the foreground Live observation service without starting it."""
 
     from app.market_data.rqdata_adapter import RQDataClient
+    from app.market_data.market_foundation_scope import (
+        formal_tick_requested, require_bar_writer_namespace, require_formal_tick_binding,
+    )
+
+    tick = formal_tick_requested()
+    durable = os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1'
+    connection = get_redis_connection()
+    tick_binding = None
+    if tick:
+        if not durable or os.getenv('GUIYI_RUNTIME_HANDOVER_ENABLED') != '1':
+            raise ValueError('MARKET_TICK_SUPERVISOR_REQUIRED')
+        tick_binding = require_formal_tick_binding(connection, session.get_bind().url, canonical_root())
+    elif _feed or not durable:
+        require_bar_writer_namespace(connection)
 
     from app.market_data.aggregation import SessionWindow
     from app.market_data.session_clock import resolved_session_windows_for_trading_day
@@ -319,18 +357,21 @@ def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveM
     recovery_fetch_factory: Callable | None = None
     recovery_sessions_source: Callable[[str, date], tuple[SessionWindow, ...]] | None = None
     recovery_guard_factory: Callable[[str], ContextManager] | None = None
-    if os.getenv("GUIYI_LIVE_RECOVERY_ENABLED", "0") == "1":
+    if not tick and os.getenv("GUIYI_LIVE_RECOVERY_ENABLED", "0") == "1":
         from app.market_data.rqdata_adapter import RQDataLiveRecoveryAdapter
         from app.market_data.live_recovery_guard import recovery_guard
 
         recovery_fetch_factory = RQDataLiveRecoveryAdapter
         recovery_sessions_source = coverage_sessions
         recovery_guard_factory = recovery_guard
-    rqdata = RQDataClient()
+    rqdata = None if tick else RQDataClient()
     from app.market_data.day_preparation import build_day_metadata_preparation
     products = load_operational_products()
+    previous_path = Path.home() / "Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json"
     preparation = build_day_metadata_preparation(
-        SessionLocal, state_path=Path.home() / "Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json",
+        SessionLocal,
+        state_path=previous_path.with_name("market-day-metadata-preparation-tick.json") if tick else previous_path,
+        previous_state_path=previous_path if tick else None,
         products=products, canonical_root=canonical_root(),
     )
     market_data = build_market_data_service(session)
@@ -350,7 +391,7 @@ def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveM
     # The Market computation process owns history preparation; the dedicated
     # quote-feed process never downloads or publishes historical partitions.
     history_preparation = None if _feed else ContractPreparationWorker(build_contract_preparation(
-        SessionLocal, canonical_root=canonical_root(), products=products,
+        SessionLocal, canonical_root=canonical_root(), products=products, formal_tick=tick,
     ))
     common_kwargs: dict[str, Any] = dict(
         history_preparation=history_preparation,
@@ -361,38 +402,54 @@ def build_live_market_service(session: Session, *, _feed: bool = False) -> LiveM
         coverage_sessions=coverage_sessions,
         recovery_guard_factory=recovery_guard_factory,
         phase_resolver=MarketPhaseResolver(session),
-        store=RedisLiveStore(cast(RedisClient, get_redis_connection())),
+        store=RedisLiveStore(cast(RedisClient, connection)),
         operational_products=products,
     )
     if _feed:
         from app.market_data.market_feed import FeedLiveStore, MarketFeedService
         from app.market_data.observation_stream import ObservationStream
-        redis = get_redis_connection()
-        common_kwargs.update(store=FeedLiveStore(cast(RedisClient, redis)), recovery_fetch_factory=None,
+        common_kwargs.update(store=FeedLiveStore(cast(RedisClient, connection)), recovery_fetch_factory=None,
                              recovery_sessions=None, recovery_guard_factory=None)
-        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
+        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(
+            common_kwargs['store'], products, formal_tick=tick,
+        )
         from app.market_data.live_recovery_guard import after_market_recovery_guard
         common_kwargs['shutdown_guard_factory'] = lambda: after_market_recovery_guard(wait=False)
-        return MarketFeedService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
-                                 source_stream=ObservationStream(redis, kind='source'), **common_kwargs)
-    if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1':
+        def bar_provider():
+            assert rqdata is not None
+            return RQDataLiveProvider(rqdata.live_market_client())
+
+        if tick:
+            from app.market_data.tick_runtime import build_formal_tick_feed
+
+            return build_formal_tick_feed(
+                connection, client_factory=RQDataClient, dispatch=tick_dispatch,
+                formal_tick_binding=tick_binding, **common_kwargs,
+            )
+        return MarketFeedService(provider_factory=bar_provider,
+                                 source_stream=ObservationStream(connection, kind='source'), **common_kwargs)
+    if durable:
         from app.market_data.market_feed import DurableLiveMarketService, StreamLiveProvider
         from app.market_data.observation_stream import ObservationStream
         common_kwargs['prepare_trading_day'] = None
-        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
+        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(
+            common_kwargs['store'], products, formal_tick=tick,
+        )
         return DurableLiveMarketService(source_provider=StreamLiveProvider(
-            ObservationStream(get_redis_connection(), kind='source')), **common_kwargs)
+            ObservationStream(connection, kind='source'), require_tick=tick),
+            formal_tick_binding=tick_binding, **common_kwargs)
+    assert rqdata is not None
     return LiveMarketService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
                              **common_kwargs)
 
 
-def build_market_feed_service(session: Session) -> LiveMarketService:
+def build_market_feed_service(session: Session, *, tick_dispatch=None) -> LiveMarketService:
     if os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') != '1':
         raise ValueError('OBSERVATION_STREAM_NOT_ENABLED')
-    return build_live_market_service(session, _feed=True)
+    return build_live_market_service(session, _feed=True, tick_dispatch=tick_dispatch)
 
 
-def build_closed_cleanup_evidence(store, products):
+def build_closed_cleanup_evidence(store, products, *, formal_tick=False):
     """Bind existing terminal cleanup evidence; this never runs maintenance."""
     from app.market_data.after_market import public_after_market_status
     from app.market_data.after_market_history import NAME, _bytes, read_history
@@ -405,6 +462,16 @@ def build_closed_cleanup_evidence(store, products):
             binding = resolve_service_binding('after-market')
             if binding is None or not binding.enabled:
                 return None
+            if formal_tick:
+                from app.market_data.market_archive import formal_archive_root, verified_retained_cleanup
+
+                evidence = verified_retained_cleanup(store, formal_archive_root(), day=day, products=products, now=now)
+                if evidence is None or evidence["code_commit"] is None or resolve_service_binding('after-market') != binding:
+                    return None
+                return dict(trading_day=day.isoformat(), cleanup_verified=True,
+                            cleanup_checked_at=evidence['cleanup_checked_at'], source_commit=evidence['code_commit'],
+                            evidence_kind='retained', after_market_generation=binding.generation,
+                            remaining_bar_keys=0, subscription_present=False)
             path = Path(binding.root) / '.run/after-market-status.json'
             current = os.path.lexists(path)
             if current:
@@ -412,7 +479,17 @@ def build_closed_cleanup_evidence(store, products):
                 public = public_after_market_status(json.loads(content))
                 source_commit = binding.commit
                 kind = 'current'
-            else:
+            current_run = public.get('last_run') if current else None
+            harmless_skip = (
+                current_run and current_run.get('status') == 'skipped'
+                and current_run.get('error_code') == 'NON_TRADING_DAY'
+                and current_run.get('attempts') == 0
+                and current_run.get('trading_day') == day.isoformat()
+                and tuple(current_run.get('products', ())) == products
+                and public.get('current_run') is None and public.get('last_failure') is None
+                and public.get('last_successful_trading_day') in {None, day.isoformat()}
+            )
+            if not current or harmless_skip:
                 history = read_history(path.with_name(NAME), products=products, now=now)
                 if history is None:
                     return None

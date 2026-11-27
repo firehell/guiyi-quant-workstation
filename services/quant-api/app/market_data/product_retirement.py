@@ -1,6 +1,6 @@
 """退役品种的永久精确拦截。
 
-退役生产清退已经完成；本模块只保留 active/retired 互斥与请求硬拒绝，不再提供重复删除入口。
+名单用于 active/retired 互斥与请求硬拒绝。退役登记不删除既有数据。
 """
 
 from __future__ import annotations
@@ -11,7 +11,8 @@ from app.core.env import PROJECT_ROOT
 
 
 _RETIRED_PATH = PROJECT_ROOT / "data/universe/retired_products.txt"
-_EXPECTED_RETIRED_COUNT = 9
+_EXPECTED_RETIRED_COUNT = 11
+MARKET_FOUNDATION_RETIRED_PRODUCTS = frozenset({"pd", "pt"})
 
 
 class ProductRetiredError(ValueError):
@@ -26,7 +27,7 @@ def normalize_symbol(symbol: str) -> str:
 
 
 def load_retired_products(path: Path | None = None) -> frozenset[str]:
-    """加载退役名单并校验恰好 9 个唯一码。"""
+    """加载退役名单并校验数量及唯一性。"""
     source = path or _RETIRED_PATH
     products = tuple(
         normalize_symbol(item)

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_serializer, model_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, FiniteFloat, model_serializer, model_validator
 
 
 ProductFrequencyValue = Literal["1w", "1d", "60m", "1m", "5m", "15m", "30m"]
@@ -784,7 +784,7 @@ class AuxiliaryValueOut(_Out):
 
 class MacdPointOut(_Out):
     bar_end: datetime
-    value: float | None
+    value: FiniteFloat | None
     ready: bool
     valid: bool
     reason: str | None
@@ -808,17 +808,14 @@ class MacdParametersOut(_Out):
     fast: Literal[12]
     slow: Literal[26]
     signal: Literal[9]
-    ema_seed_policy: Literal["sma_window"]
-    histogram_scale: Literal[2]
-    round_digits: Literal[6]
 
 
 class MacdValueOut(_Out):
     component: Literal["macd"]
-    formula_version: str
-    display_adapter_version: Literal["guiyi_newow_macd_display_v1"]
+    formula_version: Literal["talib_macd_12_26_9_v1"]
+    display_adapter_version: Literal["guiyi_newow_macd_display_v2"]
     parameters: MacdParametersOut
-    parameters_hash: str
+    parameters_hash: str = Field(pattern=r"^[0-9a-f]{16}$")
     segments: list[MacdSegmentOut]
     repainting: Literal[False]
     formal_signal_eligible: Literal[False]

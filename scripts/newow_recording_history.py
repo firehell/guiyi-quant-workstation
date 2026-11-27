@@ -30,7 +30,7 @@ from guiyi_quant.newow.fusion_reference import build_fusion_stream_identity
 from guiyi_quant.newow.product_contracts import ProductStrategy
 from app.market_data.newow.product_release import candidate_input_quality_policy
 from scripts.reference_trading_p9_manifest import _newow
-from scripts.newow_history_window import new_plan_since
+from app.reference_trading.newow_history_window import new_plan_since
 
 
 def _read_json(path):

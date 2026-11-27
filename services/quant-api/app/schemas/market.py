@@ -6,7 +6,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, model_validator
 
 
 class MarketBarOut(BaseModel):
@@ -19,6 +19,7 @@ class MarketBarOut(BaseModel):
     volume: Decimal
     turnover: Decimal | None
     open_interest: Decimal | None
+    source_bar_sha256: str | None = Field(None, exclude_if=lambda value: value is None)
 
 
 class CoverageOut(BaseModel):
@@ -45,6 +46,80 @@ class MarketBarsPageResponse(BaseModel):
     resolved_contract_segments: list[ContractSegmentOut]
 
 
+MarketChartStudyId = Literal["ema10", "ema21", "ema60", "boll", "macd"]
+MarketChartStudyPointStatus = Literal["READY", "WARMING", "UNKNOWN", "INVALID", "ERROR"]
+
+
+class MarketChartStudyPointOut(BaseModel):
+    status: MarketChartStudyPointStatus
+    values: dict[str, FiniteFloat] | None
+    diagnostic: str | None
+
+
+class MarketChartStudyFeatureOut(BaseModel):
+    study: MarketChartStudyId
+    formula_version: str
+    backend_version: str
+    parameters_hash: str = Field(pattern=r"^[a-f0-9]{16}$")
+    points: list[MarketChartStudyPointOut]
+
+
+class MarketChartStudyBarOut(BaseModel):
+    bar_end: datetime
+    trading_day: date
+    source: Literal["canonical", "completed_live", "active_preview"]
+    open: Decimal
+    high: Decimal
+    low: Decimal
+    close: Decimal
+    volume: Decimal
+    source_bar_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
+class MarketChartStudySegmentOut(BaseModel):
+    physical_contract: str
+    segment_id: str
+    calculation_anchor: datetime
+    bars: list[MarketChartStudyBarOut]
+    features: list[MarketChartStudyFeatureOut]
+
+
+class MarketChartStudyPreviewOut(BaseModel):
+    segment: MarketChartStudySegmentOut
+    generation: str
+    observed_at: datetime
+    received_at: datetime
+
+
+MarketChartStudyProfile = Literal["free", "htdy", "subing"]
+
+
+class MarketChartStudyDisplayOut(BaseModel):
+    schema_version: Literal["guiyi_market_chart_studies_v1"] = "guiyi_market_chart_studies_v1"
+    result_schema_version: Literal["guiyi_feature_result_v1"] = "guiyi_feature_result_v1"
+    symbol: str
+    series_kind: Literal["contract", "actual_dominant", "continuous"]
+    contract: str | None
+    frequency: str
+    as_of: datetime
+    source_revision: str | None = Field(pattern=r"^[a-f0-9]{64}$")
+    unavailable_reason: Literal["PHYSICAL_OWNER_REQUIRED"] | None
+    segments: list[MarketChartStudySegmentOut]
+    preview: MarketChartStudyPreviewOut | None = None
+    tail_unavailable_reason: str | None = None
+
+
+class MarketProgressResponse(BaseModel):
+    phase: str
+    trading_day: date | None
+    contract: str | None = None
+    status: Literal["historical", "waiting", "unknown", "source", "confirmation", "confirmed"]
+    expected_end: datetime | None = None
+    source_end: datetime | None = None
+    source_received_at: datetime | None = None
+    completed_end: datetime | None = None
+
+
 class MarketReadStateResponse(BaseModel):
     symbol: str
     series_kind: str
@@ -57,6 +132,8 @@ class MarketReadStateResponse(BaseModel):
     live_contract: str | None
     canonical_end: datetime | None
     after_market: dict[str, object]
+    display_preview: bool = False
+    canonical_revision: str | None = None
 
 
 class DominantContractOut(BaseModel):

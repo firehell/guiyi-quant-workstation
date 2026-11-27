@@ -37,7 +37,7 @@ def shared_release_owner(root: Path) -> Path | None:
         objects.name != "objects"
         or common.name != ".git"
         or root.parent != owner / ".worktrees"
-        or not root.name.startswith("release-v")
+        or not root.name.startswith(("release-v", "release-market-foundation-v"))
         or common
         != Path(
             _git(owner, "rev-parse", "--path-format=absolute", "--git-common-dir")

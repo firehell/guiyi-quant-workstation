@@ -121,13 +121,15 @@ def enqueue_request(state_path, product, contract, trading_day, frequencies):
 
 
 class ContractPreparation:
-    def __init__(self, *, state_path, binding_id, discover, plan, apply, readback, monotonic=None, on_write=None):
+    def __init__(self, *, state_path, binding_id, discover, plan, apply, readback, monotonic=None, on_write=None,
+                 retained_products=frozenset()):
         self.path = Path(state_path)
         self.binding_id = binding_id
         self.archive_root = Path(str(self.path) + ".archives")
         self.discover, self.plan, self.apply, self.readback = discover, plan, apply, readback
         self.monotonic = monotonic or system_monotonic
         self.on_write = on_write
+        self.retained_products = retained_products
 
     def request(self, product, contract, trading_day, frequencies):
         return enqueue_request(self.path, product, contract, trading_day, frequencies)
@@ -284,6 +286,8 @@ class ContractPreparation:
     def _compact(self, state, now):
         groups = {}
         for key, record in state["requests"].items():
+            if record["identity"]["product"] in self.retained_products:
+                continue
             if record["units"] and all(unit["status"] == "READY" for unit in record["units"].values()):
                 groups.setdefault(self._scope_key(record), []).append((key, record))
         for scope_key, records in groups.items():

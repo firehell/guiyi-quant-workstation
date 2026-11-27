@@ -13,7 +13,7 @@ DAY = date(2026, 10, 9)
 NOW = datetime(2026, 10, 8, 12, 30, tzinfo=UTC)
 
 
-def service(path: Path, *, ready=False, capture=None, apply=None, lease=True):
+def service(path: Path, *, ready=False, capture=None, apply=None, lease=True, previous_state=None):
     calls = []
     class Lease:
         def release(self):
@@ -33,6 +33,7 @@ def service(path: Path, *, ready=False, capture=None, apply=None, lease=True):
         is_ready=lambda day: ready, capture=captured, apply=applied,
         acquire_lease=lambda: Lease() if lease else None,
         plan=lambda day, snapshot: {"plan_sha256": PLAN_HASH}, binding_id="test-catalog",
+        previous_state=previous_state,
     )
     return item, calls
 
@@ -75,6 +76,19 @@ def test_busy_lease_does_not_consume_attempt(tmp_path):
     assert item.tick(NOW) == "METADATA_PREPARATION_SOURCE_BUSY"
     assert calls == []
     assert item.read_state() == {}
+
+
+def test_tick_scope_cannot_retry_unresolved_predecessor_attempt(tmp_path):
+    prior_path = tmp_path / "old.json"
+    prior, _ = service(prior_path)
+    assert prior.tick(NOW, phase="plan") is None
+    before = prior_path.read_bytes()
+    next_path = tmp_path / "tick.json"
+    successor, calls = service(next_path, ready=True, previous_state=(prior_path, "test-catalog"))
+    assert successor.tick(NOW) == "METADATA_PREPARATION_READBACK_REQUIRED"
+    assert calls == []
+    assert prior_path.read_bytes() == before
+    assert not next_path.exists()
 
 
 def test_process_interruption_before_provider_is_durable_and_blocks_restart(tmp_path):

@@ -91,7 +91,7 @@ def evaluate_observation_gap(token, checkpoint, evidence, *, dependency_manifest
     elif code.startswith("newow_"):
         strategy, schema = seed_replay_state(), "newow_product_replay_v1"
     elif code == "subing_reference":
-        strategy, schema = seed_subing_forward(), "subing_forward_v1"
+        strategy, schema = seed_subing_forward(frequency=stream.frequency), "subing_forward_v1"
     elif code == "htdy":
         strategy = HtdyForwardState(
             stream.reference_model_version, stream.observation_policy_version,

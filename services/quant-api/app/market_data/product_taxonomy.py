@@ -1,4 +1,4 @@
-"""Active 60 的轻量展示名称与一级研究板块事实。"""
+"""研究品种的轻量展示名称与一级研究板块事实。"""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ _ALLOWED_SECTORS = frozenset(
 
 
 class ProductTaxonomyError(ValueError):
-    """展示 taxonomy 与 active 60 不一致。"""
+    """展示 taxonomy 与研究品种不一致。"""
 
     code = "PRODUCT_TAXONOMY_INVALID"
 

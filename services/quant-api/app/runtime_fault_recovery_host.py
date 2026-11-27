@@ -79,7 +79,8 @@ class FaultRecoveryHost:
             # Retain the historical after-market status limit at the policy caller.
             from app.market_data.after_market_limits import MAX_STATUS_BYTES
 
-            size_limit = MAX_STATUS_BYTES if path.name == "after-market-status.json" else 1024 * 1024
+            archive_status_names = {"after-market-status.json", "late-provider-recovery-status.json"}
+            size_limit = MAX_STATUS_BYTES if path.name in archive_status_names else 1024 * 1024
             return _snapshot(path, limit=size_limit)[0]
         require(
             path.is_absolute() and path.parent.resolve() == path.parent,

@@ -35,6 +35,10 @@ export const BREAKDOWN_FONT='bold 10px -apple-system, BlinkMacSystemFont, "PingF
 export const REDUCE_J_FONT='600 10px -apple-system, sans-serif'
 export interface DisplayPoint {event:NewowDisplayEvent;x:number;y:number}
 export interface DisplayLabel extends DisplayPoint {label:string;width:number}
+export function displayLabelIntersectsViewport({ event, x, y, width }: DisplayLabel, viewportWidth: number, viewportHeight: number): boolean {
+  const [top, bottom] = event.kind === 'OSC_BREAKDOWN' ? [y, y + 16] : [y - 12, y]
+  return x + width / 2 > 0 && x - width / 2 < viewportWidth && bottom > 0 && top < viewportHeight
+}
 export function layoutDisplayLabels(points:readonly DisplayPoint[], measure:(label:string)=>number): DisplayLabel[] {
   const placed:DisplayLabel[]=[]
   for (const point of points) {

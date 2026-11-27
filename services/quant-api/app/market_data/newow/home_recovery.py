@@ -354,6 +354,11 @@ def request_home_refresh():
 
 
 def run_home_build(*, output_path=None, products=None):
+    from app.services.newow_reference_mode import after_market_only
+
+    if after_market_only():
+        raise RuntimeError("NEWOW_AFTER_MARKET_ONLY")
+
     from app.market_data.composition import canonical_root
     from app.runtime_bindings import resolve_service_binding
     from .home_projection_composition import build_home_projection
@@ -390,6 +395,11 @@ def owner_heartbeat(assert_owned, mark_ready, stop_requested, *, clock=time.mono
 
 
 def run_home_recovery_forever(*, assert_owned=None, stop_requested=None, mark_ready=None):
+    from app.services.newow_reference_mode import after_market_only
+
+    if after_market_only():
+        raise RuntimeError("NEWOW_AFTER_MARKET_ONLY")
+
     import stat
     from app.core.env import PROJECT_ROOT
     from .home_projection_composition import build_home_projection
@@ -403,6 +413,19 @@ def run_home_recovery_forever(*, assert_owned=None, stop_requested=None, mark_re
     finally:
         os.close(fd)
     stop_requested = stop_requested or (lambda: False)
+    from app.market_data.market_foundation_scope import formal_tick_requested
+
+    if formal_tick_requested():
+        # Keep the existing owner identity for supervised handoff. Its legacy
+        # computation must not run before or independently of an archive receipt.
+        if assert_owned is None or mark_ready is None:
+            raise ValueError("MARKET_TICK_SUPERVISOR_REQUIRED")
+        while not stop_requested():
+            assert_owned()
+            mark_ready({"home_projection": "receipt_only"})
+            time.sleep(5)
+        return
+
     guard, ready = owner_heartbeat(assert_owned, mark_ready, stop_requested)
     worker = HomeRecovery(build_home_projection(), assert_owned=guard, stop_requested=stop_requested)
     with worker.work.lock():

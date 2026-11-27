@@ -10,6 +10,7 @@ from app.market_data.contract_preparation import (
     ContractPreparation, FREQUENCIES, PreparationDemand, PreparationPlan, PreparationError, _digest, _safe_code, enqueue_request,
 )
 from app.market_data.market_phase import MarketPhase
+from app.market_data.product_retirement import MARKET_FOUNDATION_RETIRED_PRODUCTS, assert_not_retired
 
 
 def contract_preparation_state_path():
@@ -20,9 +21,10 @@ def contract_preparation_state_path():
 def build_contract_preparation_requester(*, state_path=None):
     """Safe consumer rendezvous, deliberately constructing no provider or manager."""
     path = Path(state_path) if state_path is not None else contract_preparation_state_path()
-    return lambda product, contract, trading_day, frequencies: enqueue_request(
-        path, product, contract, trading_day, frequencies,
-    )
+    def request(product, contract, trading_day, frequencies):
+        assert_not_retired(product)
+        return enqueue_request(path, product, contract, trading_day, frequencies)
+    return request
 
 
 def discover_demands(*, now, products, resolver, scopes, dominant, contract_fact, completed_day):
@@ -75,7 +77,7 @@ def enabled_consumer_scopes(session, products):
     """Read existing enabled scopes; no new rule, scope, or strategy semantics."""
     from sqlalchemy import select
     from app.alerts.models import AlertRule
-    from app.alerts.registry import get_alert_rule_definition
+    from app.alerts.service import AlertService
     from app.reference_trading.models import ReferenceStream
     facts = {product: [] for product in products}
     frequencies = {product: set() for product in products}
@@ -90,22 +92,17 @@ def enabled_consumer_scopes(session, products):
         facts[stream.product].append(("reference", stream.stream_id, stream.frequency,
                                       stream.activation_generation, stream.identity_hash))
     rules = session.scalars(select(AlertRule).where(AlertRule.enabled.is_(True))).all()
+    alerts = AlertService(session, operational_products=products)
     for rule in rules:
-        definition = get_alert_rule_definition(rule.rule_code)
-        stored = rule.scope_product_frequencies
-        if not isinstance(stored, dict):
-            raise ValueError("CONTRACT_PREPARATION_SCOPE_INVALID")
-        for product, selected in stored.items():
-            if (product not in frequencies or not isinstance(selected, list) or not selected
-                    or any(value not in definition.input_frequencies for value in selected)):
-                raise ValueError("CONTRACT_PREPARATION_SCOPE_INVALID")
+        for product, selected in alerts.effective_frequency_scope(rule).items():
             frequencies[product].update(selected)
             facts[product].append(("alert", rule.rule_code, sorted(selected)))
     return {product: (tuple(freq for freq in FREQUENCIES if freq in selected), _digest(sorted(facts[product])))
             for product, selected in frequencies.items() if selected}
 
 
-def build_contract_preparation(session_factory, *, canonical_root, products, state_path=None, manager_factory=None, clock=None):
+def build_contract_preparation(session_factory, *, canonical_root, products, state_path=None,
+                               manager_factory=None, clock=None, formal_tick=False):
     """Native plan/apply composition, using independent sessions for MDS readback."""
     from app.market_data.catalog import MarketCatalog
     from app.market_data.composition import build_historical_data_manager, build_database_coverage_source
@@ -120,10 +117,14 @@ def build_contract_preparation(session_factory, *, canonical_root, products, sta
     products = tuple(products)
     root = Path(canonical_root).resolve()
     path = Path(state_path) if state_path is not None else contract_preparation_state_path()
+    retired = MARKET_FOUNDATION_RETIRED_PRODUCTS if formal_tick else frozenset()
+    # Keep the original ledger binding and unresolved reservations across the
+    # Market cutover. The effective consumer scope below only admits survivors.
+    binding_products = set(products) | retired
     # Database identity remains private: only its hash is persisted.
     with session_factory() as session:
         binding_id = _digest({"catalog": session.get_bind().url.render_as_string(hide_password=True),
-                              "canonical_root": str(root), "products": sorted(products)})
+                              "canonical_root": str(root), "products": sorted(binding_products)})
 
     def read_service(session):
         return MarketDataService(MarketCatalog(session, root), CanonicalMonthlyStore(root))
@@ -212,7 +213,8 @@ def build_contract_preparation(session_factory, *, canonical_root, products, sta
             return True
 
     preparation = ContractPreparation(state_path=path, binding_id=binding_id,
-                                      discover=discover, plan=plan, apply=apply, readback=readback)
+                                      discover=discover, plan=plan, apply=apply, readback=readback,
+                                      retained_products=retired)
     preparation.authority_waiting = lambda: tuple(dict(waiting_authority[product]) for product in sorted(waiting_authority))
     return preparation
 

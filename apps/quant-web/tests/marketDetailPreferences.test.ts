@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 
 import {
+  MARKET_DETAIL_PREFERENCES_KEY,
   defaultMarketDetailPreferences,
   loadMarketDetailPreferences,
   replaceFreeDetailPreferences,
@@ -66,6 +67,25 @@ test('replacing Free preferences preserves HTDY and the current view', () => {
   })
 })
 
+test('Free BOLL is opt-in, round trips through v2, and leaves existing profiles available', () => {
+  const original = defaultMarketDetailPreferences()
+  original.free = { ...original.free, frequency: '30m', optionalEmaIndicators: ['ema_21'], showRangeDetector: true }
+  const target = storage({
+    [MARKET_DETAIL_PREFERENCES_KEY]: JSON.stringify({
+      ...original, htdy: { ...original.htdy, showBoll: true },
+    }),
+  })
+  const restored = loadMarketDetailPreferences(target)
+  assert.deepEqual(restored, original)
+  const enabled = replaceFreeDetailPreferences(restored, { ...restored.free, showBoll: true })
+  saveMarketDetailPreferences(enabled, target)
+  assert.deepEqual(loadMarketDetailPreferences(target), {
+    ...original, free: { ...original.free, showBoll: true },
+  })
+  saveMarketDetailPreferences(replaceFreeDetailPreferences(enabled, original.free), target)
+  assert.deepEqual(loadMarketDetailPreferences(target), original)
+})
+
 test('current continuous preferences migrate without losing period and indicators and notify once', () => {
   const target = storage({'guiyi.market.detail.preferences.v2': JSON.stringify({...defaultMarketDetailPreferences(),
     htdy:{seriesKind:'continuous',frequency:'30m',optionalEmaIndicators:['ema_60'],showRangeDetector:true},
@@ -82,4 +102,12 @@ test('current continuous preferences migrate without losing period and indicator
   saveMarketDetailPreferences(result,target)
   loadMarketDetailPreferences(target,()=>{notices++})
   assert.equal(notices,1)
+})
+
+test('TA-Lib MACD preferences round trip without changing another workspace default', () => {
+  const target = storage()
+  const defaults = defaultMarketDetailPreferences()
+  assert.equal(defaults.talibMacd, undefined)
+  saveMarketDetailPreferences({ ...defaults, talibMacd: ['subing', 'free', 'free'] }, target)
+  assert.deepEqual(loadMarketDetailPreferences(target).talibMacd, ['free', 'subing'])
 })

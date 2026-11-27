@@ -51,7 +51,7 @@ class DatabaseCoverageSource:
         reuse_session_windows: bool = False,
     ) -> None:
         self.session = session
-        self.starts = _load_product_starts(product_starts_path)
+        self.starts, self.listing_starts = _load_product_starts(product_starts_path)
         floor_path = (
             history_floor_path
             if history_floor_path is not None
@@ -79,6 +79,10 @@ class DatabaseCoverageSource:
             return self.starts[symbol.strip().lower()]
         except KeyError as exc:
             raise InfrastructureError("PRODUCT_WINDOW_START_MISSING") from exc
+
+    def exchange_listing_start(self, symbol: str) -> date | None:
+        """Return only a verified product listing date, independent of the history floor."""
+        return self.listing_starts.get(symbol.strip().lower())
 
     def dataset_start(self, key: DatasetKey) -> date:
         """单数据集起点：日内频度受 RQDATA_INTRADAY_HISTORY_START 约束。"""
@@ -701,19 +705,21 @@ def _product_trading_days(
     )
 
 
-def _load_product_starts(path: Path) -> dict[str, date]:
+def _load_product_starts(path: Path) -> tuple[dict[str, date], dict[str, date]]:
     """加载品种窗口起点 CSV；拒绝 symlink 与空表（防误读外部路径）。"""
     if not path.is_file() or path.is_symlink():
         raise InfrastructureError("PRODUCT_WINDOW_STARTS_INVALID")
     with path.open(encoding="utf-8", newline="") as handle:
-        rows = csv.DictReader(handle)
-        result = {
-            str(row["product"]).strip().lower(): date.fromisoformat(row["window_start"])
-            for row in rows
+        entries = {
+            row["product"].strip().lower(): (date.fromisoformat(row["window_start"]), row.get("note"))
+            for row in csv.DictReader(handle)
         }
-    if not result:
+    if not entries:
         raise InfrastructureError("PRODUCT_WINDOW_STARTS_INVALID")
-    return result
+    starts = {symbol: day for symbol, (day, _) in entries.items()}
+    listings = {symbol: day for symbol, (day, note) in entries.items()
+                if note == "exchange_listing_start"}
+    return starts, listings
 
 
 def _load_history_floor(path: Path) -> date:

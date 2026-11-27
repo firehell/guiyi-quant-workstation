@@ -22,8 +22,14 @@ export function createPriceSeriesWriter<T extends { time: unknown }>() {
             && JSON.stringify(points.at(-1)!.time) === JSON.stringify(previous.at(-1)!.time)
           || points.length === previous.length + 1 && common === previous.length
         )
-        if (lastOnly) series.update(points.at(-1)!)
-        else series.setData(points)
+        try {
+          if (lastOnly) series.update(points.at(-1)!)
+          else series.setData(points)
+        } catch (error) {
+          // A native write can fail after changing the series. Replace it on retry.
+          owner = undefined
+          throw error
+        }
       }
       previous = points; owner = series; identity = key
     },

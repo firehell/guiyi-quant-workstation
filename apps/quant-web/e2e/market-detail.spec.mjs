@@ -164,7 +164,10 @@ test('Newow HTDY and Free share one visual shell while preserving quote semantic
   const quote = page.locator('.quote-header')
   await expect(quote.locator('.quote-header__price strong')).not.toHaveText('—')
   await expect(quote.locator('[title="日涨跌（较前一日收盘）"]')).toBeVisible()
-  await expect(quote).toContainText('报价可用')
+  await expect(quote).toContainText('报价过时')
+  const source = quote.getByText(/^日线报价/)
+  const retainedSource = await source.innerText()
+  const retainedPrice = await quote.locator('.quote-header__price strong').innerText()
   const newowVisual = await unifiedShellVisual(page)
   expect(newowVisual.quoteUnified).toBe(true)
   expect(newowVisual.navigationMarginLeft).toBe('-24px')
@@ -175,17 +178,17 @@ test('Newow HTDY and Free share one visual shell while preserving quote semantic
   await page.getByRole('tab', { name: '火天大有' }).click()
   await expect(page).toHaveURL(/view=htdy/)
   await expect(page.locator('[data-detail-workspace="htdy"]')).toBeVisible()
-  await expect(quote).toContainText('15分钟收盘')
-  await expect(quote).not.toContainText('最近日线收盘')
-  await expect(quote).not.toContainText('非实时')
+  await expect(source).toHaveText(retainedSource)
+  await expect(quote.locator('.quote-header__price strong')).toHaveText(retainedPrice)
+  await expect(quote).toContainText('报价过时')
   expect(await unifiedShellVisual(page)).toEqual(newowVisual)
 
   await page.getByRole('tab', { name: '自由看盘' }).click()
   await expect(page).toHaveURL(/view=free/)
   await expect(page.locator('[data-detail-workspace="free"]')).toBeVisible()
-  await expect(quote).toContainText('15分钟收盘')
-  await expect(quote).not.toContainText('最近日线收盘')
-  await expect(quote).not.toContainText('非实时')
+  await expect(source).toHaveText(retainedSource)
+  await expect(quote.locator('.quote-header__price strong')).toHaveText(retainedPrice)
+  await expect(quote).toContainText('报价过时')
   expect(await unifiedShellVisual(page)).toEqual(newowVisual)
   assertNoUnexpectedRequests(state)
 })
@@ -234,6 +237,21 @@ test('Free discloses insufficient same-segment history and revisable Range graph
   await expect(workspace).toHaveAttribute('data-range-detector-status', 'insufficient')
   await expect(workspace.locator('.free-workspace__hint')).toContainText('同合约／质量分段预热不足')
   await expect(workspace.locator('.free-workspace__hint')).toContainText('历史图形参考；加载更早数据可能修订箱体。')
+  const diagnostics = workspace.locator('.chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const range = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'range_detector · 预热中' })
+  await range.locator('summary').click()
+  await expect(range).toContainText('warming_up')
+  await expect(range).toContainText('range_detector_lux_v1')
+})
+
+test('Free selected Range reports missing input when no Bars are available', async ({ page }) => {
+  await mockMarketDetail(page, { barsPage: () => ({ bars: [] }) })
+  await page.goto(freeJm)
+  await enableRangeDetector(page)
+  const diagnostics = page.locator('[data-detail-workspace="free"] .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await expect(diagnostics.getByText('range_detector · 缺少输入', { exact: true })).toHaveCount(1)
 })
 
 test('Free pagination keeps an away-from-latest viewport while prepending history', async ({ page }) => {
@@ -262,6 +280,8 @@ test('Free keeps return-to-latest without restoring retired fullscreen controls'
   await mockPagedFreeHistory(page, 600)
   await page.goto(freeJm)
 
+  const shell = page.getByTestId('kline-shell')
+  await expect(shell).toHaveAttribute('data-chart-viewport-ready', 'true')
   const chart = page.locator('.chart')
   await chart.scrollIntoViewIfNeeded()
   const chartBox = await chart.boundingBox()
@@ -271,20 +291,73 @@ test('Free keeps return-to-latest without restoring retired fullscreen controls'
     await page.mouse.move(chartBox.x + chartBox.width * 0.94, chartBox.y + chartBox.height * 0.5, { steps: 12 })
     await page.mouse.up()
   }
-  await expect(page.getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '回到最新', exact: true }).click()
-  await expect(page.getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
+  const previous = await shell.getAttribute('data-visible-from')
+  expect(previous).toBeTruthy()
+  const latest = page.getByRole('button', { name: '回到最新', exact: true })
+  await expect(latest).toHaveCount(1)
+  await latest.click()
+  await expect.poll(async () => Date.parse(await shell.getAttribute('data-visible-from'))).toBeGreaterThan(Date.parse(previous))
 
   await expect(page.getByRole('button', { name: '全屏图表', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: '退出全屏', exact: true })).toHaveCount(0)
   expect(await page.evaluate(() => document.fullscreenElement)).toBeNull()
 })
 
+async function appVueModuleUrl(page) {
+  // Reuse the app's Vite version URL so mounted probes share Vue's renderer state.
+  return (await page.waitForFunction(() => performance.getEntriesByType('resource')
+    .find(entry => new URL(entry.name).pathname === '/node_modules/.vite/deps/vue.js')?.name)).jsonValue()
+}
+
+test('shared K-line keeps its automatic target when earlier history arrives before frame stabilization', async ({ page }) => {
+  await mockMarketDetail(page)
+  await page.goto(freeJm)
+  const vueUrl = await appVueModuleUrl(page)
+  const nativeUrl = await (await page.waitForFunction(() => performance.getEntriesByType('resource')
+    .find(entry => new URL(entry.name).pathname.endsWith('/lightweight-charts.js'))?.name)).jsonValue()
+  const beforeFrame = await page.evaluate(async ({ vueUrl, nativeUrl }) => {
+    const [{ createApp, h, nextTick, ref }, { createChart }, { default: KlineChart }, { DETAIL_CHART_SESSION, createDetailChartSession }] = await Promise.all([
+      import(vueUrl), import(nativeUrl), import('/src/components/kline/KlineChart.vue'), import('/src/utils/detailChartSession.ts'),
+    ])
+    const root = document.createElement('div')
+    root.style.width = '1200px'
+    root.id = 'prepend-before-stable'
+    document.body.append(root)
+    let native
+    const session = createDetailChartSession({ createChart(...args) { native = createChart(...args); return native } })
+    const chart = ref(null)
+    const start = Date.parse('2026-09-03T01:00:00Z')
+    const bars = Array.from({ length: 30 }, (_, index) => ({
+      time: new Date(start + index * 900_000).toISOString(), trading_day: '2026-09-03', physicalContract: 'JM2601',
+      open: 100, high: 104, low: 99, close: 103, volume: 10, confirmed: true,
+    }))
+    const app = createApp({ render: () => h(KlineChart, { ref: chart, bars: bars.slice(10), seriesKind: 'actual_dominant' }) })
+    app.provide(DETAIL_CHART_SESSION, session)
+    app.mount(root)
+    await nextTick()
+    const readyBefore = root.querySelector('[data-chart-viewport-ready]').dataset.chartViewportReady
+    const countBefore = session.length()
+    chart.value.prependBars(bars.slice(0, 10))
+    window.__prependBeforeStable = {
+      read: () => native.timeScale().getVisibleLogicalRange(),
+      stop: () => { app.unmount(); session.dispose(); root.remove() },
+    }
+    return { readyBefore, countBefore, countAfter: session.length(), userRange: session.viewport() }
+  }, { vueUrl, nativeUrl })
+  try {
+    expect(beforeFrame).toEqual({ readyBefore: 'false', countBefore: 20, countAfter: 30, userRange: null })
+    await expect(page.locator('#prepend-before-stable [data-chart-viewport-ready]')).toHaveAttribute('data-chart-viewport-ready', 'true')
+    expect(await page.evaluate(() => window.__prependBeforeStable.read())).toEqual({ from: 9.5, to: 29.5 })
+  } finally {
+    await page.evaluate(() => window.__prependBeforeStable.stop())
+  }
+})
+
 test('shared K-line focus retries an unresolved target and clears it on identity replacement', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
-  await page.evaluate(async () => {
-    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+  await page.evaluate(async vueUrl => {
+    const { createApp, h, ref } = await import(vueUrl)
     const { default: MarketKlineStage } = await import('/src/components/market/detail/MarketKlineStage.vue')
     const bars = [
       { time: '2026-09-03T02:30:00Z', open: 100, high: 102, low: 99, close: 101, volume: 1000, openInterest: 2000 },
@@ -316,7 +389,7 @@ test('shared K-line focus retries an unresolved target and clears it on identity
     document.body.append(host)
     app.mount(host)
     window.__marketKlineFocusContract = { focus, identity, resolved, app }
-  })
+  }, await appVueModuleUrl(page))
 
   await expect(page.locator('#focus-stage-contract').getByRole('button', { name: '回到最新', exact: true })).toHaveCount(0)
   await page.evaluate(() => { window.__marketKlineFocusContract.focus.value = '2026-09-03T02:45:00Z' })
@@ -332,8 +405,8 @@ test('shared K-line focus retries an unresolved target and clears it on identity
 test('shared K-line focus also resolves an existing daily trading day', async ({ page }) => {
   await mockMarketDetail(page)
   await page.goto(freeJm)
-  await page.evaluate(async () => {
-    const { createApp, h } = await import('/node_modules/.vite/deps/vue.js')
+  await page.evaluate(async vueUrl => {
+    const { createApp, h } = await import(vueUrl)
     const { default: MarketKlineStage } = await import('/src/components/market/detail/MarketKlineStage.vue')
     const bars = [
       { time: '2026-09-01T07:00:00Z', trading_day: '2026-09-01', open: 100, high: 102, low: 99, close: 101, volume: 1000, openInterest: 2000 },
@@ -363,7 +436,7 @@ test('shared K-line focus also resolves an existing daily trading day', async ({
     document.body.append(host)
     app.mount(host)
     window.__marketKlineDailyFocusContract = { resolved, app }
-  })
+  }, await appVueModuleUrl(page))
 
   await expect(page.locator('#focus-daily-stage-contract').getByRole('button', { name: '回到最新', exact: true })).toBeVisible()
   await expect.poll(() => page.evaluate(() => window.__marketKlineDailyFocusContract.resolved)).toEqual(['2026-09-02T07:00:00Z'])
@@ -417,15 +490,336 @@ test('Free migrates legacy continuous links and keeps 60-minute and daily naviga
   expect(requests.some(url => url.searchParams.get('series_kind') === 'continuous')).toBe(false)
 })
 
+function studyBar(bar, source) {
+  return {
+    bar_end: bar.bar_end, trading_day: bar.trading_day, source,
+    open: String(bar.open), high: String(bar.high), low: String(bar.low),
+    close: String(bar.close), volume: String(bar.volume),
+    source_bar_sha256: bar.source_bar_sha256 ?? 'c'.repeat(64),
+  }
+}
+
+function chartStudyWire(bars, requestedStudies, point = () => ({ status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' })) {
+  return {
+    schema_version: 'guiyi_market_chart_studies_v1', result_schema_version: 'guiyi_feature_result_v1',
+    symbol: 'jm', series_kind: 'actual_dominant', contract: null, frequency: '15m',
+    as_of: bars.at(-1).bar_end, source_revision: 'a'.repeat(64), unavailable_reason: null,
+    segments: [{
+      physical_contract: 'JM2601', segment_id: 'JM2601:2026-09-03', calculation_anchor: bars[0].bar_end,
+      bars: bars.map(bar => studyBar(bar, 'canonical')),
+      features: requestedStudies.split(',').map(study => ({
+        study, formula_version: study === 'macd' ? 'talib_macd_12_26_9_v1' : `talib_${study}_v1`,
+        backend_version: 'ta-lib:fixture', parameters_hash: 'b'.repeat(16),
+        points: bars.map(point),
+      })),
+    }],
+  }
+}
+
 test('Free restores enabled EMA preferences after reload', async ({ page }) => {
   await mockMarketDetail(page)
+  const requests = []
+  const bars = [detailBar('jm', 0, 100), detailBar('jm', 1, 101)]
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(Object.fromEntries(params))
+    return route.fulfill({ json: chartStudyWire(bars, params.get('studies')) })
+  })
   await page.goto(freeJm)
 
   const ema10 = page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA10/ })
+  await expect(ema10).toBeVisible()
+  expect(requests).toHaveLength(0)
   await ema10.click()
   await expect(ema10).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => requests.length).toBe(1)
+  expect(requests[0]).toEqual({
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', profile: 'free',
+    first: bars[0].bar_end, last: bars.at(-1).bar_end, count: '2', studies: 'ema10',
+  })
   await page.reload()
   await expect(page.getByRole('group', { name: '主图指标' }).getByRole('button', { name: /EMA10/ })).toHaveAttribute('aria-pressed', 'true')
+  await expect.poll(() => requests.length).toBe(2)
+  expect(requests[1]).toEqual(requests[0])
+})
+
+test('Free recovers the newest EMA selection when a superseded load still occupies the worker', async ({ page }) => {
+  await mockMarketDetail(page)
+  const requests = []
+  const bars = [detailBar('jm', 0, 100), detailBar('jm', 1, 101)]
+  let releaseFirst
+  await page.route('**/api/v1/market/indicators/chart-window?**', async route => {
+    const studies = new URL(route.request().url()).searchParams.get('studies')
+    requests.push(studies)
+    if (studies === 'ema10') {
+      await new Promise(resolve => { releaseFirst = resolve })
+      await route.fulfill({ json: chartStudyWire(bars, studies) }).catch(() => {})
+      return
+    }
+    if (requests.length === 2) {
+      releaseFirst()
+      return route.fulfill({ status: 503, json: { detail: { code: 'MARKET_CHART_STUDY_BUSY' } } })
+    }
+    return route.fulfill({ json: chartStudyWire(bars, studies) })
+  })
+  await page.goto(freeJm)
+
+  const indicators = page.getByRole('group', { name: '主图指标' })
+  await indicators.getByRole('button', { name: /EMA10/ }).click()
+  await expect.poll(() => requests).toEqual(['ema10'])
+  const recovered = page.waitForResponse(response => response.url().includes('/market/indicators/chart-window')
+    && new URL(response.url()).searchParams.get('studies') === 'ema10,ema60' && response.ok())
+  await indicators.getByRole('button', { name: /EMA60/ }).click()
+  await recovered
+  expect(requests).toEqual(['ema10', 'ema10,ema60', 'ema10,ema60'])
+  await expect(page.getByText('当前行情窗口的所选指标暂不可用。')).toHaveCount(0)
+})
+
+test('Free BOLL restores on reload, requests only its bounded study and disposes when hidden', async ({ page }) => {
+  const bars = freeHistory(20)
+  await mockMarketDetail(page, { barsPage({ url }) {
+    return url.searchParams.get('frequency') === '15m' ? { bars } : undefined
+  } })
+  const requests = []
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(Object.fromEntries(params))
+    return route.fulfill({ json: chartStudyWire(bars, params.get('studies'), (_bar, index) => index < 19
+      ? { status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' }
+      : { status: 'READY', values: { upper: 125, middle: 110, lower: 95 }, diagnostic: null }) })
+  })
+  await page.goto(freeJm)
+
+  const boll = page.getByRole('button', { name: 'BOLL', exact: true })
+  const chart = page.getByTestId('kline-shell')
+  await expect(boll).toHaveAttribute('aria-pressed', 'false')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  expect(requests).toHaveLength(0)
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  expect(requests).toHaveLength(1)
+  expect(requests[0].studies).toBe('boll')
+  expect(requests[0].count).toBe('20')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await diagnostics.getByText('boll · 就绪', { exact: true }).click()
+  await expect(diagnostics).toContainText('talib_boll_v1')
+  await page.reload()
+  await expect(boll).toHaveAttribute('aria-pressed', 'true')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  expect(requests).toEqual([requests[0], requests[0]])
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  await page.reload()
+  await expect(boll).toHaveAttribute('aria-pressed', 'false')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  expect(requests).toHaveLength(2)
+})
+
+test('Free BOLL rejects an incompatible result schema and recovers on a fresh selection', async ({ page }) => {
+  const bars = freeHistory(20)
+  await mockMarketDetail(page, { barsPage({ url }) {
+    return url.searchParams.get('frequency') === '15m' ? { bars } : undefined
+  } })
+  let calls = 0
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const wire = chartStudyWire(bars, 'boll', (_bar, index) => index < 19
+      ? { status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' }
+      : { status: 'READY', values: { upper: 125, middle: 110, lower: 95 }, diagnostic: null })
+    if (++calls === 1) wire.result_schema_version = 'future-feature-result'
+    return route.fulfill({ json: wire })
+  })
+  await page.goto(freeJm)
+  const boll = page.getByRole('button', { name: 'BOLL', exact: true })
+  await boll.click()
+  await expect(page.getByText('当前行情窗口的所选指标暂不可用。')).toBeVisible()
+  const chart = page.getByTestId('kline-shell')
+  await expect(chart).toHaveAttribute('data-boll-point-count', '0')
+  await expect(chart.locator('canvas').first()).toBeVisible()
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await diagnostics.getByText('boll · 指标目录不匹配', { exact: true }).click()
+  await expect(diagnostics.getByText('MARKET_CHART_STUDY_SCHEMA_MISMATCH', { exact: true })).toBeVisible()
+  await boll.click()
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  await expect(diagnostics.getByText('boll · 指标目录不匹配', { exact: true })).toHaveCount(0)
+  await boll.click()
+  await expect(chart).toHaveAttribute('data-boll-point-count', '1')
+  await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
+  await expect(diagnostics.getByText('boll · 就绪', { exact: true })).toBeVisible()
+  expect(calls).toBe(2)
+})
+
+test('Free charts verified completed BOLL and only the current tick preview, then clears the disconnected tail', async ({ page }) => {
+  await installDetailFakeWebSocket(page)
+  await mockMarketDetail(page, { live: true })
+  const history = [detailBar('jm', 0, 100), detailBar('jm', 1, 101)]
+  const completed = detailBar('jm', 2, 102)
+  const day = completed.trading_day
+  const contract = completed.physical_contract
+  const point = bar => ({ status: 'READY', values: { upper: bar.close + 10, middle: bar.close, lower: bar.close - 10 }, diagnostic: null })
+  const base = chartStudyWire(history, 'boll', point)
+  const browserState = {
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', operational: true, phase: 'TRADING',
+    trading_day: day, live_eligible: true, live_available: true, live_contract: contract,
+    canonical_end: history.at(-1).bar_end, display_preview: true, after_market: {},
+  }
+  await page.route('**/api/v1/market/state?**', route => route.fulfill({ json: browserState }))
+  let windowReads = 0
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    windowReads++
+    return route.fulfill({ json: base })
+  })
+  function segment(bar, source) {
+    return {
+      ...base.segments[0], bars: [studyBar(bar, source)],
+      features: [{ ...base.segments[0].features[0], points: [point(bar)] }],
+    }
+  }
+  const tailReads = []
+  let seenActivity
+  await page.route('**/api/v1/market/indicators/chart-tail?**', async route => {
+    const params = new URL(route.request().url()).searchParams
+    const query = Object.fromEntries(params)
+    const activity = params.get('include_preview') === 'true' ? seenActivity : null
+    const response = { ...base, segments: [segment(completed, 'completed_live')], tail_unavailable_reason: null,
+      preview: activity ? { generation: activity.generation, observed_at: activity.observed_at,
+        received_at: activity.received_at, segment: segment(activity.bar, 'active_preview') } : null }
+    if (activity) {
+      await new Promise(resolve => tailReads.push({ query, resume: resolve }))
+    } else {
+      tailReads.push({ query })
+    }
+    await route.fulfill({ json: response }).catch(() => {})
+  })
+  const send = data => page.evaluate(payload => {
+    const socket = window.__marketDetailSockets.find(socket => socket.url.includes('/market/ws') && !socket.closed)
+    socket.onmessage?.({ data: JSON.stringify(payload) })
+  }, data)
+  const activity = tick => ({
+    contract, generation: 'generation-1',
+    observed_at: `2026-09-03T03:01:0${tick}Z`, received_at: `2026-09-03T03:01:0${tick}Z`,
+    bar: detailBar('jm', 3, 102 + tick),
+  })
+  const shell = page.getByTestId('kline-shell')
+  await page.goto(freeJm)
+  await expect.poll(() => page.evaluate(() => window.__marketDetailSockets.some(socket => socket.url.includes('/market/ws')))).toBe(true)
+  await page.getByRole('button', { name: 'BOLL', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-boll-point-count', '2')
+  await shell.evaluate(node => { window.__studyCanvas = node.querySelector('canvas') })
+  await send({ type: 'snapshot', source: 'realtime', trading_day: day, contract, bars: [completed] })
+  await expect(shell).toHaveAttribute('data-live-study-point-count', '1')
+  await expect(shell).toHaveAttribute('data-boll-point-count', '3')
+  expect(tailReads[0].query).toEqual({
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', profile: 'free', studies: 'boll',
+    canonical_end: history.at(-1).bar_end, source_revision: base.source_revision,
+    completed_through: completed.bar_end, include_preview: 'false',
+  })
+
+  seenActivity = activity(1)
+  await send({ type: 'preview', quote: null, activity: seenActivity })
+  await expect.poll(() => tailReads.length).toBe(2)
+  for (const tick of [2, 3, 4]) {
+    seenActivity = activity(tick)
+    await send({ type: 'preview', quote: null, activity: seenActivity })
+  }
+  expect(tailReads).toHaveLength(2)
+  tailReads[1].resume()
+  await expect.poll(() => tailReads.length).toBe(3)
+  await expect(shell).toHaveAttribute('data-preview-study-point-count', '0')
+  tailReads[2].resume()
+  await expect(shell).toHaveAttribute('data-preview-study-point-count', '1')
+  await expect(shell).toHaveAttribute('data-boll-point-count', '3')
+
+  seenActivity = activity(5)
+  await send({ type: 'preview', quote: null, activity: seenActivity })
+  await expect.poll(() => tailReads.length).toBe(4)
+  await shell.evaluate(() => window.__marketDetailSockets.find(socket => socket.url.includes('/market/ws') && !socket.closed).close())
+  tailReads[3].resume()
+  await expect(shell).toHaveAttribute('data-preview-study-point-count', '0')
+  await expect(shell).toHaveAttribute('data-live-study-point-count', '0')
+  await expect(shell).toHaveAttribute('data-boll-point-count', '2')
+  expect(await shell.evaluate(node => node.querySelector('canvas') === window.__studyCanvas)).toBe(true)
+  expect(windowReads).toBe(1)
+})
+
+test('Free recovers each expired live-study seed while Canonical prices stay fixed', async ({ page }) => {
+  await installDetailFakeWebSocket(page)
+  await mockMarketDetail(page, { live: true })
+  const bars = freeHistory(4)
+  const history = bars.slice(0, 2)
+  const live = bars.slice(2)
+  const point = bar => ({ status: 'READY', values: { upper: bar.close + 10, middle: bar.close, lower: bar.close - 10 }, diagnostic: null })
+  const base = chartStudyWire(history, 'boll', point)
+  const revisions = ['a', 'b', 'c'].map(digit => digit.repeat(64))
+  let windowReads = 0
+  await page.route('**/api/v1/market/indicators/chart-window?**', route =>
+    route.fulfill({ json: { ...base, source_revision: revisions[windowReads++] } }))
+  const readRevisions = []
+  await page.route('**/api/v1/market/indicators/chart-tail?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    const revision = params.get('source_revision')
+    readRevisions.push(revision)
+    const last = params.get('completed_through')
+    if (revision === revisions[0] || (revision === revisions[1] && last === live[1].bar_end)) {
+      return route.fulfill({ status: 409, json: { detail: { code: 'MARKET_CHART_STUDY_BASE_EXPIRED' } } })
+    }
+    const completed = live.filter(bar => bar.bar_end <= last)
+    return route.fulfill({ json: { ...base, source_revision: revision, segments: [{
+      ...base.segments[0], bars: completed.map(bar => studyBar(bar, 'completed_live')),
+      features: [{ ...base.segments[0].features[0], points: completed.map(point) }],
+    }] } })
+  })
+  const send = data => page.evaluate(payload => {
+    const socket = window.__marketDetailSockets.find(socket => socket.url.includes('/market/ws') && !socket.closed)
+    socket.onmessage?.({ data: JSON.stringify(payload) })
+  }, data)
+  const shell = page.getByTestId('kline-shell')
+  await page.goto(freeJm)
+  await expect.poll(() => page.evaluate(() => window.__marketDetailSockets.some(socket => socket.url.includes('/market/ws')))).toBe(true)
+  await page.getByRole('button', { name: 'BOLL', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-boll-point-count', '2')
+  await send({ type: 'snapshot', source: 'realtime', trading_day: live[0].trading_day, contract: live[0].physical_contract, bars: [live[0]] })
+  await expect(shell).toHaveAttribute('data-live-study-point-count', '1')
+  await send({ type: 'bar', bar: live[1] })
+  await expect(shell).toHaveAttribute('data-live-study-point-count', '2')
+  await expect(shell).toHaveAttribute('data-boll-point-count', '4')
+  expect(windowReads).toBe(3)
+  expect(readRevisions).toEqual([revisions[0], revisions[1], revisions[1], revisions[2]])
+})
+
+test('Free can switch the existing THS auxiliary pane to independent TA-Lib MACD and back', async ({ page }) => {
+  const bars = freeHistory(40)
+  await mockMarketDetail(page, { barsPage: () => ({ bars }) })
+  const requests = []
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(params.get('studies'))
+    return route.fulfill({ json: chartStudyWire(bars, 'macd', () => ({
+      status: 'READY', values: { dif: 1, dea: 0.5, histogram: 0.5 }, diagnostic: null,
+    })) })
+  })
+  await page.goto(freeJm)
+  const shell = page.getByTestId('kline-shell')
+  const selector = page.getByRole('button', { name: 'TA-Lib MACD' })
+  await expect(selector).toHaveAttribute('aria-pressed', 'false')
+  await expect.poll(async () => Number(await shell.getAttribute('data-macd-point-count'))).toBeGreaterThan(0)
+  await shell.evaluate(node => { window.__studyCanvas = node.querySelector('canvas') })
+  expect(requests).toEqual([])
+  await selector.click()
+  await expect(selector).toHaveAttribute('aria-pressed', 'true')
+  await expect(shell).toHaveAttribute('data-talib-macd-point-count', '40')
+  await expect(shell).toHaveAttribute('data-macd-point-count', '0')
+  await selector.click()
+  await expect(shell).toHaveAttribute('data-talib-macd-point-count', '0')
+  await expect.poll(async () => Number(await shell.getAttribute('data-macd-point-count'))).toBeGreaterThan(0)
+  expect(await shell.evaluate(node => node.querySelector('canvas') === window.__studyCanvas)).toBe(true)
+  expect(requests).toEqual(['macd'])
+  await selector.click()
+  await expect(selector).toHaveAttribute('aria-pressed', 'true')
+  await page.reload()
+  await expect(selector).toHaveAttribute('aria-pressed', 'true')
+  await expect(shell).toHaveAttribute('data-talib-macd-point-count', '40')
 })
 
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {
@@ -479,8 +873,9 @@ test('invalid identity fails closed and only recovers after an explicit click', 
 })
 
 test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event facts', { tag: '@contract-alignment' }, async ({ page }) => {
+  const stored = { ...subingEvent('jm'), formula_version: 'subing-diagnostic-fixture' }
   const requests = await mockDetailDailyQuote(page, {
-    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [stored] : [],
     alertRules: [subingRule()],
   })
   await page.goto(freeJm)
@@ -509,11 +904,52 @@ test('Free, HTDY, and SuBing remain isolated workspaces with only SuBing Event f
   await subingAudit.locator('summary').click()
   await expect(subingAudit).toContainText('首次事件仅在审计视图展示，不覆盖盘后 Canonical 历史')
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-alert-marker-count', '1')
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  const source = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'alerts · 就绪' })
+  await source.locator('summary').click()
+  await expect(source).toContainText('alert-event:9')
+  await expect(source).toContainText('subing-diagnostic-fixture')
+  await expect(source).toContainText('2026-09-03T02:45:00.000Z')
   await expect(subingAudit.locator('tbody')).toContainText('2026-09-03 10:45')
   await expect(subingAudit.locator('tbody')).toContainText('买入观察')
   await expect(page.getByRole('button', { name: '参考记录', exact: true })).toHaveCount(0)
   expect(requests.alertRequests.every(({ method }) => method === 'GET')).toBe(true)
   expect(requests.newowRequests).toEqual([])
+})
+
+test('a deferred SuBing marker paint failure clears drawn provenance and keeps the stored event', async ({ page }) => {
+  const errors = []
+  page.on('pageerror', error => errors.push(error.message))
+  await page.addInitScript(() => {
+    const state = window.guiyiAlertPaintProbe = { failed: 0 }
+    const fillText = CanvasRenderingContext2D.prototype.fillText
+    CanvasRenderingContext2D.prototype.fillText = function (text, ...args) {
+      if (text === 'S↑') {
+        state.failed++
+        throw new Error('injected deferred native marker text')
+      }
+      return fillText.call(this, text, ...args)
+    }
+  })
+  await mockDetailDailyQuote(page, {
+    alertEvents: ({ url }) => url.searchParams.get('rule_code') === 'subing_ths_alert_15m_v1' ? [subingEvent('jm')] : [],
+    alertRules: [subingRule()],
+  })
+  await page.goto('/market/chart?symbol=jm&view=subing')
+  const chart = page.getByTestId('kline-shell')
+  await expect.poll(() => page.evaluate(() => window.guiyiAlertPaintProbe.failed)).toBeGreaterThan(0)
+  await expect(chart).toHaveAttribute('data-rendered-marker-count', '0')
+  await expect(chart).toHaveAttribute('data-alert-marker-count', '1')
+  await expect(chart.locator('canvas').first()).toBeVisible()
+  const diagnostics = page.locator('.market-kline-stage .chart-layer-diagnostics')
+  await diagnostics.getByText('图层诊断', { exact: true }).click()
+  await expect(diagnostics.getByText('display_markers · 渲染错误', { exact: true })).toBeVisible()
+  const alerts = diagnostics.locator('.chart-layer-diagnostics__row').filter({ hasText: 'alerts · 渲染错误' })
+  await alerts.locator('summary').click()
+  await expect(alerts).toContainText('CHART_RENDERER_PAINT_FAILED')
+  await expect(alerts).not.toContainText('alert-event:9')
+  expect(errors).toEqual([])
 })
 
 test('SuBing omits removed disclosure cards and empty history for all runtime states', async ({ page }) => {
@@ -783,8 +1219,8 @@ test('market facts dialog closes when its identity changes', async ({ page }) =>
   await mockMarketDetail(page)
   await page.goto(freeJm)
 
-  await page.evaluate(async () => {
-    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+  await page.evaluate(async vueUrl => {
+    const { createApp, h, ref } = await import(vueUrl)
     const { default: MarketFactsDialog } = await import('/src/components/market/detail/MarketFactsDialog.vue')
     const host = document.createElement('div')
     host.id = 'market-facts-dialog-browser-contract'
@@ -800,7 +1236,7 @@ test('market facts dialog closes when its identity changes', async ({ page }) =>
       }),
     }).mount(host)
     window.__changeMarketFactsIdentity = () => { identity.value = 'free:rb:actual_dominant:15m' }
-  })
+  }, await appVueModuleUrl(page))
 
   const dialog = page.getByRole('dialog', { name: '行情数据详情测试' })
   await expect(dialog).toBeVisible()
@@ -812,8 +1248,8 @@ test('mobile history drawer traps focus, closes with Escape, and restores its tr
   await page.setViewportSize({ width: 390, height: 844 })
   await mockMarketDetail(page)
   await page.goto(freeJm)
-  await page.evaluate(async () => {
-    const { createApp, h, ref } = await import('/node_modules/.vite/deps/vue.js')
+  await page.evaluate(async vueUrl => {
+    const { createApp, h, ref } = await import(vueUrl)
     const { default: MarketDetailDrawer } = await import('/src/components/market/detail/MarketDetailDrawer.vue')
     const host = document.createElement('div')
     host.id = 'drawer-browser-contract'
@@ -833,7 +1269,7 @@ test('mobile history drawer traps focus, closes with Escape, and restores its tr
     })
     app.mount(host)
     window.__marketDetailDrawerContractApp = app
-  })
+  }, await appVueModuleUrl(page))
 
   const trigger = page.locator('#drawer-trigger')
   await trigger.click()
@@ -1045,13 +1481,21 @@ test('chart toolbar remains usable through delayed prices, rapid switching and s
 test('chart toolbar supports all analysis tabs without reload', async ({ page }) => {
   await installNewowProductFixtures(page)
   await page.goto('/market/chart?symbol=rb&view=htdy&series_kind=actual_dominant&frequency=1d')
-  for (const name of ['趋势策略','震荡策略','双策略','火天大有','苏冰预警','自由看盘','趋势策略']) {
+  for (const name of ['牛哇参考','火天大有','苏冰预警','自由看盘','牛哇参考']) {
     await page.getByRole('tab',{name,exact:true}).click()
-    const toolbar = page.getByLabel('主图参考价格',{exact:true})
-    await expect(toolbar).toBeVisible()
-    await expect(toolbar).toHaveCount(1)
-    await expect(toolbar.getByRole('button',{name:'日线',exact:true})).toHaveAttribute('aria-pressed','true')
-    await expect(page.locator('.detail-view-nav .chart-reference-toolbar')).toHaveCount(0)
+    if (name === '牛哇参考') {
+      await expect(page.getByRole('group', { name: '牛哇策略' })).toBeVisible()
+      for (const strategy of ['趋势', '震荡', '双策略']) {
+        await page.getByRole('button', { name: strategy, exact: true }).click()
+        await expect(page.getByRole('group', { name: '周期', exact: true }).getByRole('button', { name: '日线', exact: true })).toHaveAttribute('aria-pressed','true')
+      }
+    } else {
+      const toolbar = page.getByLabel('主图参考价格',{exact:true})
+      await expect(toolbar).toBeVisible()
+      await expect(toolbar).toHaveCount(1)
+      await expect(toolbar.getByRole('button',{name:'日线',exact:true})).toHaveAttribute('aria-pressed','true')
+      await expect(page.locator('.detail-view-nav .chart-reference-toolbar')).toHaveCount(0)
+    }
   }
 })
 

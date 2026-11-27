@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { subingVolumeTierPoints } from '../src/utils/subingVolumeTierDisplay.ts'
-import type { DisplayVolumeBar } from '../src/utils/volumeDisplay.ts'
+import { volumePresentation, type DisplayVolumeBar } from '@guiyi/quant-chart/volume'
 const bar=(volume:number,time='2026-11-02T07:00:00Z'):DisplayVolumeBar=>({time,open:100,high:110,low:90,close:105,volume,physicalContract:'JM2701',segmentId:'s',calculationSegmentId:'c'})
 const pair=(value:number)=>[bar(100),bar(value,'2026-11-03T07:00:00Z')]
 test('only the 2x and >=3x tiers are marked with inclusive exact boundaries',()=>{
@@ -34,4 +34,17 @@ test('same classification on all six periods, prefix invariance and stable pagin
  assert.deepEqual(subingVolumeTierPoints(bars).slice(0,1),subingVolumeTierPoints(bars.slice(0,2)))
  assert.deepEqual(subingVolumeTierPoints(bars).slice(1),subingVolumeTierPoints(bars.slice(1)))
  assert.deepEqual(bars,before)
+})
+
+test('diagnostics distinguish evaluated bars without a tier from missing predecessors', () => {
+  const bars = pair(150)
+  const enabled = { enabled: true, allowTiers: true }
+  assert.equal(volumePresentation('subing', bars.slice(0, 1), enabled).lastTierEvaluation, undefined)
+  const evaluated = volumePresentation('subing', bars, enabled)
+  assert.equal(evaluated.lastTierEvaluation?.time, bars[1]!.time)
+  assert.deepEqual(evaluated.tiers, [])
+  const rolled = { ...bar(600, '2026-11-04T07:00:00Z'), physicalContract: 'JM2705' }
+  assert.equal(volumePresentation('subing', [...bars, rolled], enabled).lastTierEvaluation?.time, bars[1]!.time)
+  const breaks = [{ time: '2026-11-02T08:00:00Z' }]
+  assert.equal(volumePresentation('subing', bars, { ...enabled, breaks }).lastTierEvaluation, undefined)
 })

@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {createHash} from 'node:crypto'
-import {displayIndexVisible,layoutDisplayLabels,drawDisplayLabels,normalizeDisplayEvents,trendReversalBadge,type NewowDisplayEvent} from '../src/utils/newowDisplayEvents.ts'
+import {displayIndexVisible,displayLabelIntersectsViewport,layoutDisplayLabels,drawDisplayLabels,normalizeDisplayEvents,trendReversalBadge,type NewowDisplayEvent} from '../src/utils/newowDisplayEvents.ts'
 const bar=(i:number)=>({bar_end:`2026-10-${String(10+i).padStart(2,'0')}T07:00:00Z`,physical_contract:'JM2701',segment_id:'owner',calculation_segment_id:'calc',close:'3797.24'})
 const bars=Array.from({length:5},(_,i)=>bar(i))
 function event(i=0,kind:NewowDisplayEvent['kind']='OSC_BREAKDOWN'):NewowDisplayEvent {
@@ -39,6 +39,18 @@ test('badge uses current period Bars, expires after two and never crosses owner'
  assert.equal(trendReversalBadge([event(1,'TREND_REVERSAL')],bars),null)
  assert.equal(trendReversalBadge([event(3,'TREND_REVERSAL')],[...bars.slice(0,4),{...bar(4),calculation_segment_id:'new'}]),null)
  assert.equal(trendReversalBadge([],[]),null)
+})
+
+test('only labels with a visible part contribute to the painted cutoff', () => {
+ const [breakdown, reduce] = layoutDisplayLabels([
+  { event: event(), x: 50, y: 98 },
+  { event: event(1, 'MAIN_RISE_J'), x: 50, y: 2 },
+ ], () => 50)
+ assert.equal(breakdown!.y, 102)
+ assert.equal(displayLabelIntersectsViewport(breakdown!, 100, 100), false)
+ assert.equal(displayLabelIntersectsViewport({ ...breakdown!, y: 99 }, 100, 100), true)
+ assert.equal(displayLabelIntersectsViewport(reduce!, 100, 100), false)
+ assert.equal(displayLabelIntersectsViewport({ ...reduce!, y: 1 }, 100, 100), true)
 })
 
 test('logical window includes partially visible edge and final Bar',()=>{

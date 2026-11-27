@@ -1,0 +1,851 @@
+{
+  "samples": [
+    {
+      "first": "2025-09-08T01:05:00+00:00",
+      "key": [
+        "continuous",
+        "rb",
+        "MAIN",
+        "1m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "rb-MAIN-1m",
+      "rows": 100001,
+      "sha256": "2dec761615fee3c25a022403c409730a09a6a5b6d8ea9d13ce770b41933aff9f",
+      "source_partition_sha256": [
+        "d74197ffded3f47d5f1a3188052c08d15dc3fae742ad1a01e3e01ecab51a266d",
+        "9e16d00b1daa1d3fb78452722f0111e1be4e147ebaa1317f53edd7e5c9d4b9b1",
+        "74b8b7209ff0d06b712e6d8d2b048e3f0ff33503ba3a073ec519ecc2a7124ffb",
+        "4db7d250d5732d3825867be2344c08fff80426887cd9e708c6b4622c8ed102f8",
+        "cb8d3461de3a63a2e430c090b46aecd39cc930e436e43ba6332009d1a02ed3f5",
+        "ee700b612f2e29f17cdbf0a982d1e17e0b71982b74c29462d5f3db56f9042742",
+        "22c9288cd49f1f9f561b2b64057d07f52fd0649cd5036e2c8a081b348744b952",
+        "5620091967bb7b7754e676adfb78f2f7c7252491d1cb3ccd0498a9786251888f",
+        "52e73328ae981d85c8379f91cf710aa2953916cd4bafccc7a6f21c477d78f846",
+        "400d2be2b902c219b38a4c4b002260a70490a42508f944295c4213bb5fb7fe48",
+        "39bd68e3e0a92d8bc0e0fac795eb8bc332c3b9cfd50eb0f244d8c581d52617ad",
+        "795cf7bb053fffe5124d831d8a60e5d283ef031142d3b053f2694ee1a2ffdb33",
+        "4822903e21e7724ebb1f81d8c35f06cbc1576fcd06d5fbc03af8a80bd9fe8c8a",
+        "572da941f417538c2dd380c24bd7e7bdaeb45015e3d95a3a4b66e936220c2c3a",
+        "061ab64c03dadcd9a8330925fec44ef392aa574eeeab7c4a85a06c00b3e1d3a7"
+      ]
+    },
+    {
+      "first": "2026-11-02T02:50:00+00:00",
+      "key": [
+        "continuous",
+        "rb",
+        "MAIN",
+        "5m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "rb-MAIN-5m",
+      "rows": 1200,
+      "sha256": "71d4f6a364ebb0ed1839ed8ff6dcc649e7a993de5de8b54a0a2e1f60d0dd7596",
+      "source_partition_sha256": [
+        "ecfe333533f7ffed7297eeb344f510fcb823433edeb36a406e2136b7ec85aa42"
+      ]
+    },
+    {
+      "first": "2026-09-03T14:00:00+00:00",
+      "key": [
+        "continuous",
+        "rb",
+        "MAIN",
+        "15m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "rb-MAIN-15m",
+      "rows": 1200,
+      "sha256": "fc976b4d6e134be445aa94fbc6a7e82a4755928d8e945ea68f02da4ed847df51",
+      "source_partition_sha256": [
+        "bb7b6f9c376b60be68bf4b368ec213166f3fcd24f8bc29a1be0768954181bb43",
+        "96016e69678417596cc3a9cd26dbeb99f5ce62c18c096f4806ea253bcbd2daaa",
+        "46f3ff1e45147f820f32eee5f5344b669e445affb4b428b4ef17df94d19e9319"
+      ]
+    },
+    {
+      "first": "2026-06-30T01:30:00+00:00",
+      "key": [
+        "continuous",
+        "rb",
+        "MAIN",
+        "30m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "rb-MAIN-30m",
+      "rows": 1200,
+      "sha256": "cbc25b20ba672693cf98267f36875b647447ec29fa947b9c12d2e323532169a4",
+      "source_partition_sha256": [
+        "f6a1a42a02ff201959ce5cd978cccd26f58154b746edd97a9cb619aefab4632e",
+        "3ba0e6b8218e0b7a4ede2055260dd63f67804d91a4318cfc4b28b0d0d414c4da",
+        "12d5fe4a9172e6f36d45913ec2db8fc86173f3c2634223f905a30f5f6d0f4289",
+        "d84cb39047180efb783c4289e52689ced9f945ea2a0a86356f3939b681f25eb0",
+        "eec54a282366f1362378d8175cf436a1f266b2b1f030b0dae880b073288da1bb",
+        "c0483a504f54feccfa6c95f0dc08dbdec223f28471e0b1c967b75e550d5d7b52"
+      ]
+    },
+    {
+      "first": "2026-03-12T15:00:00+00:00",
+      "key": [
+        "continuous",
+        "rb",
+        "MAIN",
+        "60m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "rb-MAIN-60m",
+      "rows": 1200,
+      "sha256": "3924d1a61d21050751dde97435975f23ad8232a84b0538f6695704f9a709f830",
+      "source_partition_sha256": [
+        "37a13a0b947e4f769cfb5657aa0471d012f275542f4acc301fbbb0a6785cd009",
+        "f0a5ff2285f67e3013fb7206c706f14fae338f84a84f6c16328bccdad1312f15",
+        "6ae7b1ceef5b7c1ad6571556a3674c5307f4bd19f24f24332273ce27ea3a5ff3",
+        "64cfc8b471efa115f85439f121bf7969915385df9be64625975ec5e9f43ed249",
+        "015b2633dd896aeca0f0f243aef150f1de9e91b38d591d24eb3ba368fe4dad77",
+        "07215ae494288af54cb018d8c0660f41044b9daaef15efb676cfb545146be80b",
+        "dea3c25a6571831bbae72a64cdd35d292ada34d2b9b7e9b75b4a0dcd01382f49",
+        "2578747a181a74c0c6ce836399c1c7240f034ad1979b6f21fb417f39cf431b20",
+        "2528595570f3e9b45489ac661a16f4aba8b2f41b33c39b16e400b67230a86d92"
+      ]
+    },
+    {
+      "first": "2025-11-14T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "rb",
+        "MAIN",
+        "1d"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "rb-MAIN-1d",
+      "rows": 250,
+      "sha256": "72fd76ef91a566deb0eafaf23fdc7bdb3d20b88b9a178870ca4fe53cd15f3daa",
+      "source_partition_sha256": [
+        "1633363583de0855c0aa5087783c4f3e8804ebf246f716dc8fc996b69cf94a8a",
+        "71f5009ac3d3f4c81ff1477c45e4b0ca7565f5ebc2742ac32e860358295c8f88",
+        "c04b8d5bc2afa9438442b7c48d95ed22458dfb5d54203c7f67014013d8e07954",
+        "51e2d4734aac5b448f35f6fbc8a8d2d65550d92be00abd5b84da2ab27fb7428c",
+        "0f33e854da3737e639f6c879293ed509f466771faf17c0c220c73292ed39a4da",
+        "f33c9b38f7102b91cf855ffbe4545f112b1c267542e867a9a593eeee080a40f8",
+        "833f0de9fe532ec7ce6228bb0268292d03e3800f05f3e9948ef8d97359855886",
+        "4b77e14b4ed2256c053a1ea7f2c909f80223678a83177661b6eedd1fc714406b",
+        "6825361ac5f8ca443e6c77d5c0b32f39f36f7f905c7437fc5e0d4b8ced22f43f",
+        "9b15820a813e73cd607ab497c8db0dab8c7f828d2538815e239436b30ccd40e1",
+        "b2e4eb337251177cc9c26bdfcb675e5e46f6a8fc71a06290928fe385984a9f94",
+        "d344ae785fa243db981880babbb3eb024fea2e3545efc88be90d79639e680a91",
+        "d67fda1a7ed4cdf75f746b39cecf5860d98a609274e346fabd77909832488e29"
+      ]
+    },
+    {
+      "first": "2024-12-20T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "rb",
+        "MAIN",
+        "1w"
+      ],
+      "last": "2026-11-20T07:00:00+00:00",
+      "name": "rb-MAIN-1w",
+      "rows": 100,
+      "sha256": "fff4b19a2d6e9612f8f208695a62b132ffd6e141c1354b601d58d38435e9c799",
+      "source_partition_sha256": [
+        "e0590a7c4565157b4eb3bddfbc24baead303cf4327aaacf62532ab87790ff1d1",
+        "a56fc4abb154ecb7e0d7dee28cbf59d2a011b3dea1009c3d5e73142a1db7ecf6",
+        "c52f415ea64cf80c385c176fb0cef382a64503137e8bd97d6cd23e07fa8985f2",
+        "262d3e8399c40eed5dd0b4bfd24aae414c10b20c9d88a8eed0b5951c8a6950f3",
+        "ab93cd483196c1f18e6d04840aed7a5d71f9a298daa69710b1a5aa7d4769b857",
+        "e061f3f3ba980781fc05b7fbd5ec15ae13f4e02a6eb7786e4a124fab169b4242",
+        "9655925730a4d4b1f8d24e4ff4a7dc2280bba1151c1ec46c5b513ceadc20eba3",
+        "83b84f34e51f7ccb7d522255fe0866e19c9da7c1f60b87e090a1b96dea4aea3c",
+        "0760c21e24bfd03b35953ad6475c918a37c733106a2f41a393261b229708060e",
+        "527af032580cb2f06cd8430df023277a63fc7b81e5623822f8022a85f6bfe814",
+        "d5e8e500390cb2210e7951ad78756411fc105e8fb4285573f1d503299bb7b3cb",
+        "a4f2437de4bbc8033e6fc81002e67e49e76639cfd358c0fb3ae13b142ef90789",
+        "27ab6ea28054bd2aa289c3a9dbac282ecb14e8191175c79e00528b98ef23773a",
+        "b73fc606b21baca04a981ff9c1fa717cb6e16e94b9a8f4ab965c77f29620b0bc",
+        "2f1c7da0cc75453b087dbdd6854a6684ffde160ba63125149865eaa688388b16",
+        "e618bbab12777a28a7ca7ec10a8ca5b19908801956b0eaf203abe54c0e635a11",
+        "ed8dc611b2fa30d10184d5e9336457dba668ec5d7f1a63c03e87a51711a34fbd",
+        "b55e39f33e756cf8660d874035d9c238e9426feddb40ec6b8f33c4de01cf9dd5",
+        "e1156276dd0c64a368b1a5174b8bce8223c387217640b8441848a9fe193c65ad",
+        "0fdce5e14402ad2853e593b5060188181649e15fc2244d7b91b5a1b048fae861",
+        "6cee11ace9ff397b2f53e0aeb83aa5402c0a4bd96ebd67d89d63b2e81e28abe4",
+        "d789a75c166549cc410b552c342555fc3cf6ca7e6c01c036c5df288cc0d1997f",
+        "3f02089d24ed49aa96bb46dd19b4e9e5959f83efc3b7f17ca06098f232cc324c",
+        "d0543ea2fd5b952a0ca4f4df2b04d24a3c34d24d9344c32f57e35e2f376d9d4d"
+      ]
+    },
+    {
+      "first": "2026-11-06T13:46:00+00:00",
+      "key": [
+        "continuous",
+        "cu",
+        "MAIN",
+        "1m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "cu-MAIN-1m",
+      "rows": 6000,
+      "sha256": "06aabc1083de96c2e6d585aad35df10f3a84b72123345c47c59b8a9448c5c861",
+      "source_partition_sha256": [
+        "eb3cf5d6f471c13f39c6af6335b143e98990ed560a4eaa091799d40bdf7c3324"
+      ]
+    },
+    {
+      "first": "2026-11-06T13:50:00+00:00",
+      "key": [
+        "continuous",
+        "cu",
+        "MAIN",
+        "5m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "cu-MAIN-5m",
+      "rows": 1200,
+      "sha256": "e6b62cef727268acc5e196ea0cd851deb05870d4cbf81f08f54e91c307c8a1f7",
+      "source_partition_sha256": [
+        "f602b750e99bada3a4781ae4977a6fd2614f170cf8deb48b04dfa593ba24ed32"
+      ]
+    },
+    {
+      "first": "2026-09-22T15:15:00+00:00",
+      "key": [
+        "continuous",
+        "cu",
+        "MAIN",
+        "15m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "cu-MAIN-15m",
+      "rows": 1200,
+      "sha256": "1084d8a0cfd7968f7032319d6a890635f008a312e1a8829f6f29fdfa2d5c0c90",
+      "source_partition_sha256": [
+        "e70ba069d35fd1c14b28bc7dc0bfd93f33502a0c18f05024ab41b403538aefa6",
+        "410cec9eb0479d5a40c5cc1b61558ab93c4ab5875f19f7756c61d6044c44158a",
+        "15795e70504988536bb96001bcc60adb3a6cdc8e3974e04cc36d7420b7585a4a"
+      ]
+    },
+    {
+      "first": "2026-08-03T13:30:00+00:00",
+      "key": [
+        "continuous",
+        "cu",
+        "MAIN",
+        "30m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "cu-MAIN-30m",
+      "rows": 1200,
+      "sha256": "66fe006f3be55210fbeb571b0ba308eb468eefec109bacb5a29931e003ad63bb",
+      "source_partition_sha256": [
+        "c229437dfbf754939ba0b9574d33db8a5fd9e269764312bc62b4ec6e3511ee85",
+        "813359fe92f67a4fc94396f62437042d1772375065d6b59fc1604123ee225329",
+        "a89c25156e7eeec987b37fcaeeb7986c3930344bd9abebdf6621abb6b31f0498",
+        "37cb05e75317914b292f0bfd14738bbdc1685b21ab6c5764b1dec1474827c94a"
+      ]
+    },
+    {
+      "first": "2026-05-11T17:00:00+00:00",
+      "key": [
+        "continuous",
+        "cu",
+        "MAIN",
+        "60m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "cu-MAIN-60m",
+      "rows": 1200,
+      "sha256": "9540385edf8185aeb4a117ee5bc1af779173e0e5922902783fdc2346c5802120",
+      "source_partition_sha256": [
+        "d84b38fcc885e57ae69240009eab3c5ebad9742c15a0139f04eec20b118cbe02",
+        "a7e076ded5b48bd369debf83455a17da0f1536f1b2ef58a40ee052a15d9e4f5c",
+        "1b27ddaa8e25960eca7a99e0177a58b3e72214eae438a2c3e14831762689726e",
+        "8f5ada9ca93ad3e9db23b44448cb3335b09d934d3750a3b85c06a49c0330800e",
+        "6bafdd89603d8c0fe23d488bf99bf3e37e9668db80f0146e70828cdc7cdb6c79",
+        "25e274305bcbdcf7fcda99d505d36b4d120edd3b2ca8ad392d7d1d2367594b99",
+        "05264c31c053e27d2af79a8fd4da6a2ce31ed5e106ca810a9f81e7897394faf1"
+      ]
+    },
+    {
+      "first": "2025-11-14T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "cu",
+        "MAIN",
+        "1d"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "cu-MAIN-1d",
+      "rows": 250,
+      "sha256": "45d3fb495e37aae823b8452c9056322ba32d87008fa15151cdddd8569596702b",
+      "source_partition_sha256": [
+        "0fa2e6a6c3adc0165c08e5bc82ca8cb43db4a672badaefb12caa54e95936b943",
+        "582673c422944218227256ee1315bc083d9264c426e1801061f12a1b68a7ed98",
+        "22ef16def4c279b448d430bcfe4fe8222bcaafd44ed3418bf4b727a94b4a1772",
+        "f935f7b938a86ad7a6b34fc92d8b4bef90a89d3988a925ecd3f946430a1b75a3",
+        "b3b7cb31b7517230578519b86bd920816b9b0f93a5e7f3f718609e067a8fd240",
+        "1d3a2ee74bd15a1a0d9aefad4d31b86197f462f12d316a89479bf4f054426f58",
+        "a1fec91223c670821385564a833152082a393ed7120b7967478a4db3fbf5c95e",
+        "ca3b83fa1472066ecac6b4e75f5076bba35ddf503338319ecb66a790e09655e7",
+        "18d9509553c7b64af07ee0a69f89ebe22952d3e4de2089368b5440c6d4e00584",
+        "8600a82c6c2f8ca6c1e6418d6aff784d9e7a5ac5d836d0c72a52909e5d3d5ca4",
+        "d8e500ff59dc4beeeba8a3f0467defcd6b94d68edc861fc7d1020e4f776bdeee",
+        "3862bdad60ba33917a44a5251a51e246e9127af5cf25cbada5b38ef67d56eb85",
+        "6b4e5ac6132b96af61a9f715b454cf612f23f241b62449188232d2769fd10842"
+      ]
+    },
+    {
+      "first": "2024-12-20T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "cu",
+        "MAIN",
+        "1w"
+      ],
+      "last": "2026-11-20T07:00:00+00:00",
+      "name": "cu-MAIN-1w",
+      "rows": 100,
+      "sha256": "f9ed4dd80003b47f7325ec54d70e0867bcee54b71782db353c252d54f4fb2300",
+      "source_partition_sha256": [
+        "6de876b06e13626d61054640472505aa44de0967b8ce712145925318a87bb666",
+        "b10b37dbedc566820ad093595c9f03c7d71adede3b3cf93cdf4793b1bc418c62",
+        "85f52dc9a19fce7d4a929984c83255ee73fd24801b84e062fbcb519546541f1c",
+        "be6565008b7f0e9a0ecf351d8c5420f176420ecd04770aeea29f42a679ebdafa",
+        "266a27d42338c52404003552955969a13c7694b9da721dd708729ef87eeda649",
+        "1a5aa36441ffe541eb4a8d038add4c9f39897e80aab33e035ed9eb7b5bff7996",
+        "1ae1a53935e2be24f9fbd847f142a0c8adf6fca3518eea5c2ac3e49a725819da",
+        "22553f05c45ffbb6f04e8aa560a69cf4df83294ba77e316defec24d3299a5ff5",
+        "a4c19a1e40796b177727c192612ea4a452c983b8cb307b0c6037dd6c8e655248",
+        "f37dfccb14ead913ec01b2fe679d21b8425b978147b68e04d05f8efb7ec9a27d",
+        "6cb9e2a222fc11bee5b6630772d9f770336a1e616bb11360fa2c7bbee02d1233",
+        "c2a153777f0084ac33a1b497b81ecc8c9aae9e99fc29086862a201eb521df48a",
+        "b643b1a3efacb26ff426533ecda34638c5789e4b811dfd16c952e1bbec8daf04",
+        "c7f7a2a94857cf2a8b330f5a98f7963a073d6adf38f799ce5a713935993ef160",
+        "ebfe5596a9d2680bd5b525aca3857e8d897764ec038f56fe38e56901bef19ec7",
+        "ee158709e2068163eecca0f687eb49a8faa337ce7b7972d46c419e9261c607b5",
+        "e32515a653faa2b360f4e40f41a0f3c0751b8d41af90f99b2faf62c2bccceb56",
+        "4d14038290bf7f78a9612a736f71eabdd0b54295024198d1c669a99d333e0174",
+        "0136a2eba70b2805545817c4122241d7ece18eebb35c04d48006700a7e8c00e7",
+        "aee21285f0f0fc9cb7a03b9c99147488924e941a317e8081ab32c669aa0b98ac",
+        "852860078290092856dd4dc73307efc2b8b1065dca540657e9240bb100cdd510",
+        "854717b70ca05e5542f00f0df627d3c911ebc26d92fecdf424997b5876cc9659",
+        "1470021e586d7110f7a426b749067f6c3cf51ed87b821cfdcb31ee4396a5b54d",
+        "cdafcdfd9b4dd0f0eb59a08bd3e1a157af388d5d6ca0c3904d446e9a208b74e0"
+      ]
+    },
+    {
+      "first": "2026-11-02T02:46:00+00:00",
+      "key": [
+        "continuous",
+        "jm",
+        "MAIN",
+        "1m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "jm-MAIN-1m",
+      "rows": 6000,
+      "sha256": "879f78465b12a2a6e902b2f59469f8c5dcc146bf9a5c506db17a8b143b9362fb",
+      "source_partition_sha256": [
+        "aba532b2201756160e2780e6159b038bc69f1c8b6dadd2252f19df95749f66ae"
+      ]
+    },
+    {
+      "first": "2026-11-02T02:50:00+00:00",
+      "key": [
+        "continuous",
+        "jm",
+        "MAIN",
+        "5m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "jm-MAIN-5m",
+      "rows": 1200,
+      "sha256": "f7ab0c603ab5473770b16837d88ac48425ff11b41adce0f3d7be1ce65dbf8a54",
+      "source_partition_sha256": [
+        "2966ab830126b27a6e2ae2c61102ae3c7b947e817a358ef174af024eea23e9eb"
+      ]
+    },
+    {
+      "first": "2026-09-03T14:00:00+00:00",
+      "key": [
+        "continuous",
+        "jm",
+        "MAIN",
+        "15m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "jm-MAIN-15m",
+      "rows": 1200,
+      "sha256": "855c633946975885687f0c34c9b7b32226600c25942e7ebba1386bf83f56b907",
+      "source_partition_sha256": [
+        "4e1bbf10bfee288b7e68d1274053a75d9cda4f70253a79d9c3b192c5f803474f",
+        "fcfd021d58f5548a75446d9e2b8cc110819277990bd6c7535b5f69a1fdf3d55b",
+        "a09dde3a5d46be224cc868e948d437aa3d517a79ee3407729c88d7b01c4f3ae2"
+      ]
+    },
+    {
+      "first": "2026-06-30T01:30:00+00:00",
+      "key": [
+        "continuous",
+        "jm",
+        "MAIN",
+        "30m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "jm-MAIN-30m",
+      "rows": 1200,
+      "sha256": "f5f0c8d34016fbfdc142a118262b52fd9e23c614a270d93d14eac86769e74978",
+      "source_partition_sha256": [
+        "b37a5f6e01b38d094b44a597fdbbf105756df615f9247bd5698c476d9774704f",
+        "010a7477e019dbfe939778bdb5606d065a98600b831dd206aeba1bf3ffac5453",
+        "692852cff2ee256f93f9d1e42c7662914054e09db9d0c14b9facc733761f7f3e",
+        "0aa1244b2f7a30bc2f04681d117d3e7091c358464c20f6d29cef3aefd0e0c989",
+        "9c66362109da8f193cf79963f2f5a844625842c1d101c91b86c1446af67a72d0",
+        "de29f34ee2e5ad9a54369fe16d06364f099032fc52ae0f0935ee3e7ea66adddb"
+      ]
+    },
+    {
+      "first": "2026-03-12T15:00:00+00:00",
+      "key": [
+        "continuous",
+        "jm",
+        "MAIN",
+        "60m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "jm-MAIN-60m",
+      "rows": 1200,
+      "sha256": "66e67776834f7189b2029a9ce74e97e519951732d1c6fd5b12dc617b92d6ac8f",
+      "source_partition_sha256": [
+        "4a5937638e937a1978a5b6bcfe28eac20098bf9c7a1b2ac9880915147f61eb65",
+        "a49d03f663c82a3aa6db3ebbc7db660c0fa19c1d04020cc138b01e9ff0819811",
+        "3c9d1101d02bcbcdea78996cb3f39b7ebcda0d0c7795678ffd167f8aae91cf4c",
+        "47025436677b8c40381b612c3f462cc7ee34220695eee0342e6b798501fff3d5",
+        "0ca5f061cdad45bc4d8435158a748a17246735320ec7b06ed9e9279fc89955af",
+        "55570871e40246b2ef17809e9c62cf345268ee4451387956e48f02bc2bc8c199",
+        "82eb1695269cd3746075c0c7ce74b7202f8284b6344202797f2b36b6f7ef7a68",
+        "6942e6948fbec5c2626e61820f845c23bd7b1663f1cac2d68df3e25efd15117c",
+        "fee73607b303227baa1676849440f153245faadfd7ee9a7ea5c9dec722077774"
+      ]
+    },
+    {
+      "first": "2025-11-14T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "jm",
+        "MAIN",
+        "1d"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "jm-MAIN-1d",
+      "rows": 250,
+      "sha256": "8411a1fa53894de70705ee50f58450426107cc8f0b23ebbf3ee1df7c8ce2b993",
+      "source_partition_sha256": [
+        "e1e378e7c299a6db00bf440752e09d9fb3eb4e912084d48028b0a86af0ec659e",
+        "b3cef8a3ea372157b03035507e78f4fef58198aab2702288cbc248df82dd9aff",
+        "66c929d8158e83a9f39df34a22b2b115b7dbdcf5d26718c8d114ef20958c8752",
+        "d40d32c239a4079faee466c323daca9ba195be85abdc6aabc626f2fbc2bffa59",
+        "c854825ac1382759a170c2464b2107496252f4222a796602042c831530ce181b",
+        "38b2e6c2d6b1392bb2969d9a0ac7b9da68fa580db553818a192b9f12b38c8437",
+        "118cf8851361457e7aad56d58cfd5b9debdb3c59fd254ab70de8eaf4aa1d0907",
+        "627b45eecaa037715dde4137f64adbb031b72e70a0767a76f56e22ea614d2212",
+        "c6960977e4e18f19f8444cbc32fbaef16db3749da05ad87c3ccb4c4bf926577f",
+        "8bd8a5f0fe40fcab18a747d3d9640283ce9995849f4e21e5842ef48623d154b5",
+        "00117fdd0e60221421d2c9692cf24ac9bc9f72d05c021c35dc58e88ebb931dd1",
+        "ef27a127a7b25dc72400cf2c7a2c5958077e3613dda666faf17c835b032b1c26",
+        "49823248b3b19425ed4ac984af472953e9e1751e118e86783b94fc9442d64083"
+      ]
+    },
+    {
+      "first": "2024-12-20T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "jm",
+        "MAIN",
+        "1w"
+      ],
+      "last": "2026-11-20T07:00:00+00:00",
+      "name": "jm-MAIN-1w",
+      "rows": 100,
+      "sha256": "a4b0de2df5e0add17f965c8b83ca9d35cd7a64dbb5105affc470a8a22129b363",
+      "source_partition_sha256": [
+        "67144656117deb439eb3049fc0b5a317172540c0ba63ba65e132105ef5d79c36",
+        "224f47e88dc4d9dc50bdac1471fbfd2f0e7efafe482459130c8dce2d8fca5342",
+        "c731197caa1fe6c56292e7ff63031640f0c7693c9d30b5455b75315ec75b5e92",
+        "f0f56a0cf36d016cbcc5ae94e7169db244f6f0fc368e31ffc4ebd441a422f2c5",
+        "2ea99299c1739f6b785c793da671d82e94a76d2f09c5afd2c0633cd826808cf7",
+        "f673a03dbbe9bbd984e2186c95afc363cbcefd16e9a9343d50875ef05c07b6a4",
+        "3b1906bf0a1e11a4d226eca05f296d728446f6d556c1184b940f5cdfaa49f3d9",
+        "957b9ec5be6d2d8a511ce4e6520298b8fdd0ccfb2d0e80f9654bce413d4ae7c9",
+        "2a48a460f88647a9db2fb4e6d4e34a515501d5eee465ddc450ec086e6c11bedf",
+        "69b7be5d3c48bdfdc3ef187bdf9da979f4d39dfde2e07e0ffc0259c8e934b8c4",
+        "7e8f6fc1b2526f5347464a7f7528e256f89754abb8b77010a24b128d77aff128",
+        "4f501b37b6b0f176ad819cf4ae9c3b6c8d624800db03b8ae5f966cd7758750ce",
+        "47b210c8635efd64c1a8687bed00bd805f6d2ab250c3b4b8773e85e6e1c1c105",
+        "2b5d850748ae39224c5f8fafceeac1c126f15cca16324027c35efd0a71f935b0",
+        "754e2301af38daceb9f470e4a26fb19321fc5db8491e937c1fa6f7e0103875d1",
+        "20380694d7e327f9b613c65507206efc746f3d0e6e53496948a82e3a43819134",
+        "c90ca3e4f0802c02db7af9e40667161c482948b6c418ce5d814b109b18d19466",
+        "99b83a79bd1cd96d26ea676f9f6249bbdfac2afdd6b9596cab0b5f3d84140a14",
+        "9006a6b85a4f5ea823817900c1a53fd230793c5d3f60d5b01c1dea6c57243498",
+        "592d58e3a43dea35459f196401c18f39eec99bbe53550c6bdb28aa561f1537ec",
+        "2b07e3e5ce9caf378eaecbb727215842fdc14540a7f8d3ebd1a74622d4eac04a",
+        "719d5ffeee31b09762b8a1f4d6ed72fbdf6961bcfcacea05669b0809895cc254",
+        "e48d1a17f57f6d52731220d020256e117c766a771ca28528e88ee0cfd3d76e70",
+        "e3365275d96a3592c77a731b87b4eb46f929a0c60e2030ef6867e81f384944af"
+      ]
+    },
+    {
+      "first": "2026-11-02T02:46:00+00:00",
+      "key": [
+        "continuous",
+        "ta",
+        "MAIN",
+        "1m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ta-MAIN-1m",
+      "rows": 6000,
+      "sha256": "ff03fb386ecb7eb0fff84a1883a27f6206efefcc8a425e342701ff4e7d2a9aa9",
+      "source_partition_sha256": [
+        "00f582bee3ee9757e7c9eb6f8681c19314712bd9c304e1c4cd8531cad6e5a730"
+      ]
+    },
+    {
+      "first": "2026-11-02T02:50:00+00:00",
+      "key": [
+        "continuous",
+        "ta",
+        "MAIN",
+        "5m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ta-MAIN-5m",
+      "rows": 1200,
+      "sha256": "5163a76e886d723862dfcd06af7c952d53cb7676785001660900022790d5083d",
+      "source_partition_sha256": [
+        "905b1be8838ae052ca2d92957234911408d025e510fd91ff7b52c703aa022a07"
+      ]
+    },
+    {
+      "first": "2026-09-03T14:00:00+00:00",
+      "key": [
+        "continuous",
+        "ta",
+        "MAIN",
+        "15m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ta-MAIN-15m",
+      "rows": 1200,
+      "sha256": "a142554882f48343728bfda8fe6df854f9e73dec9ac35e7112dbf8699bc360b6",
+      "source_partition_sha256": [
+        "ac3ab134549c261ba87fd2e8075175db6afa47e5dd985ba57a36b33bb3740a15",
+        "a3101a255b5194b103760038cdb353e6512baccaecdaf1d52daec3baa4431277",
+        "6b80c6ecb1c3a2239e408a9c48f57e7f2643bcfe23668131f9a71073be4fd816"
+      ]
+    },
+    {
+      "first": "2026-06-30T01:30:00+00:00",
+      "key": [
+        "continuous",
+        "ta",
+        "MAIN",
+        "30m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ta-MAIN-30m",
+      "rows": 1200,
+      "sha256": "521084782d52d6b3da88a79e6047c835a0114938c7d5726150b35619ebf2d9d1",
+      "source_partition_sha256": [
+        "9204d2bc07e9b84ee169334f09206d7ee4ec62d946b556882e68b4dd31bf3f4e",
+        "27486f0d94b30b80cc0e73051e6605420b5bc91dacb0877c70db9d65228abe69",
+        "c671e4dee985106a51c5d153ee4088f8ce5f147d850fa301822f20658b65a9c8",
+        "5baacb85d4dacdaff28ee8a7bfc4c76a8a746fad2cc1b83af4deb81ca304b711",
+        "472f6e2ce468dc9b1175950b99d0c688d2c3cba288013649b9c84fd35ec7aedc",
+        "a6524b3345747de4537e955ec8fe1e9b213e67788351181087db4bdf6a9687ff"
+      ]
+    },
+    {
+      "first": "2026-03-12T15:00:00+00:00",
+      "key": [
+        "continuous",
+        "ta",
+        "MAIN",
+        "60m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ta-MAIN-60m",
+      "rows": 1200,
+      "sha256": "7f2616eb07fe23a2d063e5d5f4bb98b78778f4427a59e30aadb8b95b24e00f35",
+      "source_partition_sha256": [
+        "ffea7a4e2b6f9db62efa83524d298b60f16976c9ee276b3d68e1d48e70304790",
+        "4e72473f7778853323a272df93eef1f78800d1762baea6a35d1a2b6c8cd8504d",
+        "656500a446552c1c3aa959f6870e36caeb2ff97e20ca49344439df6a977661bb",
+        "bced13acfa193966d862fa92433a7e0be88ddadd0627f472a72c86912935fa76",
+        "21ced21b8b6c1d7861ad68bd5e2808c4f00f634fb829b7205704687120c51706",
+        "d32fb6fa50511ae9bca1b9210ffcd12711977a4e43bfbc7c2fcf261c5498a7b3",
+        "c643d01711dc2593e67c3d57c3dd7309478496b3388eb2f9b1af624ef8420799",
+        "27851d99533fe8852e097728047a9bbbeae9f123ffe62321f550316f7a0e373c",
+        "660c1198d85f9b76eb3f1f19a3a33904201feacb447bef9c56f6f988203694c6"
+      ]
+    },
+    {
+      "first": "2025-11-14T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "ta",
+        "MAIN",
+        "1d"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ta-MAIN-1d",
+      "rows": 250,
+      "sha256": "4e9e0bba405e67fa5fd3de55d88a668e9e74de17cd608f66c1bbca277cad1fc3",
+      "source_partition_sha256": [
+        "d3fc56da6d11f95420f010f5bf0b65ead2a66cd220d53454a9d1bdb11fc8d815",
+        "e4f82ed4f99231034648e4cd324e8227cee37d958f35320cc4d14f1c0556a0ae",
+        "c0412d833910c735422eb8aaaa5de3a0ff552702ab1cf8878c4277f2eea1e2db",
+        "5d135744f2bfb5e7aa6fa53c5f27611e98498d57f86b9f8ac8b03639eec4ada9",
+        "edca671d5489ac7619734aa4d5f8b0c987b0d54d4e1d0bad67d54ff07b13ab9c",
+        "c6e88cbb090c6f6c7fed799f2d3cf61c853aab51c0085bcf60646b92a8d0b7a9",
+        "5516b0d569632c9a700dabd9f279fe476d1879d1b2f9d9f8a6bf201b83cbcfd6",
+        "4d034b2f3becfde29a983b5af776376cbd5de78c99e78ea98e02c0fe5ececda3",
+        "2e7c419dcafb8ff3f1bb743ed4b4c20168cbfbfdc989dcb4be596dfd92146a1a",
+        "dd9921ac94adbdbd55c7758d3de9b0f3f93c9f769d06efbdb105daaf5da10306",
+        "5e3436d89fb178f927d8bea5726d2a09f8538f94d3c1068410f00ed545c52105",
+        "d851064d72cb36b0aed34450067bf9756afe865a9ae1f0e8a6fb93bca5d3359f",
+        "54bd11992f2b6889e70de51515576c1bc9ebaec629f68c8736b7ef454e0df52c"
+      ]
+    },
+    {
+      "first": "2024-12-20T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "ta",
+        "MAIN",
+        "1w"
+      ],
+      "last": "2026-11-20T07:00:00+00:00",
+      "name": "ta-MAIN-1w",
+      "rows": 100,
+      "sha256": "26811d0d2094513885fddc97d8658a1e0a6ec25e748c43f542ed8df9d87973bb",
+      "source_partition_sha256": [
+        "d9e491afcf616fc2393c8e7870a763c4b67544f86b17af385dc3e6e8e60a0257",
+        "fcbd3d1df18a92bc57a82ad39d6e1b3329d9a660c4146e07c9a72139c2325bd6",
+        "548ec01e692dfa78e9a763949bbe329d44139c955ff4ade84a1628f17b81a2bb",
+        "c0c3a8640854dc663def760830f5d485f4eaeffc0fee99cbb2ecb7d3be1c3fa6",
+        "b986c5ce49b3fb74cca91d07cbd66eb6b20738ce1f9d3686a616d60296864e8c",
+        "2c4997e27dd9db2e91f6262f738b59b755aca3bfb620211da32b742ef5c6247e",
+        "817cce8668e2b22a0482ca319bd823d2b95b3289ff0f486e30e93ed18baa4775",
+        "d7eee6603061879a821d6057a66a2ac26ef2a4860728d9aeeaffb5b3221d4309",
+        "f920d03dc5ba3115df71271ec7246f508e772f4bff32f21d968952db76bedf0f",
+        "60b7e042b2df78212e42ba4ab8117feb396253f6c5dba3c71d2a6576b5493989",
+        "327b037c0f2dcfb0fe6e53310225bf5c75a6e0b22c49d71df36c385ff0fc1edd",
+        "2326a5c874826d39b3a1047699f00a45f1d174a19d7491c72f5eb7ec69df5c46",
+        "8bde70b3389e9a2808519f6393b81452b971d06cad2c562c6c259ab5d77f3264",
+        "423dc8eb85b78e6b2b899f616c715a60fb7fd545025359b90adfd69e63ec4604",
+        "5a9e031ce14784ae4c6e015c9325b5ab45e0f80b17dd8f14a705b5c39fb70e77",
+        "56b2d90177fc94df4ca55cbdd756b04c9cc41276ed32386519d452737238624a",
+        "ea4db8a3df8acf6428d5fb9b190d32de207e4190f0406a65b400f366ee423c67",
+        "b4a531fe32c3f6f06729c1415e8352a98f333eafecc866d6ad6856e3aad0c1f6",
+        "c44a3fb0507185a415090c331e0cf7ea4010eb0c9ca089dec9f974bd2f795da2",
+        "41f7f8797d0cf9f90439e6ceb8ef383f26d614707eaf1b95ce61a867bf03eb6f",
+        "7e9f8ff282b75a49970dd1a8d30bcc1975526148ae91dcdc1be0253ad1b41fea",
+        "e76b5139363d81e90cc6a21f4fb27055b1718eadb7c8b4c704cef3f4c727d73f",
+        "c092269c9813d2554c88135d14b577981e464b846e1cbbbfc48778bd5b1a2364",
+        "4117c04aa05edf7b1a09c1b58723f4a17c2ac0b2d101ef7efab09774bc393daf"
+      ]
+    },
+    {
+      "first": "2026-10-20T02:31:00+00:00",
+      "key": [
+        "continuous",
+        "ec",
+        "MAIN",
+        "1m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ec-MAIN-1m",
+      "rows": 6000,
+      "sha256": "83a161e6a9d15c43b09682bc45a689465ffa5d5d4a14f0037f0bd7edec9fee6e",
+      "source_partition_sha256": [
+        "10824cd41ae4983f730938c547626104ca5b9009bdc6988a89042b3127c86ace",
+        "b9cfe80eb322a5ea463208f371dd5570f832782aa66552b58973086f9e858301"
+      ]
+    },
+    {
+      "first": "2026-10-20T02:35:00+00:00",
+      "key": [
+        "continuous",
+        "ec",
+        "MAIN",
+        "5m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ec-MAIN-5m",
+      "rows": 1200,
+      "sha256": "58a417b3805062a41f84f24319db567e234f645850c4644ad79a92ddda50c288",
+      "source_partition_sha256": [
+        "a4e401b0e3ac346b9f4b3f8f4dde988e6d44b3ddbca18a9a5b09fad5b57e0702",
+        "543b81d51c3b9a9b2cc21f1f7dc8afa6fcdb97d437b6a650d838ddc46d5a700a"
+      ]
+    },
+    {
+      "first": "2026-07-29T01:15:00+00:00",
+      "key": [
+        "continuous",
+        "ec",
+        "MAIN",
+        "15m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ec-MAIN-15m",
+      "rows": 1200,
+      "sha256": "9a919e2712e3b1301678af7b369af2bc3f141db0bc8f183e297d347f2daff8b0",
+      "source_partition_sha256": [
+        "72c91901c0ab6672c0af5243f38918b85312766c4e7af4690857bb0ab02efa7e",
+        "378e326e6bf23b99ba1734fa4ed46fa5f369a90bbccbdb211f01d43cb63ed7a1",
+        "5e323923b8cec2266c80445b297409ce9e225dd65a0f5197fc908bf2d80116f7",
+        "5dab399fd92ab7fb9d863ca8492f315f3a150bb311bf50cbaf0e9a551ca2927f",
+        "d4a13eb0296b349d9e55e8690490cb5a577d49fa0f42b1df2ba704521a6baf03"
+      ]
+    },
+    {
+      "first": "2026-04-16T01:30:00+00:00",
+      "key": [
+        "continuous",
+        "ec",
+        "MAIN",
+        "30m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ec-MAIN-30m",
+      "rows": 1200,
+      "sha256": "57fbe9c7facbf44dd86931ff460c520d2b98356ae336c3e40133cc4a073de1d3",
+      "source_partition_sha256": [
+        "068d63db8031b24da1c402e963e266eea61181f35d2b10dcbb127a4040b2e400",
+        "701be5ebcc68b45f18ad662e82751c84fd0bf48dd8c372fde4a12a4f14782c47",
+        "1b087967e6f9a23db497880f99accaefb86dbff663b40e04decce21b16cabc0e",
+        "c764478fb9d229ed7a840ddc20dc11c6ebe57b55be9576aab9022856300f38cd",
+        "c31661c5b69937bc2dd74c9807e53f91a8854696a1e4e58ad91e56fadcda472d",
+        "43b310961d4e568e33239de4e58c67920ce7d46fa2b9398ddd2a4447a8cb4985",
+        "ff73270e03c98b4b126ce733882b51b2e52e87ec48a700300d5ba8d2890bea6b",
+        "2c4cba89da9df31b5d601e5d454fc49ea6ad5dcee9a270da7fc590a81b6a9069"
+      ]
+    },
+    {
+      "first": "2025-11-28T02:00:00+00:00",
+      "key": [
+        "continuous",
+        "ec",
+        "MAIN",
+        "60m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ec-MAIN-60m",
+      "rows": 1200,
+      "sha256": "4b5b17e6ec9d17a902581a3aea8681210e6064fa7cc0e8b89cd2a8fb5274b0de",
+      "source_partition_sha256": [
+        "ebe9a6a072658136e9d113b09ef9020cc0b9746cf468bfd50c2e44090fec43a2",
+        "44c660dfb278b326d0874bd196145e95fbda92a7b86daf8e39b1482951de91ef",
+        "4f5832c489c654a5d1ccf3618860d509d7a624c8b0e650fd8e704aa8a98bbf3b",
+        "a3b403104af3e23764f470432e91d9caee39b9404a9595c9950ba5886f5b4abd",
+        "86ef0ef0b96332a8b588b4ea525ddae73f2e3f8a4b018ee2f6ad50b7bea9bc17",
+        "d66623cb82bdaab7d17f703006b7a083d8d12c718d638baaa030301fc3bc54cc",
+        "eff6f8b7b0b9980847ef114b52e3ab21a4adabb19bbc27adf97747cb929b4f02",
+        "57307aa3a0465d0dfdb896659904eb8a18f3aa69dd0dfa44c2cbf1f35f246dd8",
+        "86dfe5c599ed435b1347a4082492558a1afff1e5b9871f5a8310a89bd3d42a7c",
+        "e510aa641e37800599f59ed80b84ce23e6a59e229a263d5f32149b0acbcaefaa",
+        "2145ffdf20b4b31088c6240f478f4acbe5318fcae0e6693d62d5cb8895bcee7b",
+        "e5445470700be440536e1564e25a9108a60c168c4c758f50cc434ae22fb04bbd",
+        "72fbd5ac013a115ec1fc1b9b09118bf4be036d8b055ee3361a19a7723ea8629e"
+      ]
+    },
+    {
+      "first": "2025-11-14T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "ec",
+        "MAIN",
+        "1d"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "ec-MAIN-1d",
+      "rows": 250,
+      "sha256": "709f86761b9037138080e119973e5ecde2756b6b7b1d50810d99aa7b27f9f6bd",
+      "source_partition_sha256": [
+        "0da32553c98b02e6dfcebba8d15dcae4ce4af7a4b7560ee1710f65d78137aa6b",
+        "8a1711de25797eaa7724ee7c584e6945ed1dd1a8a21952594e7e893d403af95f",
+        "66f3f0363ccc2a9a2df870fe90f645c11c5d2967f06b4faf89bf12a6575a9b44",
+        "fe13ebc88e70fcaccf882d51574d1d102c7435e236eec72fe80d303a4a501ac4",
+        "c973be23dd09a857342c8c7edcbe5208f38c59ca4345ad731df4200a11a405b7",
+        "5876c8a2dd55f36bc5e1b7c4ecc470f893c1308d73a7cb0e6b0c22a69db6b3dd",
+        "7fbeec458abc433eec9a3c29705dd3058eaa48b085373d18fcc6e825af5bb47b",
+        "49b64f2856ecb47c578affeb8ae4526dcbcfa44aeaebfe32a77e280536b7900e",
+        "159c04dd52c832a5e17577aa0d82a54076b29f5fdc30fa914d91d69a4538670b",
+        "51e63b3d1e9320cecae6cc33441cd9d902b9e444bfd2a8c29d9d376b431ef0de",
+        "e60d86e45e24db518f4747e2547adcaf2341a904092cda4129a6b26b65d88f27",
+        "343282a648307c3cb414463032c8f13c1c659f81f6aa307e99d4624253ecd582",
+        "f802120bf4a008de449a780d6efbb5eecb03ec1c97e43e8ba26c30074e53a6c4"
+      ]
+    },
+    {
+      "first": "2024-12-20T07:00:00+00:00",
+      "key": [
+        "continuous",
+        "ec",
+        "MAIN",
+        "1w"
+      ],
+      "last": "2026-11-20T07:00:00+00:00",
+      "name": "ec-MAIN-1w",
+      "rows": 100,
+      "sha256": "45b96ab52f6b1012c8413548f543774484dc0f6b28f4c19df17a835c2e4f7dbe",
+      "source_partition_sha256": [
+        "e579d2244e0cd61753f75a89682fffba62deba91ff9edd12f334abd16771058e",
+        "aabaa16d0f97be9d706eff8f983d3102e3c8410e795e6c191f24b3be88be9261",
+        "0681386ccbcd0ac61d235bcf71af0a0a3d89a851d02c1287b7decc8e937b9270",
+        "1bbf4c655965ae54eca1da3294d77aca9ae7f3401df2220ba118b25fda68186d",
+        "977d523033b7ba1416669b6d2d1543f22fa1cab5b4a4e872b9b749c20d49fec6",
+        "7a66bd1490e07992714bb6f09a2ab4ecb54bf8f824fb99b1ebcb71011a816226",
+        "d6b14ab0c4c8da1bfab54b926e89e230b8a5e54b8e4ca5531c2b82b50b3b37d6",
+        "b9d020f607048558101615364476b38cb14f9249e61231df11a44e7b3256a0de",
+        "c57eb35f12f01112a34a6e5b10f75df5e9621b6967ebac558746069d3da81d42",
+        "38233edd297b91af5ab22d6349eed18f3bea8cbfe85c098dd1cbe070e6018fe9",
+        "9dafc694f0901ee429872d437ab17a3ff347df9d0a9e8e00ea47a8398050e1d5",
+        "711d691904a377281fb5619a67bebf91ac89741541234842d425f8f1b70e09c4",
+        "b1d1d69bfff1ebba584742e6acb2536238798fd7af47fbe4449e80b832e4fcc7",
+        "ba9018da81df930e974c5d776897573bbab39a2fd2e750d4b73e0e09c462faf8",
+        "f9008f7292cc84c6b2ba860160e972d25911724bd7f13565db07d5aa1f3dc449",
+        "238a3dbb4b18526601fc9dcbc46e894d03a4f1e129d341feee015c0c6da706cf",
+        "902fff657de5efbbcdd0e5c9fac6eb6ecc146deaeb5d6e82be0cd677ab0e57ee",
+        "dfb52b4b5d6d0af845511bef518e12f56628a2e03c61b3398dcf92933974a66a",
+        "91ad57ec110f50f065eff25d65c01dd05b91aeea3708fa37073b0ad7ae20c6f0",
+        "e2e1373941823da8eb81d7d5826165cd6bb1e51b7739479d2152b2a3838a49fe",
+        "e5c703e554c7101ac34bc33a801bd6f95c2681ea907d6792b47b89524b90226f",
+        "2ad6dd0142e44144965e956f3fd1b24f7617eb796f1bc1a809ceb5a7e394f972",
+        "31466cc3ba27e164cdf692823a5d6145ef6bafc3dcff9e754216f045d7947569",
+        "562f2b3792a3b32eed87e9b695f55ddfca1f46176a978df38676d9c0b3ab7cc0"
+      ]
+    },
+    {
+      "first": "2026-11-05T01:56:00+00:00",
+      "key": [
+        "contract",
+        "rb",
+        "RB2701",
+        "1m"
+      ],
+      "last": "2026-11-25T07:00:00+00:00",
+      "name": "rb-RB2701-1m",
+      "rows": 5000,
+      "sha256": "c7b536e8f1094037f14a82c8fa43575d2a3c1610f9f380f663774b554fb383be",
+      "source_partition_sha256": [
+        "d74197ffded3f47d5f1a3188052c08d15dc3fae742ad1a01e3e01ecab51a266d"
+      ]
+    }
+  ],
+  "through": "2026-11-25"
+}

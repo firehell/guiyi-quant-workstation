@@ -10,7 +10,7 @@ from app.market_data.product_retirement import load_retired_products, normalize_
 
 _OPERATIONAL_PATH = PROJECT_ROOT / "data/universe/operational_products.txt"
 _ACTIVE_PATH = PROJECT_ROOT / "data/universe/active_products.txt"
-_EXPECTED_ACTIVE_COUNT = 60
+_EXPECTED_ACTIVE_COUNT = 58
 
 
 class ActiveUniverseError(ValueError):
@@ -32,7 +32,7 @@ class OperationalUniverseError(ValueError):
 
 
 def load_active_products(path: Path | None = None, *, retired_path: Path | None = None) -> tuple[str, ...]:
-    """按文件顺序加载 active 60，并校验唯一性及退役互斥。"""
+    """按文件顺序加载研究品种，并校验数量、唯一性及退役互斥。"""
     try:
         products = tuple(
             normalize_symbol(item)

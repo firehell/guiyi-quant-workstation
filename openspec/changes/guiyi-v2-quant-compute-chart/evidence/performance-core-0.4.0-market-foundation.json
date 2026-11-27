@@ -1,0 +1,98 @@
+{
+  "bars": 71274,
+  "cache_hot_latency_ms": [
+    0.0263,
+    0.0359,
+    0.0925
+  ],
+  "covered_product_frequencies": 418,
+  "host": "macOS-27.2.1-arm64-arm-64bit-Mach-O",
+  "incremental_latency_ms": [
+    0.0789,
+    0.0938,
+    0.1527
+  ],
+  "missing": [
+    [
+      "rs",
+      "1d",
+      "PRICE_UNAVAILABLE"
+    ],
+    [
+      "rs",
+      "1w",
+      "MAPPED_CONTRACT_DATASET_MISSING"
+    ]
+  ],
+  "new_comparable_batch": {
+    "cpu_seconds": 1.5297,
+    "process_peak_rss_bytes": 308772864,
+    "segment_latency_ms": [
+      0.1012,
+      1.8993,
+      3.1026
+    ],
+    "total_seconds": 1.5382
+  },
+  "new_expanded_batch": {
+    "cpu_seconds": 7.4532,
+    "process_peak_rss_bytes": 308772864,
+    "segment_latency_ms": [
+      0.5059,
+      7.8637,
+      12.7667
+    ],
+    "total_seconds": 7.4916
+  },
+  "numpy": "2.5.0",
+  "old_comparable_batch": {
+    "cpu_seconds": 2.312,
+    "process_peak_rss_bytes": 308183040,
+    "segment_latency_ms": [
+      0.1539,
+      3.5323,
+      5.0399
+    ],
+    "total_seconds": 2.3192
+  },
+  "owner_segments_by_frequency": {
+    "15m": 70,
+    "1d": 153,
+    "1m": 60,
+    "1w": 483,
+    "30m": 79,
+    "5m": 65,
+    "60m": 92
+  },
+  "quant_core": "0.4.0",
+  "queued_full_registry": {
+    "batch_job_latency_ms": [
+      3.974,
+      40.6278,
+      111.4117
+    ],
+    "cpu_seconds": 3.0512,
+    "process_peak_rss_bytes": 308772864,
+    "queue_load": {
+      "batch": {
+        "peak_pending": 4,
+        "pending": 0,
+        "rejected": 412
+      },
+      "incremental": {
+        "peak_pending": 0,
+        "pending": 0,
+        "rejected": 0
+      },
+      "live": {
+        "peak_pending": 0,
+        "pending": 0,
+        "rejected": 0
+      }
+    }
+  },
+  "repeats": 3,
+  "source_sha256": "871684391e461479f1797c558ffae3811f2d18f25bf1f17e4f5dab8fe3e5df48",
+  "ta_lib": "0.8.3.post1",
+  "through": "2026-11-26"
+}

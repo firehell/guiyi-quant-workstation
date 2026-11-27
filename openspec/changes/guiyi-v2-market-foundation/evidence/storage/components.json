@@ -1,0 +1,51 @@
+{
+  "headless": {
+    "bar_generator_fixture": {
+      "explicit_flush_requires_external_completion_proof": true,
+      "first_tick_baseline_not_emitted": true,
+      "negative_delta_silently_clamped": true,
+      "start_label": "2026-11-24T23:59:00+08:00"
+    },
+    "datafeed_subclass": true,
+    "event_ordered_fixture_events": 64,
+    "event_queue_capacity": 0,
+    "gui_loaded": false,
+    "headless_imports": [
+      "ManagerEngine",
+      "RecorderEngine"
+    ],
+    "native_database_subclass": true,
+    "versions": {
+      "rqdatac": "3.5.6.1",
+      "vnpy": "4.4.0",
+      "vnpy_datamanager": "1.2.0",
+      "vnpy_datarecorder": "1.1.1",
+      "vnpy_postgresql": "1.1.2",
+      "vnpy_rqdata": "3.4.7.8",
+      "vnpy_spreadtrading": "1.4.0"
+    }
+  },
+  "real_rqdata_history": {
+    "canonical_vs_frozen_mismatches": {},
+    "contract": "RB2701",
+    "first_bar_end": "2026-11-24T13:01:00+00:00",
+    "last_bar_end": "2026-11-25T07:00:00+00:00",
+    "provider_history_requests": 1,
+    "raw_nullable_count": {
+      "close": 0,
+      "high": 0,
+      "low": 0,
+      "open": 0,
+      "open_interest": 0,
+      "total_turnover": 0,
+      "volume": 0
+    },
+    "raw_response_sha256": "b423561e61309ead68e6f5d6684b07a3cf32009c2991cd22537bcabe8236fc0a",
+    "raw_start_label_shift_minutes": 1,
+    "rows": 345,
+    "synthetic_null_fixture_replaced_by_zero": true,
+    "trading_day": "2026-11-25",
+    "trading_day_preserved_by_vnpy": false,
+    "vnpy_vs_canonical_mismatches_after_label_alignment": {}
+  }
+}

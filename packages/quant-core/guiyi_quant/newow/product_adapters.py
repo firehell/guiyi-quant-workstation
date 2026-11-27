@@ -147,6 +147,9 @@ def _ready() -> FeatureStatus:
     return FeatureStatus(FeatureRuntimeStatus.READY, _ACTIVE)
 
 
+OSCILLATION_WARMUP_BARS = 10
+
+
 def _warming(code: str) -> FeatureStatus:
     return FeatureStatus(FeatureRuntimeStatus.WARMING, _ACTIVE, code)
 
@@ -596,7 +599,7 @@ def _oscillation_frame(
         _unavailable(result.diagnostics[0])
         if result.diagnostics
         else _warming("NEWOW_OSCILLATION_WARMING")
-        if result.state.history_count < 10
+        if result.state.history_count < OSCILLATION_WARMUP_BARS
         else _ready()
     )
     return (

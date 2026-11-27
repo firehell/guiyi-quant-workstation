@@ -336,6 +336,52 @@ def test_weekly_warming_auxiliary_keeps_chart_snapshot(product_cases):
     assert auxiliary.meta.as_of == chart.meta.as_of
 
 
+@pytest.mark.parametrize("component", (
+    "main_force_control", "up_down_energy", "trend_reversal", "zhaoyao_mirror", "cup_handle",
+))
+def test_auxiliary_uses_owned_calculation_without_changing_values(monkeypatch, product_cases, component):
+    from app.market_data.newow import auxiliary_dispatch
+    from guiyi_quant.newow.product_adapters import label_calculation_segments
+    from guiyi_quant.newow.product_auxiliary import calculate_auxiliary_component
+
+    service, reader, _, clear = _service(product_cases)
+    resolve = auxiliary_dispatch.owned_indicator
+    lookups = []
+
+    def record(feature_id, *, frequency, use):
+        lookups.append((feature_id, frequency, use))
+        return resolve(feature_id, frequency=frequency, use=use)
+
+    monkeypatch.setattr(auxiliary_dispatch, "owned_indicator", record)
+    result = service.query(ProductServiceQuery(
+        "rb", "trend", "1d", section="auxiliary", component=component, as_of=clear.bar_end,
+    ))
+    read = reader.load(reader.loads[-1], clear.bar_end)
+    identity = result.meta.identity
+    expected = calculate_auxiliary_component(
+        identity, label_calculation_segments(identity, read.replay_bars, read.data_interruptions),
+        component, as_of=read.as_of,
+    )
+    assert result.auxiliary.value == expected
+    assert lookups == [(f"newow.{component}", "1d", "web")]
+
+
+@pytest.mark.parametrize("component", ("zhaoyao_mirror", "cup_handle"))
+def test_auxiliary_rejects_mismatched_registered_formula(monkeypatch, product_cases, component):
+    from app.market_data.newow import auxiliary_dispatch
+
+    service, _, _, clear = _service(product_cases)
+    definition = auxiliary_dispatch.owned_indicator(f"newow.{component}", frequency="1d", use="web")
+    monkeypatch.setattr(
+        auxiliary_dispatch, "owned_indicator",
+        lambda *_args, **_kwargs: replace(definition, formula_version="wrong-version"),
+    )
+    with pytest.raises(ValueError, match="NEWOW_AUXILIARY_REGISTRY_MISMATCH"):
+        service.query(ProductServiceQuery(
+            "rb", "trend", "1d", section="auxiliary", component=component, as_of=clear.bar_end,
+        ))
+
+
 def test_weekly_v1_v2_services_do_not_share_cache_token_or_inflight_identity(
     product_cases,
 ):

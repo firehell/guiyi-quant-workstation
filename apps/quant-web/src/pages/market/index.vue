@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { loadMarketHomeTab as loadActiveTab, saveMarketHomeTab as saveActiveTab, type MarketHomeTab } from '@/utils/marketHomeTab'
 import '@/styles/marketHome.css'
 import MarketHomeHeader from '@/components/market/MarketHomeHeader.vue'
 import { normalizeProductOptions } from '@/utils/productSearch'
+import { formatBeijingInstant, formatDisplayNumber } from '@/utils/marketDisplay'
 import { productSectorLabel } from '@/utils/productDirectory'
 import { homeCardsReloadIdentity } from '@/utils/newowHomeCards'
 import MarketHomeStrategyCards from '@/components/market/MarketHomeStrategyCards.vue'
@@ -28,18 +29,24 @@ import { projectMarketHomeLiveRows } from '@/utils/marketHomeLiveView'
 import { homeSnapshotCache, homeCacheNamespace } from '@/api/homeSnapshotCache'
 import { validateStoredMarketHomeOverview } from '@/utils/marketHomeTypes'
 const router = useRouter()
+const route = useRoute()
 const initialPreferences = loadMarketHomePreferences()
 const sector = ref(initialPreferences.sector)
 const sort = ref<MarketHomeSort>(['change', 'target', 'daily', 'weekly', 'trend'].includes(initialPreferences.sort) ? initialPreferences.sort : 'default')
 const sortDirection = ref<MarketHomeSortDirection>(initialPreferences.sortDirection)
 const compactDensity = ref(initialPreferences.compactDensity)
 const activeTab = ref<MarketHomeTab>(loadActiveTab())
+watch(() => route.query.tab, tab => {
+  if (tab === 'market' || tab === 'messages' || tab === 'simulation') selectTab(tab)
+}, { immediate: true })
 const messageReloadSequence = ref(0)
 const cardReloadSequence = ref(0)
 const navigationError = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
+const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
+const receiptOnlyHome = marketFoundation
 const home = useMarketHome({
-  fetchOverview: getMarketHomeOverview,
+  fetchOverview: receiptOnlyHome ? undefined : getMarketHomeOverview,
   overviewNeedsRefresh: value => Boolean(value.projection_status && value.projection_status !== 'ready'),
   fetchDirectory: getMarketProductDirectory,
   fetchRuntime: getRuntimeHealth,
@@ -108,9 +115,10 @@ function openCardChart(symbol: string, strategy: 'trend' | 'oscillation', freque
 }
 function openEvent(event: AlertEvent) { rememberPageState(); void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
 function openView(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {
-  const frequencies = newowCapabilities.openFrequenciesFor(symbol)
+  const frequencies = receiptOnlyHome ? (['1d'] as const) : newowCapabilities.openFrequenciesFor(symbol)
   const frequency = frequencies.includes('1d') ? '1d' : frequencies[0] ?? null
-  if (view === 'newow' && (newowCapabilities.state.value !== 'ready' || frequency === null)) {
+  if (view === 'newow' && !receiptOnlyHome
+    && (newowCapabilities.state.value !== 'ready' || frequency === null)) {
     navigationError.value = newowCapabilities.error.value ?? '牛哇开放能力仍在读取，暂不能安全进入。'
     return
   }
@@ -169,7 +177,7 @@ watch([sector, sort, sortDirection, compactDensity], () => saveMarketHomePrefere
 onMounted(() => {
   home.start()
   live.start()
-  void newowCapabilities.load()
+  if (!receiptOnlyHome) void newowCapabilities.load()
   void nextTick(restorePageScroll)
 })
 
@@ -183,9 +191,21 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="market-dashboard-page">
-    <MarketHomeHeader :options="productOptions" :directory-status="directoryStatus" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @select-tab="selectTab" @open-view="openView" @refresh="refreshAll" />
+    <MarketHomeHeader :options="productOptions" :directory-status="directoryStatus" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @open-view="openView" @refresh="refreshAll" />
     <p v-if="navigationError" class="market-dashboard-page__navigation-error" role="alert">{{ navigationError }}</p>
-    <div v-show="activeTab === 'market'" style="display: contents">
+    <section v-if="receiptOnlyHome && activeTab === 'market'" class="market-home-main" aria-label="行情与盘后研究">
+      <p role="status">{{ liveStatus }} · 在品种页查看牛哇最近成功的盘后结果。</p>
+      <table>
+        <thead><tr><th>品种</th><th>物理合约</th><th>行情价格</th><th>行情时间</th></tr></thead>
+        <tbody><tr v-for="product in productOptions" :key="product.symbol">
+          <td><button type="button" @click="openView('newow', product.symbol)">{{ product.name }} {{ product.symbol.toUpperCase() }}</button></td>
+          <td>{{ live.items.value.get(product.symbol)?.physicalContract ?? '—' }}</td>
+          <td>{{ formatDisplayNumber(live.items.value.get(product.symbol)?.price) }}</td>
+          <td>{{ formatBeijingInstant(live.items.value.get(product.symbol)?.barEnd) }}</td>
+        </tr></tbody>
+      </table>
+    </section>
+    <div v-else-if="!receiptOnlyHome" v-show="activeTab === 'market'" style="display: contents">
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
       <section class="market-home-main">
       <p v-if="home.overview.unavailable.value && !home.overview.data.value" class="market-dashboard-page__error" role="alert">行情快照暂不可用；没有可展示的上一份成功快照。</p>

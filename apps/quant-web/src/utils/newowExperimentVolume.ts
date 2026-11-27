@@ -2,9 +2,11 @@ import type { ExperimentBar } from './newowExperiments.ts'
 import type { DisplayVolumeBar, VolumeBar } from './volumeDisplay.ts'
 export interface ExperimentVolumeSource extends VolumeBar {
   barEnd: string; segmentId: string; calculationSegmentId: string
+  sourceIdentity?: string
 }
+type ExperimentVolumeBar = DisplayVolumeBar & { sourceIdentity?: string }
 /** Experiment segments are calculation segments; join only the exact source owner and OHLC. */
-export function experimentVolumeBars(bars: readonly ExperimentBar[], source: readonly ExperimentVolumeSource[]): DisplayVolumeBar[] {
+export function experimentVolumeBars(bars: readonly ExperimentBar[], source: readonly ExperimentVolumeSource[]): ExperimentVolumeBar[] {
   const byTime = new Map(source.map(bar => [`${Date.parse(bar.barEnd)}:${bar.physicalContract}`, bar]))
   return bars.map(bar => {
     const input = byTime.get(`${Date.parse(bar.bar_end)}:${bar.physical_contract}`)
@@ -15,6 +17,7 @@ export function experimentVolumeBars(bars: readonly ExperimentBar[], source: rea
       segmentId: input && sameSource ? input.segmentId : bar.segment_id,
       calculationSegmentId: bar.calculation_segment_id,
       open: Number(bar.open), high: Number(bar.high), low: Number(bar.low), close: Number(bar.close),
-      volume: sameSource ? input.volume : undefined, confirmed: input?.confirmed }
+      volume: sameSource ? input.volume : undefined, confirmed: input?.confirmed,
+      sourceIdentity: sameSource ? input.sourceIdentity : undefined }
   })
 }

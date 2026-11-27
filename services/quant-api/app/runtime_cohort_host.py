@@ -59,6 +59,11 @@ class CohortHost(FaultRecoveryHost):
 
     def bytes(self, path, *, limit=None):
         path = Path(path)
+        if limit is None and path.parent.name == ".run" and path.name == "after-market-history.json":
+            from app.market_data.after_market_limits import MAX_HISTORY_BYTES
+            from app.runtime_identity import file_snapshot
+
+            return file_snapshot(path, limit=MAX_HISTORY_BYTES)[0]
         if (limit is None and path.parent == self.directory
                 and path.name == "newow-historical-refresh-state.json"):
             # Preserve the original control bytes under their existing reader
@@ -483,6 +488,10 @@ class CohortHost(FaultRecoveryHost):
         ):
             if service not in old.services or not old.services[service].enabled:
                 continue
+            if service == "reference-worker" and "market_source_handover" in plan:
+                # The target receipt-only role is checked on the staged Tick
+                # source before CAS. The old Redis serves the forward role.
+                continue
             env = dict(os.environ)
             b = new.services[service]
             previous_payload = plistlib.loads(
@@ -760,6 +769,9 @@ class CohortHost(FaultRecoveryHost):
 
     def preserve(self, plan, attempt):
         old, new = registry(plan["old"]), registry(plan["new"])
+        market_source = "market_source_handover" in plan
+        source = Path(old.services["after-market"].root) / ".run/after-market-status.json"
+        history_path = source.with_name("after-market-history.json")
         require(self.protected(old) == plan["protected"], "COHORT_PROTECTED_FACT_DRIFT")
         evidence = attempt / "originals"
         evidence.mkdir(mode=0o700)
@@ -773,9 +785,11 @@ class CohortHost(FaultRecoveryHost):
         )
         sources = {Path(name) for name in plan["protected"]["files"]}
         sources.update(stable)
+        if market_source:
+            sources.update((source, history_path))
         for service, name in (
             ("weekly-audit", "weekly-audit-status.json"),
-            ("late-provider-recovery", "late-provider-recovery-status.json"),
+            ("after-market", "late-provider-recovery-status.json"),
         ):
             sources.add(Path(old.services[service].root) / ".run" / name)
         captured = {}
@@ -823,23 +837,32 @@ class CohortHost(FaultRecoveryHost):
         )
         from app.market_data.operational_universe import load_operational_products
 
-        products = load_operational_products()
-        source = (
-            Path(old.services["after-market"].root) / ".run/after-market-status.json"
-        )
+        products = self._source_products if market_source else load_operational_products()
         history = read_history(
-            source.with_name("after-market-history.json"),
+            history_path,
             products=products,
             now=self.now(),
         )
+        if market_source and history:
+            require(
+                history["status"]["last_run"].get("error_code") != "COMMIT_OUTCOME_UNKNOWN",
+                "COHORT_AFTER_MARKET_READBACK_REQUIRED",
+            )
         if source.exists():
             raw = self.bytes(source)
+            if market_source:
+                require(raw == captured.get(source), "COHORT_ORIGINAL_DRIFT")
             public = public_after_market_status(json.loads(raw))
             require(
                 public and public.get("current_run") is None,
                 "COHORT_AFTER_MARKET_RUNNING",
             )
             last = public.get("last_run") or {}
+            if market_source:
+                require(
+                    last.get("error_code") != "COMMIT_OUTCOME_UNKNOWN",
+                    "COHORT_AFTER_MARKET_READBACK_REQUIRED",
+                )
             day = public.get("last_successful_trading_day")
             retained_day = (
                 history["status"].get("last_successful_trading_day")
@@ -872,9 +895,14 @@ class CohortHost(FaultRecoveryHost):
             not (target_root / ".run/after-market-status.json").exists(),
             "COHORT_TARGET_STATUS_PRESENT",
         )
-        if history and (target_root / ".run/after-market-history.json").exists():
+        target_history = target_root / ".run/after-market-history.json"
+        if market_source:
+            require(not os.path.lexists(target_history), "COHORT_TARGET_HISTORY_CONFLICT")
+            # The old archive covers the predecessor universe. Its status and
+            # receipt are retained in originals, outside successor authority.
+        elif history and target_history.exists():
             existing = read_history(
-                target_root / ".run/after-market-history.json",
+                target_history,
                 products=products,
                 now=self.now(),
             )
@@ -887,7 +915,7 @@ class CohortHost(FaultRecoveryHost):
                 "COHORT_TARGET_HISTORY_CONFLICT",
             )
         elif history:
-            publish_history(target_root / ".run/after-market-history.json", history)
+            publish_history(target_history, history)
         # Weekly status is natural evidence bound to its original release.
         # It is retained only in originals, never promoted into current status.
         require(
@@ -897,22 +925,28 @@ class CohortHost(FaultRecoveryHost):
         # Late-provider runs are separate one-shot control state (schema/runs),
         # not new-version natural acceptance. Preserve consumed and pending runs
         # byte-for-byte after the existing reader proves cross-root compatibility.
-        from app.market_data.late_provider_recovery import _read as read_late_state
+        from app.market_data.late_provider_recovery import _read as read_late_state, _unresolved_archive_commit
 
         late_source = (
-            Path(old.services["late-provider-recovery"].root)
+            Path(old.services["after-market"].root)
             / ".run/late-provider-recovery-status.json"
         )
         late_target = target_root / ".run/late-provider-recovery-status.json"
         require(not os.path.lexists(late_target), "COHORT_TARGET_LATE_STATE_PRESENT")
         if late_source in captured:
             raw = captured[late_source]
+            late_state = read_late_state(late_source)
             require(
-                read_late_state(late_source) == json.loads(raw),
+                late_state == json.loads(raw),
                 "COHORT_LATE_STATE_DRIFT",
             )
-            self._private_original(late_target, raw)
-            self._sync_directory(late_target.parent)
+            if market_source:
+                require(not _unresolved_archive_commit(late_state)
+                        and all(row["state"] != "claimed" for row in late_state["runs"].values()),
+                        "COHORT_LATE_STATE_READBACK_REQUIRED")
+            else:
+                self._private_original(late_target, raw)
+                self._sync_directory(late_target.parent)
         self._sync_directory(attempt)
         return {
             "original_files": sum(row["present"] for row in index),
@@ -978,6 +1012,9 @@ class CohortHost(FaultRecoveryHost):
                 os.unlink(temp)
 
     def commit(self, plan):
+        return write_bindings(self.check_commit(plan), expected_sha256=plan["registry_sha256"])
+
+    def check_commit(self, plan):
         self.check_schema_compatibility(plan)
         old, new = registry(plan["old"]), registry(plan["new"])
         require(
@@ -998,7 +1035,7 @@ class CohortHost(FaultRecoveryHost):
         require(datetime.fromisoformat(plan["created_at"]) <= now < datetime.fromisoformat(plan["expires_at"]),
                 "COHORT_PLAN_EXPIRED")
         require(monotonic() < self.deadline, "COHORT_DOWNTIME_EXCEEDED")
-        return write_bindings(new, expected_sha256=plan["registry_sha256"])
+        return new
 
     def start_consumers(self, plan):
         new = registry(plan["new"])
@@ -1007,7 +1044,7 @@ class CohortHost(FaultRecoveryHost):
                 self.start(new.services[name])
         return {"started": "consumers"}
 
-    def _feed_closed_healthy(self, binding, state, window):
+    def _feed_closed_healthy(self, binding, state, window, *, redis=None):
         """A Feed poll success and its own exact heartbeat must agree.
 
         Feed marks not-ready before every poll, including rejected polls which
@@ -1017,11 +1054,12 @@ class CohortHost(FaultRecoveryHost):
         from app.redis_connections import get_redis_connection
 
         try:
-            redis = get_redis_connection()
+            client = redis if redis is not None else get_redis_connection()
             try:
-                raw = redis.get("live:feed:heartbeat")
+                raw = client.get("live:feed:heartbeat")
             finally:
-                redis.close()
+                if redis is None:
+                    client.close()
             if not isinstance(raw, (str, bytes)) or len(raw) > 65536:
                 return False
             value = json.loads(raw)
@@ -1263,6 +1301,14 @@ class CohortHost(FaultRecoveryHost):
 
     def verify(self, plan, proof):
         modes = self._await_names(plan, continuous_services(registry(plan["new"])), proof, 120)
+        self.verify_continuous_identity(plan)
+        return {
+            "continuous_modes": modes,
+            "natural_acceptance": "pending",
+            "continuous_identity": "matched",
+        }
+
+    def verify_continuous_identity(self, plan):
         from app.services.deployment_identity import deployment_identity_health
 
         new = registry(plan["new"])
@@ -1286,11 +1332,6 @@ class CohortHost(FaultRecoveryHost):
                 == ("matched" if new.services[name].enabled else "disabled"),
                 "COHORT_CONTINUOUS_IDENTITY_UNPROVEN",
             )
-        return {
-            "continuous_modes": modes,
-            "natural_acceptance": "pending",
-            "continuous_identity": "matched",
-        }
 
     def restore_calendars(self, plan):
         new = registry(plan["new"])

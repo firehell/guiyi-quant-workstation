@@ -1,0 +1,98 @@
+{
+  "capture_sha256": "ff5116e42bf90ae00e52829a77d020e3adb7f0d17eec2f07ef5dae4ad3536c70",
+  "captures": [
+    {
+      "sha256": "ff5116e42bf90ae00e52829a77d020e3adb7f0d17eec2f07ef5dae4ad3536c70",
+      "end": null,
+      "first_proved": "2026-11-26T05:32:00+00:00",
+      "last_proved": "2026-11-26T05:34:00+00:00"
+    },
+    {
+      "sha256": "495be700889c70228d064f9e7776b93cfcdcc2d9b80bb712540b43f556996c3a",
+      "end": null,
+      "first_proved": "2026-11-26T05:38:00+00:00",
+      "last_proved": "2026-11-26T05:38:00+00:00"
+    },
+    {
+      "sha256": "8bf7d1ccadf849c870b0955af6cd2777d0a4e1520825fec8fa6e728e30783460",
+      "end": null,
+      "first_proved": "2026-11-26T07:00:00+00:00",
+      "last_proved": "2026-11-26T07:00:00+00:00"
+    }
+  ],
+  "contract": "RB2701",
+  "trading_day": "2026-11-26",
+  "tick_completed": 5,
+  "live_1m": 8,
+  "diagnostics": {
+    "TICK_MINUTE_UNPROVED": 313,
+    "TICK_OUTSIDE_SESSION": 1,
+    "tick_input": 982
+  },
+  "conflicting_endpoints": {
+    "tick": [],
+    "bar": []
+  },
+  "tick_to_live": {
+    "different_endpoints": [],
+    "overlap": 5,
+    "exact": 5,
+    "left_only": 0,
+    "right_only": 3,
+    "different_fields": {},
+    "first": "2026-11-26T05:32:00+00:00",
+    "last": "2026-11-26T07:00:00+00:00"
+  },
+  "endpoint_coverage": {
+    "expected": 345,
+    "tick": {
+      "covered": 5,
+      "missing_count": 340,
+      "unexpected": []
+    },
+    "live": {
+      "covered": 8,
+      "missing_count": 337,
+      "unexpected": []
+    },
+    "historical": {
+      "covered": 345,
+      "missing_count": 0,
+      "unexpected": []
+    }
+  },
+  "authority": "canonical",
+  "authority_day_rows": 345,
+  "authority_input_sha256": "b75807310210382517b6d214eba0cb72db256d1a12c62d44fab84d0ff5ffc6c2",
+  "tick_to_authority": {
+    "different_endpoints": [],
+    "overlap": 5,
+    "exact": 5,
+    "left_only": 0,
+    "right_only": 340,
+    "different_fields": {},
+    "first": "2026-11-26T05:32:00+00:00",
+    "last": "2026-11-26T07:00:00+00:00"
+  },
+  "live_to_authority": {
+    "different_endpoints": [
+      {
+        "end": "2026-11-26T05:31:00+00:00",
+        "fields": [
+          "volume",
+          "turnover"
+        ]
+      }
+    ],
+    "overlap": 8,
+    "exact": 7,
+    "left_only": 0,
+    "right_only": 337,
+    "different_fields": {
+      "turnover": 1,
+      "volume": 1
+    },
+    "first": "2026-11-26T05:31:00+00:00",
+    "last": "2026-11-26T07:00:00+00:00"
+  }
+}

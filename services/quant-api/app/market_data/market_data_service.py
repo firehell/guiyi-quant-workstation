@@ -474,9 +474,14 @@ class MarketDataService:
         trading_day: date,
     ) -> tuple[SessionWindow, ...]:
         """Read the authoritative Catalog TradingSession windows for one day."""
-
         try:
             assert_not_retired(symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        return self._catalog_session_windows(symbol, trading_day)
+
+    def _catalog_session_windows(self, symbol: str, trading_day: date) -> tuple[SessionWindow, ...]:
+        try:
             exchange = self.catalog.exchange_for_symbol(symbol)
             windows = session_windows_for_trading_day(
                 self.catalog.session,
@@ -484,8 +489,6 @@ class MarketDataService:
                 symbol=symbol,
                 trading_day=trading_day,
             )
-        except ProductRetiredError as exc:
-            raise MarketDataError("PRODUCT_RETIRED") from exc
         except (CatalogError, SessionClockError) as exc:
             raise MarketDataError(exc.code) from exc
         if not windows:
@@ -2517,12 +2520,17 @@ class MarketDataService:
         - 映射指向的合约分区缺失或交易日缺 bar 时整体失败，不部分返回。
         """
         try:
+            earliest = (
+                self._weekly_range_listing_boundary(request)
+                if request.frequency is BarFrequency.W1 else None
+            )
             session_windows = self.catalog.session_windows_overlapping_window(
                 request.symbol,
                 request.start,
                 request.end,
+                earliest=earliest,
             )
-        except CatalogError as exc:
+        except (CatalogError, InfrastructureError) as exc:
             raise MarketDataError(exc.code) from exc
         trading_days = tuple(day for day, _ in session_windows)
         if not trading_days:
@@ -2543,6 +2551,12 @@ class MarketDataService:
                 for day, windows in session_windows
                 if max(window.end for window in windows) <= request.end
             )
+            if earliest is not None and completed_mappings:
+                last_day = completed_mappings[-1].trade_date
+                sunday = last_day + timedelta(days=6 - last_day.weekday())
+                cutoff_day = request.end.astimezone(SHANGHAI).date()
+                if cutoff_day < sunday:
+                    self._exact_calendar(request.symbol, cutoff_day + timedelta(days=1), sunday)
             selected = self._weekly_mappings(request, completed_mappings)
         else:
             selected = selected_mappings
@@ -2590,6 +2604,27 @@ class MarketDataService:
                 request.end,
             )
         return self._result(request, tuple(bars), segments)
+
+    def _weekly_range_listing_boundary(self, request: SeriesQuery) -> date | None:
+        """Exclude only trade-date identities before the verified exchange listing."""
+        source = DatabaseCoverageSource(
+            self.catalog.session,
+            PROJECT_ROOT / "data/universe/product_window_starts.csv",
+        )
+        listing = source.exchange_listing_start(request.symbol)
+        start_day = request.start.astimezone(SHANGHAI).date()
+        if listing is None or listing <= start_day:
+            return None
+        end_day = request.end.astimezone(SHANGHAI).date()
+        if self.catalog.main_map(
+            request.symbol, start_day, min(end_day, listing - timedelta(days=1)),
+        ):
+            raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
+        if listing <= end_day:
+            calendar = self._exact_calendar(request.symbol, listing, end_day)
+            if not calendar[0][1]:
+                raise MarketDataError("TRADING_CALENDAR_MISSING")
+        return listing
 
     def _validate_actual_endpoints(
         self,
@@ -2687,6 +2722,10 @@ class MarketDataService:
 
     def latest_dominant_segment(self, symbol: str) -> DominantContractSegmentSummary:
         """返回最新连续 rank-1 合约区段；日历或映射缺口时整体失败。"""
+        try:
+            assert_not_retired(symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
         mappings = self.catalog.main_map_before(symbol, None)
         if not mappings:
             raise MarketDataError("DOMINANT_CONTEXT_MISSING")
@@ -2754,6 +2793,11 @@ class MarketDataService:
             assert_not_retired(normalized_symbol)
         except ProductRetiredError as exc:
             raise MarketDataError("PRODUCT_RETIRED") from exc
+        return self._catalog_dominant_segment_for_day(normalized_symbol, trading_day)
+
+    def _catalog_dominant_segment_for_day(
+        self, normalized_symbol: str, trading_day: date,
+    ) -> DominantContractSegmentSummary:
         segments = self._authoritative_rank1_segments(
             normalized_symbol,
             trading_day,

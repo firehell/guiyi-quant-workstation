@@ -42,6 +42,7 @@ from app.market_data.actual_dominant_research import (
 )
 from app.market_data.aggregation import SessionWindow, expected_intraday_ends
 from app.market_data.domain import (
+    canonical_bar_source_sha256,
     ActualDominantTradingDayQuery,
     BarFrequency,
     CanonicalBar,
@@ -2040,15 +2041,7 @@ def _product_bar(
     ):
         raise NewowProductReadError("NEWOW_DATA_IDENTITY_INVALID")
     try:
-        source_bar_sha256 = sha256(json.dumps(
-            (
-                bar.bar_end.isoformat(), bar.trading_day.isoformat(),
-                str(bar.open), str(bar.high), str(bar.low), str(bar.close),
-                str(bar.volume), str(bar.turnover),
-                None if bar.open_interest is None else str(bar.open_interest),
-            ),
-            separators=(",", ":"),
-        ).encode()).hexdigest()
+        source_bar_sha256 = canonical_bar_source_sha256(bar)
         return ProductBar(
             NewowDailyBar(
                 product,

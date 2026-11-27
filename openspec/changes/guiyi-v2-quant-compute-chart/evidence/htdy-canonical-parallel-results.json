@@ -1,0 +1,310 @@
+{
+  "checked_date_asia_shanghai": "2026-11-27",
+  "checkout_base": "a8a292de5ef6878aefb26fd5ab17f2a2b6215be4",
+  "host": "Apple M4, 10 logical CPUs, 16 GB RAM",
+  "run_order": [
+    "p1",
+    "b1",
+    "b2",
+    "p2",
+    "p3",
+    "b3"
+  ],
+  "fixture": {
+    "market": "controlled Tick replay through Feed, completed Redis journal and PortfolioMarket",
+    "market_terminal": "2026-11-26 11:00 Asia/Shanghai, after reopening from 10:00",
+    "canonical": "one revised retained receipt per parallel trial, separate process and schema/Parquet; shared disposable PostgreSQL instance",
+    "canonical_windows": 8,
+    "canonical_1m_bars_per_window": 2160,
+    "canonical_features": [
+      "ema10",
+      "ema21",
+      "macd",
+      "atr"
+    ]
+  },
+  "method": {
+    "latency": "monotonic wall time, after Redis completed-batch publish returns to each native SQLite H1 command returning; includes fixture readback and serialized ledger writes",
+    "percentiles": "pooled per-product values from three H1 batches in each mode, linear interpolation",
+    "overlap": "intersections of Live work callbacks and Canonical queue job wall-time intervals; first Canonical interval includes one start notification",
+    "source_backlog": "unconsumed Redis source entries after the Live consumer cursor at sample end"
+  },
+  "summary": {
+    "baseline": {
+      "batches": 3,
+      "samples": 48,
+      "p50_ms": 1728.602,
+      "p95_ms": 1812.374,
+      "max_ms": 1814.51
+    },
+    "parallel": {
+      "batches": 3,
+      "samples": 48,
+      "p50_ms": 2031.388,
+      "p95_ms": 2220.488,
+      "max_ms": 2222.474
+    },
+    "parallel_p95_delta_ms": 408.114,
+    "parallel_p95_delta_percent": 22.52
+  },
+  "trials": {
+    "p1": {
+      "mode": "parallel",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "checkout_source",
+      "core_distribution_metadata_version": "0.4.0",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 1933.645,
+        "EC": 1934.539,
+        "FG": 1935.5,
+        "I": 1936.413,
+        "JM": 1937.273,
+        "LC": 1938.141,
+        "MA": 1939.047,
+        "OI": 1939.967,
+        "PR": 1940.998,
+        "RB": 1941.921,
+        "SA": 1942.782,
+        "SC": 1943.673,
+        "SH": 1944.597,
+        "TA": 1945.479,
+        "UR": 1946.352,
+        "V": 1947.231
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "all_16_watermarks_at": "2026-11-26T03:00:00+00:00",
+      "canonical": {
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "updates": 32,
+        "replayed_updates": 0,
+        "queued_jobs": 8,
+        "receipt_accept_ms": 714.908,
+        "receipt_to_h1_pipeline_overlap_ms": 591.85,
+        "worker_overlap_by_live_product_ms": {
+          "JM": 6.717,
+          "LC": 7.144,
+          "RB": 3.633
+        }
+      }
+    },
+    "b1": {
+      "mode": "baseline",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "checkout_source",
+      "core_distribution_metadata_version": "0.4.0",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 1721.831,
+        "EC": 1722.731,
+        "FG": 1723.621,
+        "I": 1724.46,
+        "JM": 1725.276,
+        "LC": 1726.154,
+        "MA": 1727.065,
+        "OI": 1728.159,
+        "PR": 1729.045,
+        "RB": 1729.916,
+        "SA": 1730.85,
+        "SC": 1731.704,
+        "SH": 1732.601,
+        "TA": 1733.455,
+        "UR": 1734.289,
+        "V": 1735.117
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "all_16_watermarks_at": "2026-11-26T03:00:00+00:00"
+    },
+    "b2": {
+      "mode": "baseline",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "checkout_source",
+      "core_distribution_metadata_version": "0.4.0",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 1800.018,
+        "EC": 1801.095,
+        "FG": 1802.045,
+        "I": 1803.241,
+        "JM": 1804.098,
+        "LC": 1804.994,
+        "MA": 1806.235,
+        "OI": 1807.188,
+        "PR": 1808.108,
+        "RB": 1808.93,
+        "SA": 1809.754,
+        "SC": 1810.893,
+        "SH": 1811.78,
+        "TA": 1812.694,
+        "UR": 1813.522,
+        "V": 1814.51
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "all_16_watermarks_at": "2026-11-26T03:00:00+00:00"
+    },
+    "p2": {
+      "mode": "parallel",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "checkout_source",
+      "core_distribution_metadata_version": "0.4.0",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2208.411,
+        "EC": 2209.425,
+        "FG": 2210.261,
+        "I": 2211.196,
+        "JM": 2212.352,
+        "LC": 2213.249,
+        "MA": 2214.106,
+        "OI": 2214.924,
+        "PR": 2215.755,
+        "RB": 2216.622,
+        "SA": 2217.552,
+        "SC": 2218.481,
+        "SH": 2219.913,
+        "TA": 2220.798,
+        "UR": 2221.619,
+        "V": 2222.474
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "all_16_watermarks_at": "2026-11-26T03:00:00+00:00",
+      "canonical": {
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "updates": 32,
+        "replayed_updates": 0,
+        "queued_jobs": 8,
+        "receipt_accept_ms": 707.021,
+        "receipt_to_h1_pipeline_overlap_ms": 589.864,
+        "worker_overlap_by_live_product_ms": {
+          "JM": 6.884,
+          "SA": 1.485
+        }
+      }
+    },
+    "p3": {
+      "mode": "parallel",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "checkout_source",
+      "core_distribution_metadata_version": "0.4.0",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 2023.865,
+        "EC": 2025.071,
+        "FG": 2025.965,
+        "I": 2027.218,
+        "JM": 2028.075,
+        "LC": 2029.244,
+        "MA": 2030.091,
+        "OI": 2030.949,
+        "PR": 2031.827,
+        "RB": 2032.751,
+        "SA": 2033.907,
+        "SC": 2034.885,
+        "SH": 2035.88,
+        "TA": 2037.143,
+        "UR": 2038.831,
+        "V": 2039.982
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "all_16_watermarks_at": "2026-11-26T03:00:00+00:00",
+      "canonical": {
+        "queue": {
+          "pending": 0,
+          "peak_pending": 1,
+          "rejected": 0
+        },
+        "updates": 32,
+        "replayed_updates": 0,
+        "queued_jobs": 8,
+        "receipt_accept_ms": 725.828,
+        "receipt_to_h1_pipeline_overlap_ms": 592.464,
+        "worker_overlap_by_live_product_ms": {
+          "LC": 6.615
+        }
+      }
+    },
+    "b3": {
+      "mode": "baseline",
+      "architecture": "arm64",
+      "logical_cpus": 10,
+      "core_import": "checkout_source",
+      "core_distribution_metadata_version": "0.4.0",
+      "completed_publish_return_to_sqlite_commit_return_ms": {
+        "CJ": 1706.431,
+        "EC": 1707.454,
+        "FG": 1708.432,
+        "I": 1709.285,
+        "JM": 1710.311,
+        "LC": 1711.212,
+        "MA": 1712.103,
+        "OI": 1713.023,
+        "PR": 1713.99,
+        "RB": 1714.844,
+        "SA": 1715.653,
+        "SC": 1716.47,
+        "SH": 1717.301,
+        "TA": 1718.239,
+        "UR": 1719.161,
+        "V": 1720.087
+      },
+      "live_queue": {
+        "pending": 0,
+        "peak_pending": 1,
+        "rejected": 0
+      },
+      "source_backlog": 0,
+      "completed_h1_originals": 32,
+      "new_h1_ledger_commands": 16,
+      "idempotent_h1_ledger_replays": 16,
+      "all_16_watermarks_at": "2026-11-26T03:00:00+00:00"
+    }
+  }
+}

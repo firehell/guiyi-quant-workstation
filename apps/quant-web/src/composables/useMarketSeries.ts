@@ -1,23 +1,27 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { candidatePreview } from '../utils/candidatePreview.ts'
 import { resolveWsURL } from '../utils/network.ts'
 import { normalizeBarSeries } from '../utils/barSeries.ts'
-import { normalizeMarketBarWire } from '../api/marketWire.ts'
+import { historicalDisplayBar, normalizePhysicalContract, toBarData } from '../utils/marketBarDisplay.ts'
+import { normalizeMarketBarWire, normalizeMarketTickQuoteWire } from '../api/marketWire.ts'
 import type {
   BarData,
   CanonicalBarDto,
+  MarketActivityFrame,
   MarketBarsPageRequest,
   MarketBarsPageResponse,
   MarketFrequency,
   MarketOverlaySource,
   MarketReadState,
+  MarketStudyActivity,
+  MarketTickQuote,
   MarketWsMessage,
   SeriesKind,
 } from '../types/market'
 
 /** Keep the initial chart readable and cap first-render indicator work. */
 const DEFAULT_PAGE_LIMIT = 300
-const RECONNECT_DELAY_MS = 10_000
+const MAX_RECONNECT_DELAY_MS = 10_000
 const INTRADAY_FREQUENCIES = new Set<MarketFrequency>(['1m', '5m', '15m', '30m', '60m'])
 
 export interface MarketSeriesIdentity {
@@ -31,15 +35,6 @@ export interface MergedMarketPage {
   bars: BarData[]
   hasMoreBefore: boolean
   nextBefore: string | null
-}
-
-export class MarketSeriesPhysicalIdentityError extends Error {
-  readonly code = 'MARKET_SERIES_SEGMENT_CONFLICT'
-
-  constructor() {
-    super('MARKET_SERIES_SEGMENT_CONFLICT')
-    this.name = 'MarketSeriesPhysicalIdentityError'
-  }
 }
 
 interface MarketOverlayIdentity {
@@ -67,54 +62,6 @@ export interface MarketSeriesDependencies {
   resolveWsURL?: () => string
   scheduleReconnect?: (callback: () => void, delayMs: number) => unknown
   clearReconnect?: (handle: unknown) => void
-}
-
-function normalizePhysicalContract(value: string | null | undefined): string | undefined {
-  const normalized = value?.trim().toUpperCase()
-  return normalized || undefined
-}
-
-export function resolveHistoricalPhysicalContract(
-  page: MarketBarsPageResponse,
-  bar: CanonicalBarDto,
-): string | undefined {
-  if (page.request.series_kind === 'contract') return normalizePhysicalContract(page.request.contract)
-  if (page.request.series_kind === 'continuous') return undefined
-
-  const matches = page.resolved_contract_segments.filter((segment) => (
-    segment.start_trading_day <= bar.trading_day && bar.trading_day <= segment.end_trading_day
-  ))
-  if (matches.length !== 1) throw new MarketSeriesPhysicalIdentityError()
-  const contract = normalizePhysicalContract(matches[0].contract)
-  if (!contract) throw new MarketSeriesPhysicalIdentityError()
-  return contract
-}
-
-/** Maps an already-normalized display DTO without repeating wire coercion. */
-function toBarData(item: CanonicalBarDto, physicalContract?: string): BarData {
-  return {
-    time: item.bar_end,
-    trading_day: item.trading_day,
-    physicalContract,
-    open: item.open,
-    high: item.high,
-    low: item.low,
-    close: item.close,
-    volume: item.volume,
-    turnover: item.turnover === null ? undefined : item.turnover,
-    openInterest: item.open_interest === null ? undefined : item.open_interest,
-  }
-}
-
-/** Display segments come from the resolver's mapping intervals and strict page
- * endpoint/quality validation, not a guessed contract or a strategy quality ID. */
-function historicalDisplayBar(page: MarketBarsPageResponse, bar: CanonicalBarDto): BarData {
-  const physicalContract = resolveHistoricalPhysicalContract(page, bar)
-  const segment = page.resolved_contract_segments.find(item => item.contract.toUpperCase() === physicalContract
-    && item.start_trading_day <= bar.trading_day && bar.trading_day <= item.end_trading_day)
-  const calculationSegmentId = segment ? `${physicalContract}:${segment.start_trading_day}`
-    : page.request.series_kind === 'contract' && physicalContract ? `contract:${physicalContract}` : undefined
-  return { ...toBarData(bar, physicalContract), calculationSegmentId }
 }
 
 export function mergeInitialPage(page: MarketBarsPageResponse): MergedMarketPage {
@@ -195,17 +142,22 @@ function loadedCanonicalCoverage(items: BarData[]): MarketBarsPageResponse['cano
   return { start: items[0].time, end: items.at(-1)!.time }
 }
 
+function canonicalRevision(state: MarketReadState): string | null {
+  const revision = state.canonical_revision
+  return state.display_preview === true && typeof revision === 'string' && /^[0-9a-f]{64}$/.test(revision)
+    ? revision : null
+}
+
 function isLater(left: string | null, right: string | null): boolean {
   return left !== null && (right === null || Date.parse(left) > Date.parse(right))
 }
 
-function socketUrl(base: string, identity: MarketSeriesIdentity, after: string | null): string {
+function socketUrl(base: string, identity: MarketSeriesIdentity): string {
   const url = new URL(base, base.includes('://') ? undefined : 'ws://market.local')
   url.searchParams.set('series_kind', identity.seriesKind)
   url.searchParams.set('symbol', identity.symbol)
   url.searchParams.set('frequency', identity.frequency)
   if (identity.seriesKind === 'contract' && identity.contract) url.searchParams.set('contract', identity.contract)
-  if (after) url.searchParams.set('after', after)
   return url.toString()
 }
 
@@ -215,6 +167,12 @@ function isIdentityLiveCapable(identity: MarketSeriesIdentity, state: MarketRead
   return identity.seriesKind === 'contract'
     && !!identity.contract
     && identity.contract.toUpperCase() === state.live_contract?.toUpperCase()
+}
+
+function physicalOwnerMatches(identity: MarketSeriesIdentity, contract: string): boolean {
+  return /^[A-Z]+[0-9]+$/.test(contract) && contract.replace(/[0-9]+$/, '').toLowerCase() === identity.symbol
+    && (identity.seriesKind === 'actual_dominant'
+      || (identity.seriesKind === 'contract' && normalizePhysicalContract(identity.contract) === contract))
 }
 
 function shouldAwaitAfterMarketSeam(
@@ -240,16 +198,32 @@ function normalizeMarketWsMessage(value: unknown): MarketWsMessage | null {
     const message = value as { type: 'bar'; bar: unknown }
     return { type, bar: normalizeMarketBarWire(message.bar, 'websocket.bar') }
   }
-  if (type === 'snapshot') {
-    const message = value as { type: 'snapshot'; source: MarketOverlaySource; trading_day: string | null; contract: string | null; bars: unknown }
+  if (type === 'snapshot' || type === 'retained') {
+    const message = value as Extract<MarketWsMessage, { type: 'snapshot' | 'retained' }>
     if (!Array.isArray(message.bars)) return null
     return { ...message, bars: message.bars.map((bar, index) => normalizeMarketBarWire(bar, `websocket.bars[${index}]`)) }
+  }
+  if (type === 'preview') {
+    const message = value as Extract<MarketWsMessage, { type: 'preview' }>
+    return {
+      type,
+      quote: message.quote === null ? null : normalizeMarketTickQuoteWire(message.quote),
+      activity: message.activity === null ? null : {
+        ...message.activity,
+        bar: normalizeMarketBarWire(message.activity?.bar, 'websocket.activity.bar'),
+      },
+    }
   }
   return null
 }
 
 export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   const bars = ref<BarData[]>([])
+  const activity = ref<MarketStudyActivity | null>(null)
+  const quote = ref<MarketTickQuote | null>(null)
+  const visibleActivity = computed(() => activity.value && isLater(activity.value.bar.time, latestEnd(bars.value))
+    ? activity.value : null)
+  const activeBar = computed(() => visibleActivity.value?.bar ?? null)
   const hasMoreBefore = ref(false)
   const nextBefore = ref<string | null>(null)
   const canonicalCoverage = ref<MarketBarsPageResponse['canonical_coverage']>(null)
@@ -271,13 +245,45 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   let identity: MarketSeriesIdentity | null = null
   let canonicalBars: BarData[] = []
   let liveBars: BarData[] = []
+  let retainedBars: BarData[] = []
   let activeSocket: MarketWebSocket | null = null
   let reconnectHandle: unknown = null
+  let reconnectAttempts = 0
+  let pendingReconnect: (() => void) | null = null
   let canonicalRefreshToken = 0
+  const appliedCanonicalRevision = ref<string | null>(null)
+  let revisionRefresh: { revision: string; promise: Promise<boolean> } | null = null
   let overlayIdentity: MarketOverlayIdentity | null = null
   let loadingBeforePromise: Promise<void> | null = null
+  const studyRevisionPending = computed(() => {
+    const state = marketState.value
+    const revision = state && canonicalRevision(state)
+    return revision !== null && revision !== appliedCanonicalRevision.value
+  })
+  const canonicalEdgePending = computed(() =>
+    isLater(marketState.value?.canonical_end ?? null, canonicalCoverage.value?.end ?? null))
+  const studyActivity = computed(() => {
+    const phase = marketState.value?.phase
+    return (phase === 'TRADING' || phase === 'BREAK') && !canonicalEdgePending.value
+      ? visibleActivity.value : null
+  })
+  const studySocketHasBars = ref(false)
+  const studyCompletedAvailable = computed(() => {
+    const state = marketState.value
+    const latest = bars.value.at(-1)
+    if (!studySocketHasBars.value || !state || canonicalEdgePending.value
+      || latest?.marketSource !== 'completed_live' || latest.trading_day !== state.trading_day) return false
+    return overlaySource.value === 'realtime' && !liveUnavailable.value && state.live_available
+      && latest.physicalContract === normalizePhysicalContract(state.live_contract)
+  })
+
+  function clearPreview(): void {
+    quote.value = null
+    activity.value = null
+  }
 
   function clearOverlay(): void {
+    studySocketHasBars.value = false
     liveBars = []
     overlaySource.value = 'none'
     overlayIdentity = null
@@ -290,11 +296,14 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       overlaySource.value = 'none'
       overlayIdentity = null
     }
-    bars.value = normalizeBarSeries([...canonicalBars, ...liveBars])
+    retainedBars = retainedBars.filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam))
+    bars.value = normalizeBarSeries([...canonicalBars, ...retainedBars, ...liveBars])
     mutation.value = nextMutation
   }
 
   function clearSocket(): void {
+    studySocketHasBars.value = false
+    pendingReconnect = null
     if (reconnectHandle !== null) {
       clearReconnect(reconnectHandle)
       reconnectHandle = null
@@ -310,13 +319,18 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     const requestGeneration = ++generation
     reads.abort(); reads = new AbortController()
     clearSocket()
+    reconnectAttempts = 0
     identity = nextIdentity ? { ...nextIdentity } : null
     canonicalBars = []
+    retainedBars = []
+    clearPreview()
     clearOverlay()
     hasMoreBefore.value = false
     nextBefore.value = null
     canonicalCoverage.value = null
     canonicalRefreshToken += 1
+    appliedCanonicalRevision.value = null
+    revisionRefresh = null
     marketState.value = null
     liveUnavailable.value = false
     loadingBefore.value = false
@@ -330,7 +344,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     nextIdentity: MarketSeriesIdentity,
     nextState: MarketReadState,
   ): boolean {
-    return isIdentityLiveCapable(nextIdentity, nextState)
+    return nextState.display_preview === true || isIdentityLiveCapable(nextIdentity, nextState)
       || shouldAwaitAfterMarketSeam(nextIdentity, nextState)
   }
 
@@ -339,12 +353,38 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     nextIdentity: MarketSeriesIdentity,
     refreshToken: number,
     expectedCanonicalEnd: string,
+    revision: string | null = null,
   ): Promise<boolean> {
     const signal = reads.signal
+    const isCurrent = () => isCurrentGeneration(requestGeneration, generation) && refreshToken === canonicalRefreshToken
     try {
+      // Let an already requested older page settle; reread the entire loaded
+      // window, including that page, before accepting a revised history.
+      if (revision && loadingBeforePromise) await loadingBeforePromise.catch(() => undefined)
+      if (!isCurrent()) return false
+      const loadedStart = revision ? canonicalBars[0]?.time : undefined
       const page = await fetchPage(toPageRequest(nextIdentity), signal)
-      if (!isCurrentGeneration(requestGeneration, generation) || refreshToken !== canonicalRefreshToken) return false
-      const merged = mergeInitialPage(page)
+      if (!isCurrent()) return false
+      let merged = mergeInitialPage(page)
+      while (loadedStart && merged.bars.length && Date.parse(merged.bars[0].time) > Date.parse(loadedStart)
+        && merged.hasMoreBefore) {
+        const cursor = merged.nextBefore
+        if (!cursor || Date.parse(cursor) !== Date.parse(merged.bars[0].time)) {
+          throw new Error('MARKET_HISTORY_CURSOR_NOT_ADVANCING')
+        }
+        const older = await fetchPage(toPageRequest(nextIdentity, cursor), signal)
+        if (!isCurrent()) return false
+        const advanced = prependHistoricalPage(merged.bars, older)
+        if (Date.parse(advanced.bars[0].time) >= Date.parse(cursor)) {
+          throw new Error('MARKET_HISTORY_CURSOR_NOT_ADVANCING')
+        }
+        merged = advanced
+      }
+      if (revision) {
+        const verifiedState = await fetchState(nextIdentity, signal)
+        if (!isCurrent()) return false
+        if (canonicalRevision(verifiedState) !== revision) throw new Error('MARKET_HISTORY_REVISION_CHANGED')
+      }
       const fresh = merged.bars
       const freshEnd = latestEnd(fresh)
       if (freshEnd === null || Date.parse(freshEnd) < Date.parse(expectedCanonicalEnd)) {
@@ -355,16 +395,23 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         }
         return false
       }
-      const freshStart = fresh[0].time
-      canonicalBars = normalizeBarSeries([
-        ...canonicalBars.filter((bar) => Date.parse(bar.time) < Date.parse(freshStart)),
-        ...fresh,
-      ])
+      if (revision) {
+        appliedCanonicalRevision.value = revision
+        canonicalBars = fresh
+        hasMoreBefore.value = merged.hasMoreBefore
+        nextBefore.value = merged.nextBefore
+      } else {
+        const freshStart = fresh[0].time
+        canonicalBars = normalizeBarSeries([
+          ...canonicalBars.filter((bar) => Date.parse(bar.time) < Date.parse(freshStart)),
+          ...fresh,
+        ])
+      }
       canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
       publishMerged({ kind: 'replace' })
       return true
     } catch {
-      if (isCurrentGeneration(requestGeneration, generation) && refreshToken === canonicalRefreshToken) {
+      if (isCurrent()) {
         liveUnavailable.value = true
         if (overlaySource.value !== 'post_close') {
           clearOverlay()
@@ -375,21 +422,107 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     }
   }
 
+  function reconcileCanonical(
+    requestGeneration: number, nextIdentity: MarketSeriesIdentity, state: MarketReadState,
+  ): Promise<boolean> | null {
+    const end = state.canonical_end
+    if (!end) return null
+    const revision = canonicalRevision(state)
+    if (revision && revision !== appliedCanonicalRevision.value) {
+      if (revisionRefresh?.revision === revision) return revisionRefresh.promise
+      const promise = refreshCanonicalEdge(requestGeneration, nextIdentity, ++canonicalRefreshToken, end, revision)
+      const attempt = { revision, promise }
+      revisionRefresh = attempt
+      void promise.then((ok) => {
+        if (revisionRefresh !== attempt) return
+        revisionRefresh = null
+        if (!ok && isCurrentGeneration(requestGeneration, generation)) {
+          clearSocket()
+          clearPreview()
+          marketState.value = null
+          retryLive(requestGeneration, nextIdentity)
+        }
+      })
+      return promise
+    }
+    if (revisionRefresh) return revisionRefresh.promise
+    return isLater(end, latestEnd(canonicalBars))
+      ? refreshCanonicalEdge(requestGeneration, nextIdentity, ++canonicalRefreshToken, end) : null
+  }
+
   function applyLiveBars(incoming: CanonicalBarDto[], physicalContract?: string): boolean {
     const seam = latestEnd(canonicalBars)
     const accepted = normalizeBarSeries(incoming
-      .map((bar) => ({ ...toBarData(bar, physicalContract), confirmed: false }))
+      .map((bar) => ({ ...toBarData(bar, physicalContract), confirmed: false, marketSource: 'completed_live' as const }))
       .filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam)))
     if (!accepted.length) return false
     liveBars = normalizeBarSeries([...liveBars, ...accepted])
+    studySocketHasBars.value = true
     publishMerged({ kind: 'live', bars: accepted })
     return true
+  }
+
+  function retryLive(requestGeneration: number, nextIdentity: MarketSeriesIdentity): void {
+    if (!isCurrentGeneration(requestGeneration, generation)) return
+    liveUnavailable.value = true
+    if (reconnectHandle !== null) return
+    const delay = Math.min(1000 * 2 ** reconnectAttempts, MAX_RECONNECT_DELAY_MS)
+    reconnectAttempts += 1
+    const reconnect = () => {
+      if (pendingReconnect !== reconnect || !isCurrentGeneration(requestGeneration, generation)) return
+      pendingReconnect = null
+      reconnectHandle = null
+      const state = marketState.value
+      if (state && shouldKeepStateSocket(nextIdentity, state)) openSocket(requestGeneration, nextIdentity)
+      else void connectFromState(requestGeneration, nextIdentity)
+    }
+    pendingReconnect = reconnect
+    reconnectHandle = scheduleReconnect(reconnect, delay)
+  }
+
+  async function connectFromState(requestGeneration: number, nextIdentity: MarketSeriesIdentity): Promise<void> {
+    if (candidatePreview.enabled) return
+    try {
+      const state = await fetchState(nextIdentity, reads.signal)
+      if (!isCurrentGeneration(requestGeneration, generation)) return
+      const recovering = liveUnavailable.value
+      marketState.value = state
+      const canonicalRefresh = recovering || canonicalRevision(state)
+        ? reconcileCanonical(requestGeneration, nextIdentity, state) : null
+      if (canonicalRefresh) {
+        const refreshed = await canonicalRefresh
+        if (!isCurrentGeneration(requestGeneration, generation)) return
+        if (!refreshed) {
+          marketState.value = null
+          retryLive(requestGeneration, nextIdentity)
+          return
+        }
+      }
+      if (shouldKeepStateSocket(nextIdentity, state)) {
+        openSocket(requestGeneration, nextIdentity)
+      } else if (state.operational && INTRADAY_FREQUENCIES.has(nextIdentity.frequency)
+          && !state.live_contract && (state.phase === 'TRADING' || state.phase === 'UNKNOWN')) {
+        retryLive(requestGeneration, nextIdentity)
+      } else {
+        liveUnavailable.value = false
+      }
+    } catch {
+      retryLive(requestGeneration, nextIdentity)
+    }
   }
 
   function openSocket(requestGeneration: number, nextIdentity: MarketSeriesIdentity): void {
     if (candidatePreview.enabled) return
     if (!isCurrentGeneration(requestGeneration, generation) || !marketState.value || !shouldKeepStateSocket(nextIdentity, marketState.value)) return
-    const socket = createWebSocket(socketUrl(getWsURL(), nextIdentity, latestEnd(liveBars)))
+    let socket: MarketWebSocket
+    try {
+      // A reconnect may have missed a bar older than the latest one rendered.
+      // The server's day-scoped snapshot starts at the Canonical seam.
+      socket = createWebSocket(socketUrl(getWsURL(), nextIdentity))
+    } catch {
+      retryLive(requestGeneration, nextIdentity)
+      return
+    }
     activeSocket = socket
     socket.onmessage = (event) => {
       if (!isCurrentGeneration(requestGeneration, generation) || socket !== activeSocket) return
@@ -400,9 +533,52 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         return
       }
       if (payload === null) return
+      if (payload.type === 'preview') {
+        const state = marketState.value
+        const accepts = (item: MarketTickQuote | MarketActivityFrame, day: string): boolean => {
+          const contract = normalizePhysicalContract(item.contract)
+          return state?.display_preview === true && state.trading_day === day && !!contract
+            && physicalOwnerMatches(nextIdentity, contract)
+            && (state.live_contract === null || state.live_contract === contract)
+            && typeof item.generation === 'string' && !!item.generation
+            && Number.isFinite(Date.parse(item.observed_at))
+            && Date.parse(item.observed_at) <= Date.parse(item.received_at)
+        }
+        quote.value = payload.quote && accepts(payload.quote, payload.quote.trading_day) ? payload.quote : null
+        activity.value = payload.activity && accepts(payload.activity, payload.activity.bar.trading_day)
+          && Date.parse(payload.activity.observed_at) <= Date.parse(payload.activity.bar.bar_end)
+          ? {
+            bar: { ...toBarData(payload.activity.bar, normalizePhysicalContract(payload.activity.contract)), confirmed: false, marketSource: 'active_preview' },
+            generation: payload.activity.generation,
+            observedAt: payload.activity.observed_at,
+            receivedAt: payload.activity.received_at,
+          } : null
+        return
+      }
+      if (payload.type === 'retained') {
+        const state = marketState.value
+        if (!state?.display_preview) return
+        const day = payload.trading_day
+        const contract = normalizePhysicalContract(payload.contract)
+        if (!day && !contract && retainedBars.length
+          && isLater(state.canonical_end, latestEnd(canonicalBars))
+          && !isLater(latestEnd(retainedBars), state.canonical_end)) return
+        retainedBars = day && state.trading_day && day < state.trading_day && contract
+          && physicalOwnerMatches(nextIdentity, contract)
+          ? payload.bars.filter(bar => bar.trading_day === day)
+            .map(bar => ({ ...toBarData(bar, contract), confirmed: false, marketSource: 'retained' as const }))
+          : []
+        publishMerged({ kind: 'replace' })
+        return
+      }
       if (payload.type === 'snapshot') {
-        liveUnavailable.value = false
         if (payload.source === 'none') {
+          const state = marketState.value
+          if (state?.live_eligible && !state.live_available && state.phase === 'TRADING') {
+            liveUnavailable.value = true
+            if (overlayIdentity?.tradingDay === state.trading_day
+              && overlayIdentity?.contract === normalizePhysicalContract(state.live_contract)) return
+          }
           clearOverlay()
           publishMerged({ kind: 'replace' })
           return
@@ -434,12 +610,11 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
           tradingDay: payload.trading_day,
           contract: snapshotContract,
         }
-        const accepted = applyLiveBars(payload.bars, snapshotContract)
+        liveUnavailable.value = false
+        reconnectAttempts = 0
+        const accepted = applyLiveBars(payload.bars.filter(bar => bar.trading_day === payload.trading_day), snapshotContract)
         if (accepted || liveBars.length > 0) {
           overlaySource.value = payload.source
-        }
-        if (payload.source === 'realtime') {
-          return
         }
         return
       }
@@ -454,6 +629,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         return
       }
       if (payload.type === 'reset') {
+        clearPreview()
         clearOverlay()
         const resetContract = normalizePhysicalContract(payload.contract)
         if (payload.trading_day !== null && resetContract !== undefined && !(
@@ -469,21 +645,18 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         publishMerged({ kind: 'replace' })
         return
       }
-      const previousSeam = latestEnd(canonicalBars)
-      marketState.value = payload.state
-      liveUnavailable.value = !payload.state.live_available
-      let canonicalRefresh: Promise<boolean> | null = null
-      const announcedCanonicalEnd = payload.state.canonical_end
-      if (announcedCanonicalEnd !== null && isLater(announcedCanonicalEnd, previousSeam)) {
-        const refreshToken = ++canonicalRefreshToken
-        canonicalRefresh = refreshCanonicalEdge(
-          requestGeneration,
-          nextIdentity,
-          refreshToken,
-          announcedCanonicalEnd,
-        )
+      if (marketState.value?.trading_day !== payload.state.trading_day
+        || marketState.value?.live_contract !== payload.state.live_contract || !payload.state.display_preview) {
+        clearPreview()
       }
-      if (payload.state.phase === 'CLOSED' && canonicalRefresh) {
+      marketState.value = payload.state
+      if (!payload.state.display_preview && retainedBars.length) {
+        retainedBars = []
+        publishMerged({ kind: 'replace' })
+      }
+      liveUnavailable.value = !payload.state.live_available
+      const canonicalRefresh = reconcileCanonical(requestGeneration, nextIdentity, payload.state)
+      if (payload.state.phase === 'CLOSED' && !payload.state.display_preview && canonicalRefresh) {
         void canonicalRefresh.then(() => {
           if (isCurrentGeneration(requestGeneration, generation) && socket === activeSocket) clearSocket()
         })
@@ -504,12 +677,9 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     socket.onclose = () => {
       if (!isCurrentGeneration(requestGeneration, generation) || socket !== activeSocket) return
       activeSocket = null
-      liveUnavailable.value = true
-      if (!identity || !marketState.value || !shouldKeepStateSocket(identity, marketState.value)) return
-      reconnectHandle = scheduleReconnect(() => {
-        reconnectHandle = null
-        openSocket(requestGeneration, nextIdentity)
-      }, RECONNECT_DELAY_MS)
+      studySocketHasBars.value = false
+      clearPreview()
+      retryLive(requestGeneration, nextIdentity)
     }
   }
 
@@ -526,15 +696,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
       nextBefore.value = merged.nextBefore
       canonicalCoverage.value = loadedCanonicalCoverage(canonicalBars)
       publishMerged({ kind: 'replace' })
-      try {
-        if (candidatePreview.enabled) return
-        const nextState = await fetchState(nextIdentity, signal)
-        if (!isCurrentGeneration(requestGeneration, generation)) return
-        marketState.value = nextState
-        if (shouldKeepStateSocket(nextIdentity, nextState)) openSocket(requestGeneration, nextIdentity)
-      } catch {
-        if (isCurrentGeneration(requestGeneration, generation)) liveUnavailable.value = true
-      }
+      void connectFromState(requestGeneration, nextIdentity)
     } catch (error) {
       if (!signal.aborted && isCurrentGeneration(requestGeneration, generation)) throw error
     } finally {
@@ -549,6 +711,12 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
 
   function loadMoreBefore(): Promise<void> {
     if (loadingBeforePromise) return loadingBeforePromise
+    if (revisionRefresh) {
+      const requestGeneration = generation
+      return revisionRefresh.promise.then((ok) => {
+        if (ok && isCurrentGeneration(requestGeneration, generation)) return loadMoreBefore()
+      })
+    }
     if (!identity || !hasMoreBefore.value || !nextBefore.value) return Promise.resolve()
     const requestIdentity = identity
     const requestGeneration = generation
@@ -587,7 +755,22 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     return request
   }
 
+  function resumePendingReconnect(): void {
+    if (document.visibilityState === 'hidden' || !pendingReconnect) return
+    if (reconnectHandle !== null) clearReconnect(reconnectHandle)
+    pendingReconnect()
+  }
+
+  if (typeof window !== 'undefined') {
+    window.addEventListener('online', resumePendingReconnect)
+    document.addEventListener('visibilitychange', resumePendingReconnect)
+  }
+
   function dispose(): void {
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('online', resumePendingReconnect)
+      document.removeEventListener('visibilitychange', resumePendingReconnect)
+    }
     generation += 1
     reads.abort()
     loadingInitial.value = false; loadingBefore.value = false
@@ -596,6 +779,12 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
 
   return {
     bars,
+    activeBar,
+    studyActivity,
+    studyCompletedAvailable,
+    studyRevisionPending,
+    studyRevision: appliedCanonicalRevision,
+    quote,
     hasMoreBefore,
     canonicalCoverage,
     loadingInitial,

@@ -76,9 +76,9 @@ test('SuBing keeps the chart surface free of runtime summary', () => {
   assert.doesNotMatch(workspace, /MarketDetailStatusStrip/)
 })
 
-test('view navigation exposes six flat analysis choices and emits exact identities', () => {
+test('view navigation exposes the four observations and three Newow strategy choices and emits exact identities', () => {
   const { source, template } = parsedComponent('MarketDetailViewNav')
-  for (const label of ['震荡策略', '趋势策略', '双策略', '火天大有', '苏冰预警', '自由看盘']) {
+  for (const label of ['震荡', '趋势', '双策略', '火天大有', '苏冰预警', '自由看盘', '牛哇参考']) {
     assert.match(source, new RegExp(label))
   }
   assert.match(source, /newowFrequencies/)
@@ -152,12 +152,12 @@ test('HTDY and SuBing show actual alerts without reference trades or replay requ
     assert.doesNotMatch(source, /ReferenceTradePanel|HtdyHistoricalPanel|useHtdySnapshot|htdyReplayMarkers|htdyUnifiedMarkers|实时留存参考交易/)
     assert.match(source, /usePersistentAlertMarkers/)
     assert.match(source, /actualEventsToOwnedMarkers/)
-    assert.match(source, /<ObservedReferenceRecords/)
+    assert.match(source, /<ObservedAlertRecords/)
   }
   const htdy = detailComponentSource('htdy/HtdyDetailWorkspace')
   assert.match(htdy, /<HtdySimulationRecords/)
   assert.match(htdy, /ref<'signals'\|'simulation'>\('signals'\)/)
-  const records = detailComponentSource('ObservedReferenceRecords')
+  const records = detailComponentSource('ObservedAlertRecords')
   assert.doesNotMatch(records, /ReferenceTradePanel|v-if="strategy !== 'subing-reference'"/)
   assert.match(records, /实际观察／预警记录/)
 })

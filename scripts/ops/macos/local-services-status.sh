@@ -2,6 +2,10 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ "${1:-}" == "--business" ]]; then
+  shift
+  exec python3 "${SCRIPT_DIR}/business-status.py" "$@"
+fi
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../../.." && pwd)"
 AGENT_DIR="${HOME}/Library/LaunchAgents"
 API_LABEL="com.guiyi.quant-api"

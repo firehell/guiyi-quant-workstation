@@ -2434,3 +2434,34 @@ test('older chart pagination preserves independent breakout facts under exact ph
  const page=state.loadNextChartPage();pending[1]!.resolve(attach(normalizedChartPage(pending[1]!.request,'2026-08-13',null),'b'));await page
  assert.deepEqual(state.sections.chart.data.value?.value?.breakout_events?.map(e=>e.event_id),['b','a']);state.dispose()
 })
+
+test('an added auxiliary uses the accepted chart snapshot and cannot replace the selected indicator after a switch', async () => {
+  newowSessionResources.invalidate()
+  const identity = ref(newowIdentity('trend', '1d'))
+  const pending: Pending[] = []
+  const state = useNewowProduct({ identity, now: () => AS_OF, fetchSection: controlled(pending) })
+  try {
+    pending[0]!.resolve(normalizedChart(pending[0]!.request)); await flush()
+    const controller = new AbortController()
+    const late = state.loadAdditionalAuxiliary('main_force_control', controller.signal)
+    assert.equal(pending[1]!.request.snapshotToken, 'snapshot-a')
+    assert.equal(state.sections.auxiliary.state.value, 'not_requested')
+
+    identity.value = newowIdentity('oscillation', '1d')
+    pending[2]!.resolve(normalizedChart(pending[2]!.request, { token: 'snapshot-b' })); await flush()
+    pending[1]!.resolve(normalizedAuxiliary(pending[1]!.request, 'snapshot-a'))
+    assert.equal(await late, null)
+
+    const wrongOwner = state.loadAdditionalAuxiliary('main_force_control', controller.signal)
+    assert.equal(pending[3]!.request.snapshotToken, 'snapshot-b')
+    pending[3]!.resolve(normalizedAuxiliary(pending[3]!.request, 'other-snapshot'))
+    await assert.rejects(wrongOwner, /CHART_AUXILIARY_SOURCE_INVALID/)
+
+    const current = state.loadAdditionalAuxiliary('main_force_control', controller.signal)
+    pending[4]!.resolve(normalizedAuxiliary(pending[4]!.request, 'snapshot-b'))
+    assert.equal((await current)?.value?.component, 'main_force_control')
+    assert.equal(state.sections.auxiliary.state.value, 'not_requested')
+  } finally {
+    state.dispose(); newowSessionResources.invalidate()
+  }
+})

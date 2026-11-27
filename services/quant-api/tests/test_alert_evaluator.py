@@ -77,6 +77,17 @@ def _observation_result(
     )
 
 
+def _replace_htdy_calculator(monkeypatch: pytest.MonkeyPatch, calculate) -> None:
+    lookup = evaluator_module.owned_indicator
+
+    def registered(feature_id, *, frequency, use):
+        assert feature_id == "htdy_original"
+        assert use == evaluator_module.HTDY_ALERT_OBSERVATION_CONSUMER
+        return replace(lookup(feature_id, frequency=frequency, use=use), calculate=calculate)
+
+    monkeypatch.setattr(evaluator_module, "owned_indicator", registered)
+
+
 @pytest.mark.parametrize("frequency", ("1m", "5m", "15m", "30m", "60m", "1d", "1w"))
 @pytest.mark.parametrize(
     ("buy", "sell", "expected"),
@@ -99,8 +110,8 @@ def test_evaluator_reads_only_current_bar_observations(
     flags_buy[10] = True  # an old repaint must never be scanned as a new Alert
     flags_buy[-1] = buy
     flags_sell[-1] = sell
-    monkeypatch.setattr(
-        "app.alerts.evaluators.compute_htdy_original",
+    _replace_htdy_calculator(
+        monkeypatch,
         lambda *_args: SimpleNamespace(
             buy_observation=flags_buy,
             sell_observation=flags_sell,
@@ -145,6 +156,22 @@ def test_evaluator_requires_the_scoped_htdy_alert_policy(
 
     with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_POLICY_DISABLED"):
         evaluator_module.HtdyOriginalEvaluator().evaluate(_window())
+
+
+def test_htdy_registry_rejects_mismatched_formula_before_calculation(monkeypatch: pytest.MonkeyPatch) -> None:
+    lookup = evaluator_module.owned_indicator
+
+    def registered(feature_id, *, frequency, use):
+        assert frequency == "60m"
+        return replace(
+            lookup(feature_id, frequency=frequency, use=use),
+            formula_version="different-formula",
+            calculate=lambda *_: pytest.fail("unapproved formula was calculated"),
+        )
+
+    monkeypatch.setattr(evaluator_module, "owned_indicator", registered)
+    with pytest.raises(AlertEvaluationError, match="ALERT_EVALUATION_FAILED"):
+        evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(_window(frequency="60m"))
 
 
 def test_composition_uses_generalized_evaluator_and_keeps_activation_gate(
@@ -242,11 +269,7 @@ def test_first_seen_returns_latest_bar_observation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     window = _window(32)
-    monkeypatch.setattr(
-        evaluator_module,
-        "compute_htdy_original",
-        lambda *_args: _observation_result(32, sells=(31,)),
-    )
+    _replace_htdy_calculator(monkeypatch, lambda *_args: _observation_result(32, sells=(31,)))
 
     assert evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window) == (
         evaluator_module.HtdyFirstSeenObservation(
@@ -277,7 +300,7 @@ def test_first_seen_ignores_old_observation_bar_after_repaint(
             else _observation_result(length, sells=(old_index,))
         )
 
-    monkeypatch.setattr(evaluator_module, "compute_htdy_original", compute)
+    _replace_htdy_calculator(monkeypatch, compute)
 
     assert evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window) == ()
 
@@ -295,7 +318,7 @@ def test_first_seen_uses_only_latest_bar_when_old_candidate_appears(
             return _observation_result(length)
         return _observation_result(length, buys=(50, 63), sells=(63,))
 
-    monkeypatch.setattr(evaluator_module, "compute_htdy_original", compute)
+    _replace_htdy_calculator(monkeypatch, compute)
 
     candidates = evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window)
 
@@ -320,7 +343,7 @@ def test_first_seen_keeps_current_bar_only_before_64_bar_context(
         computed_length = len(datetimes)
         return _observation_result(computed_length, buys=(5,), sells=(computed_length - 1,))
 
-    monkeypatch.setattr(evaluator_module, "compute_htdy_original", compute)
+    _replace_htdy_calculator(monkeypatch, compute)
 
     candidates = evaluator_module.HtdyOriginalEvaluator().evaluate_first_seen(window)
 

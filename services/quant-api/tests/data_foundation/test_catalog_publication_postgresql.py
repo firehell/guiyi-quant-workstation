@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import multiprocessing
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, time
 from decimal import Decimal
 from uuid import uuid4
 
@@ -13,11 +13,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import Session
 
+from app.db.base import Base
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import CanonicalBar, DatasetKey, SeriesQuery
 from app.market_data.market_data_service import MarketDataError, MarketDataService
 from app.market_data.storage import CanonicalMonthlyStore, PublishRequest
-from app.models import MarketDataset, MarketPartition
+from app.models import Exchange, Instrument, MarketDataset, MarketPartition, TradingCalendar, TradingSession
 
 
 pytestmark = pytest.mark.isolated_postgresql
@@ -50,6 +51,26 @@ def isolated_postgresql():
         engine.dispose()
 
 
+@pytest.fixture
+def publication_market_setup(isolated_postgresql):
+    Base.metadata.create_all(isolated_postgresql)
+    with Session(isolated_postgresql) as session:
+        session.add(Exchange(code="DCE", name="DCE"))
+        session.add(Instrument(symbol="jm", name="JM", exchange_code="DCE", is_active=True))
+        session.flush()
+        session.add_all(
+            TradingCalendar(exchange_code="DCE", trade_date=date(2025, 1, day), is_trading_day=True,
+                            has_night_session=False, provider="rqdata")
+            for day in (1, 2, 3)
+        )
+        session.add(TradingSession(
+            exchange_code="DCE", instrument_symbol="jm", session_name="day",
+            start_time=time(9), end_time=time(15), crosses_midnight=False,
+            effective_from=date(2025, 1, 1), is_active=True, provider="rqdata",
+        ))
+        session.commit()
+
+
 def _bar(day: int, close: int) -> CanonicalBar:
     value = Decimal(close)
     return CanonicalBar(
@@ -66,6 +87,7 @@ def _query(session, root):
     ).bars
 
 
+@pytest.mark.usefixtures("publication_market_setup")
 @pytest.mark.parametrize("commit", [False, True], ids=["rollback", "commit"])
 def test_postgresql_pointer_visibility_and_retained_reader(
     isolated_postgresql, tmp_path, commit,
@@ -128,6 +150,7 @@ def _crash_publisher(target, schema, root, commit):
     os._exit(73)
 
 
+@pytest.mark.usefixtures("publication_market_setup")
 @pytest.mark.parametrize("commit", [False, True], ids=["before_commit", "after_commit"])
 @pytest.mark.parametrize("existing", [False, True], ids=["first_partition", "replacement"])
 def test_postgresql_process_crash_has_only_committed_mds_visibility(

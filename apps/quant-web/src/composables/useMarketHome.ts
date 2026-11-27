@@ -2,7 +2,7 @@ import { shallowRef } from 'vue'
 import type { HomeSnapshotCache } from '../utils/marketHomePersistence.ts'
 
 interface MarketHomeOptions<O, R, D> {
-  fetchOverview: (signal?: AbortSignal) => Promise<O>
+  fetchOverview?: (signal?: AbortSignal) => Promise<O>
   fetchDirectory: (signal?: AbortSignal) => Promise<D>
   fetchRuntime: (signal?: AbortSignal) => Promise<R>
   overviewCacheKey?: string
@@ -131,7 +131,7 @@ export function useMarketHome<O, R, D>(options: MarketHomeOptions<O, R, D>) {
 }
 
 function createResource<T>(
-  fetch: (signal?: AbortSignal) => Promise<T>,
+  fetch: ((signal?: AbortSignal) => Promise<T>) | undefined,
   isTypedUnavailable?: (value: T) => boolean,
   existingState?: ResourceState<T>,
   now: () => number = Date.now,
@@ -139,6 +139,7 @@ function createResource<T>(
 ): Resource<T> {
   const state = existingState ?? createResourceState<T>()
   async function refresh() {
+    if (!fetch) return
     if (state.inFlight) return state.inFlight
     state.loading.value = true
     state.queuedRefresh = false

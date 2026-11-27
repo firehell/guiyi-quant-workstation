@@ -32,9 +32,21 @@ export function projectNewowDetail(
   const targetValid = currentChartWindow && ready && compatible && explanationLifecycle === 'ready' && result?.status === 'ready' && result.evidence_status === 'ACTIVE_CODE_VERIFIED' && result.as_of === chart.meta.as_of
   const targetPrice = (kind: 'target' | 'absorb') => {
     const priceDirect = direct?.[kind]
-    if ((currentChartWindow || historicalChartWindow) && ready && priceDirect?.status.status === 'ready' && priceDirect.raw !== null && priceDirect.display !== null && direct?.anchor_bar_end === latestBar?.bar_end && direct.physical_contract === latestBar?.physical_contract && direct.segment_id === latestBar?.segment_id && direct.calculation_segment_id === latestBar?.calculation_segment_id && direct.as_of === chart?.meta.as_of) return { display: priceDirect.display, display_value: priceDirect.display, bar_end: direct.anchor_bar_end }
+    if ((currentChartWindow || historicalChartWindow) && ready && priceDirect?.status.status === 'ready' && priceDirect.raw !== null && priceDirect.display !== null && direct?.anchor_bar_end === latestBar?.bar_end && direct.physical_contract === latestBar?.physical_contract && direct.segment_id === latestBar?.segment_id && direct.calculation_segment_id === latestBar?.calculation_segment_id && direct.as_of === chart?.meta.as_of) return {
+      display: priceDirect.display, display_value: priceDirect.display, bar_end: direct.anchor_bar_end,
+      chartSource: { sourceIdentity: direct.input_sha256, formulaVersion: direct.formula_version, frequency: direct.frequency, dataCutoff: direct.anchor_bar_end },
+    }
     const price = result?.value?.[kind]
-    return targetValid && price && /^\d+(\.\d+)?$/.test(price.display_value) && Number.isFinite(Number(price.display_value)) && price.physical_contract === latestBar?.physical_contract && price.segment_id === latestBar?.segment_id && Date.parse(price.bar_end) <= Date.parse(chart!.meta.as_of) ? price : null
+    if (!targetValid || !price || !/^\d+(\.\d+)?$/.test(price.display_value) || !Number.isFinite(Number(price.display_value)) || price.physical_contract !== latestBar?.physical_contract || price.segment_id !== latestBar?.segment_id || !(Date.parse(price.bar_end) <= Date.parse(chart.meta.as_of))) return null
+    return {
+      ...price,
+      chartSource: {
+        sourceIdentity: explanation.meta.input_content_sha256,
+        formulaVersion: result.formula_versions.join(' / ') || null,
+        frequency: price.source_frequency,
+        dataCutoff: price.bar_end,
+      },
+    }
   }
   const openReference = currentChartWindow && ready && referenceCompatible && referenceLifecycle === 'ready' && reference?.meta.as_of === chart?.meta.as_of
     ? reference?.value?.items.find(item => item.status === 'OPEN' && item.physical_contract === latestBar?.physical_contract && item.segment_id === latestBar?.segment_id) ?? null : null
@@ -98,12 +110,18 @@ export function referenceTimeDisplay(
 export function projectNewowAuxiliaryReadiness(value: NewowAuxiliaryValue | null | undefined, latestBar: Pick<NewowProductBar, 'bar_end' | 'physical_contract' | 'calculation_segment_id'> | null | undefined) {
   if (!value || !latestBar) return null
   // Auxiliary segment_id is the backend calculation segment identity, including price-gap resets.
-  const latest = value.segments.find(segment => segment.physical_contract === latestBar.physical_contract && segment.segment_id === latestBar.calculation_segment_id && segment.bar_ends.includes(latestBar.bar_end))
+  const ownsBar = (segment: NewowAuxiliaryValue['segments'][number]) => segment.physical_contract === latestBar.physical_contract
+    && segment.segment_id === latestBar.calculation_segment_id && segment.bar_ends.includes(latestBar.bar_end)
+  const latest = value.segments.find(ownsBar)
   if (!latest) return null
+  const point = value.component === 'macd' && latest.data && 'dif' in latest.data
+    ? latest.data.dif[latest.bar_ends.indexOf(latestBar.bar_end)] : undefined
+  const status = point ? point.ready ? 'ready' : point.valid ? 'warming' : 'unavailable' : latest.status.status
+  const reason = point ? point.reason : latest.status.reason_code
   const historicalWarming = value.segments.filter(segment => segment !== latest && segment.status.status === 'warming').length
-  const currentLabel = latest.status.status === 'ready' ? '当前可计算'
-    : latest.status.status === 'warming' ? '当前数据不足，待每日增量积累' : '当前指标不可用'
-  return { currentStatus: latest.status.status, historicalWarming,
+  const currentLabel = status === 'ready' ? '当前可计算'
+    : status === 'warming' ? '当前数据不足，待每日增量积累' : '当前指标不可用'
+  return { currentStatus: status, historicalWarming, reason,
     message: `${currentLabel}${historicalWarming ? `；历史部分仍在预热（${historicalWarming} 个区段）` : ''}` }
 }
 

@@ -31,7 +31,6 @@ export class NewowTrendChannelPrimitive implements ISeriesPrimitive<Time> {
     const attachment = this.attachment
     if (attachment === null) return
     target.useMediaCoordinateSpace(({ context }) => {
-      context.save()
       const timeScale = attachment.chart.timeScale()
       for (const point of this.points) {
         const x = timeScale.timeToCoordinate(point.time)
@@ -47,7 +46,6 @@ export class NewowTrendChannelPrimitive implements ISeriesPrimitive<Time> {
         context.arc(x, lower, RADIUS, 0, Math.PI * 2)
         context.fill()
       }
-      context.restore()
     })
   }
 }

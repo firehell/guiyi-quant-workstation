@@ -12,13 +12,28 @@ export async function installDetailExperimentSessionFixtures(page, options={}) {
     const isTrueup=query.kind==='osc-test5'
     const formula_version = isTrueup?'newow_oscillation_trueup_kernel111_v1':`newow_${query.kind.replace('-', '_')}_page_v3379_v1`
     const dates = bars.map(bar => bar.bar_end)
-    const trade = { segment_id:'exp',physical_contract:'RB2605',entry_bar_end:dates[0],exit_bar_end:dates.at(-1),entry_reference_price:'100',exit_reference_price:'101',return_percentage_points:'1',force_close:false,stop_loss:false,confirm_exit:false }
+    const segmentId = options.exactVolumeOwner?.(query.kind) ? bars.at(-1).calculation_segment_id : 'exp'
+    const anchor = bars.at(-2)
+    const marker = { marker_id: 'experiment-build', bar_end: anchor.bar_end, physical_contract: anchor.physical_contract,
+      segment_id: segmentId, action: 'BUILD', reference_price: anchor.close, score: 1, break_label: null, stop_loss: false, confirm_exit: false }
+    const display = { event_id: 'd'.repeat(64), display_version: 'newow_public_display_v3431_v1', kind: 'OSC_BREAKDOWN',
+      source_strategy: query.kind, formula_version: 'fixture-display-formula', frequency: query.frequency,
+      bar_end: anchor.bar_end, known_at: anchor.bar_end, physical_contract: anchor.physical_contract,
+      segment_id: segmentId, calculation_segment_id: anchor.calculation_segment_id,
+      source_build_id: marker.marker_id, build_bar_end: marker.bar_end, build_threshold: marker.reference_price,
+      observed_close: anchor.close, signal_kind: null,
+      page_parity: true, executable: false, quantity_effect: 'none' }
+    const trade = { segment_id:segmentId,physical_contract:'RB2605',entry_bar_end:dates[0],exit_bar_end:dates.at(-1),entry_reference_price:'100',exit_reference_price:'101',return_percentage_points:'1',force_close:false,stop_loss:false,confirm_exit:false }
     const model = ideal => ({ model_version:isTrueup?(ideal?'newow_trueup_posterior_peak_v1':'newow_trueup_reference_zero_cost_v1'):(ideal?'newow_base_oscillation_ideal_v3379_v1':'newow_oscillation_experiment_ordinary_v3379_v1'),hindsight:ideal,page_parity:!isTrueup,...(isTrueup?{kernel_parity:true,return_policy:'guiyi_unified_trueup'}:{}),executable:false,dates,equity:dates.map((_,index)=>index===dates.length-1?'1':'0'),total_count:1,summary:{trade_count:1,cum_return_percentage_points:'1',accuracy_pct:'100',max_drawdown_percentage_points:'0'},trades:[trade] })
     const profile_id=isTrueup?'newow_experiment_trueup_v1':'guiyi_newow_experiment_completed_physical_v1',input_policy_version='policy'
     return route.fulfill({json:{...query,schema_version:'newow_experiment_detail_v3',input_snapshot_hash:sha256,profile_id,input_policy_version,formula_version,page_parity:!isTrueup,...(isTrueup?{kernel_parity:true,return_policy:'guiyi_unified_trueup'}:{}),executable:false,
-      meta:{identity:{product:query.product,frequency:query.frequency,kind:query.kind,strategy:query.kind,series_kind:'actual_dominant',as_of:query.as_of,formula_version,profile_id,input_policy_version},as_of:query.as_of,read_at:query.as_of,input_content_sha256:sha256,data_revision_identity:'b'.repeat(64),snapshot_token:'test-token',result_hash:'c'.repeat(64),completed_only:true,executable:false,auto_order:false,last_completed_bar_end:dates.at(-1),last_trading_day:bars.at(-1).trading_day},
+      meta:{identity:{product:options.invalidIdentity?.(query.kind)?'jm':query.product,frequency:query.frequency,kind:query.kind,strategy:query.kind,series_kind:'actual_dominant',as_of:query.as_of,formula_version,profile_id,input_policy_version},as_of:query.as_of,read_at:query.as_of,input_content_sha256:sha256,data_revision_identity:'b'.repeat(64),snapshot_token:'test-token',result_hash:'c'.repeat(64),completed_only:true,executable:false,auto_order:false,last_completed_bar_end:dates.at(-1),last_trading_day:bars.at(-1).trading_day},
       window:{since:bars[0].trading_day,through:bars.at(-1).trading_day},readiness:{status:'READY',reason_code:null},
-      breakout_events:isTrueup?options.breakoutEvents?.(bars.map(bar=>({...bar,segment_id:'exp'})),query.frequency)??[]:[],bars:bars.map(bar=>({...bar,segment_id:'exp',channel_high:'120',channel_low:'90'})),markers:[],segments:[{segment_id:'exp',physical_contract:'RB2605',status:'CURRENT',ordinary:model(false),theoretical:model(true)}]}})
+      breakout_events:isTrueup?options.breakoutEvents?.(bars.map(bar=>({...bar,segment_id:segmentId})),query.frequency)??[]:[],
+      display_events:options.positionedFacts && query.kind==='osc-test'?[display]:[],
+      bars:bars.map(bar=>({...bar,segment_id:segmentId,channel_high:'120',channel_low:'90'})),
+      markers:options.positionedFacts && query.kind==='osc-test'?[marker]:[],
+      segments:[{segment_id:segmentId,physical_contract:'RB2605',status:'CURRENT',ordinary:model(false),theoretical:model(true)}]}})
   })
   return {experiments}
 }
