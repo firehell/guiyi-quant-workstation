@@ -1,3 +1,12 @@
+## 2026-11-27 21:35｜V2 直接首启
+
+- 应用 v1.16.151 增加 V2 直接首启入口，沿用 Market Foundation 0.1.2、Quant Core 0.4.1、Quant Chart 0.1.7。
+  首启使用现有 Canonical/Catalog 和独立 Tick Redis。旧工作树恢复、旧 Reference 游标和快期、苏冰原账户交接均已移出首启路径。
+  正式运行身份仍以实际绑定、进程和首启回执为准。[部署入口](deploy/README.md#v2-直接首启)
+- 米筐确认下一候选为 12/01 交易日。生产 Catalog 已插入且独立读回 5 条权威 Calendar、58 品种 219 条 Session。
+  最早 Session 是北京时间 11/30 21:00。12/01 的 rank1 当前为 0/58，米筐目标日 RB 精确查询返回空，
+  待 11/30 日盘收盘后复核。专用 Redis 仍为空，盘前条件齐备后生成首启计划。既有自然验收证据沿用。
+
 ## 2026-11-27 20:35｜V2 发布与运行核验
 
 - **GitHub 发布。** [PR #676](https://github.com/firehell/guiyi-quant-workstation/pull/676) 合入
