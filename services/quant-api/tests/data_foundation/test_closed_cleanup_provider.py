@@ -5,6 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
+from app.market_data.aggregation import SessionWindow
 from app.market_data.live_market import RQDataLiveProvider
 from app.market_data.market_phase import MarketPhase, ProductMarketPhase
 import app.market_data.market_feed as feed
@@ -455,17 +456,22 @@ def test_first_new_session_retires_empty_old_provider_before_normal_poll(monkeyp
     service, store, provider, client = make_service(monkeypatch)
     store.cleaned = True
     service.closed_cleanup_evidence = lambda *_: None
-    service._phase_resolver = SimpleNamespace(resolve=lambda *_: ProductMarketPhase(
-        'rb', MarketPhase.TRADING, DAY + timedelta(days=1), None, NOW + timedelta(days=1)))
+    started = NOW + timedelta(seconds=3)
+    client.on_close = lambda: setattr(service, '_clock', lambda: started)
+    service._phase_resolver = SimpleNamespace(resolve=lambda _, now: ProductMarketPhase(
+        'rb', MarketPhase.TRADING if now >= started else MarketPhase.CLOSED,
+        DAY + timedelta(days=1) if now >= started else DAY, None, started))
     reached = []
-    def normal(*_):
+    def normal(_, now):
         assert service._provider is None
         assert client.close_calls == 1
-        reached.append(True)
+        reached.append(now)
     monkeypatch.setattr(feed.LiveMarketService, 'poll', normal)
-    service.poll(NOW + timedelta(hours=3))
-    assert reached == [True]
+    service.poll(NOW)
+    assert reached == [started]
     assert service.closed_cleaned_proof is None
+    assert store.heartbeats[-1]['generated_at'] == started.isoformat()
+    assert store.heartbeats[-1]['phase_by_product'] == {'rb': 'TRADING'}
 
 
 def test_unproven_cleanup_retires_listener_even_before_next_session(monkeypatch):
@@ -569,6 +575,7 @@ def test_ownership_lost_during_listener_close_propagates_and_retains_object(monk
 @pytest.mark.parametrize('drift', ['day', 'registered', 'contracts', 'object', 'snapshot', 'cursor', 'pending'])
 def test_cleanup_retirement_rechecks_frozen_identity_before_buffer_count(monkeypatch, drift):
     service, store, provider, client = make_service(monkeypatch)
+    service._coverage_session_source = lambda *_: (SessionWindow(NOW - timedelta(hours=2), NOW - timedelta(hours=1)),)
     store.cleaned = True
     replacement = SimpleNamespace()
     def changed():
@@ -592,6 +599,10 @@ def test_cleanup_retirement_rechecks_frozen_identity_before_buffer_count(monkeyp
     assert (service._input_failure is None) == (drift == 'cursor')
     assert service._provider is (replacement if drift == 'object' else provider)
     assert service._cleanup_isolation.provider is provider
+    assert store.heartbeats
+    assert all(heartbeat['available'] is False and heartbeat['input_pending_count'] is None
+               for heartbeat in store.heartbeats)
+    assert service.quiescent(NOW) is False
 
 
 def test_empty_grace_does_not_contend_with_natural_maintenance(monkeypatch, tmp_path):
@@ -608,7 +619,9 @@ def test_empty_grace_does_not_contend_with_natural_maintenance(monkeypatch, tmp_
 
 def test_raw_arriving_after_empty_count_is_left_for_next_isolation(monkeypatch):
     service, store, provider, _ = make_service(monkeypatch)
+    service._coverage_session_source = lambda *_: (SessionWindow(NOW - timedelta(hours=2), NOW - timedelta(hours=1)),)
     count = provider.buffered_message_count
+    assert service.quiescent(NOW) is True
     def after_count():
         result = count()
         provider._buffer_message({'late': 'after empty count'})
@@ -617,12 +630,49 @@ def test_raw_arriving_after_empty_count_is_left_for_next_isolation(monkeypatch):
     monkeypatch.setattr(provider, 'poll_buffered', lambda: pytest.fail('late raw must not be taken'))
     assert service.poll(NOW) is None
     assert len(provider._messages) == 1
+    assert store.heartbeats
+    assert all(heartbeat['input_pending_count'] == 0 for heartbeat in store.heartbeats)
     monkeypatch.setattr(provider, 'buffered_message_count', count)
+    assert service.quiescent(NOW) is False
     store.cleaned = True
     assert service.poll(NOW + timedelta(seconds=1)) is not None
     assert service._input_failure is not None
     assert service._provider is provider
     assert len(provider._messages) == 1
+    assert store.heartbeats[-1]['available'] is False
+    assert store.heartbeats[-1]['input_pending_count'] is None
+
+
+def test_active_feed_checks_heartbeat_write_before_provider_poll(monkeypatch):
+    service, store, provider, _ = make_service(monkeypatch)
+    window = SessionWindow(NOW - timedelta(minutes=1), NOW + timedelta(minutes=20))
+    service._phase_resolver = SimpleNamespace(resolve=lambda *_: ProductMarketPhase(
+        'rb', MarketPhase.TRADING, DAY, window, None))
+    monkeypatch.setattr(provider, 'poll', lambda: pytest.fail('provider polled after failed Redis write'))
+    attempts = []
+
+    def write_heartbeat(payload):
+        attempts.append(payload)
+        if len(attempts) == 1:
+            raise OSError('first write unavailable')
+        store.heartbeats.append(payload)
+
+    monkeypatch.setattr(store, 'set_heartbeat', write_heartbeat)
+    assert service.poll(NOW) == 'LIVE_REDIS_UNAVAILABLE'
+    assert len(attempts) == 2
+    assert store.heartbeats[-1]['available'] is False
+
+
+def test_metadata_failure_before_cleanup_observation_leaves_buffer_unknown(monkeypatch):
+    service, store, provider, _ = make_service(monkeypatch)
+    store.cleaned = True
+    service._prepare_trading_day = lambda _: 'METADATA_PREPARATION_READBACK_REQUIRED'
+    monkeypatch.setattr(provider, 'buffered_message_count', lambda: pytest.fail('unproven old provider sampled'))
+
+    assert service.poll(NOW) == 'METADATA_PREPARATION_READBACK_REQUIRED'
+    assert store.heartbeats
+    assert all(heartbeat['available'] is False and heartbeat['input_pending_count'] is None
+               for heartbeat in store.heartbeats)
 
 
 def test_unknown_failure_keeps_metadata_and_unavailable_heartbeat_alive(monkeypatch):
