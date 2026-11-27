@@ -6,7 +6,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from lms405_breakout_trial_study import price_states
+from lms405_breakout_trial_study import beyond, price_states
 from lms405_m_permission_study import read_pair
 from lms405_oi_june_case import DAYS as OI_DAYS
 from lms405_oi_m_band_study import market_digest
@@ -75,10 +75,44 @@ def first_reference(series, start, cutoff, target, side, *, overlap_can_block=Fa
     return None
 
 
-def compare(series, *, side, edge, target, history_start, start, cutoff):
+def with_opening_cross(minutes, paths, side, edge, session_open):
+    """Use only the completed opening minute of the verified session."""
+    first = minutes[0] if minutes else None
+    if first is None or first.start != session_open:
+        return None, {stamp: state["active_cross_at"] for stamp, state in paths.items()}
+
+    opens_outside = beyond(first.open, edge, side)
+    closes_outside = paths[first.end]["outside"]
+    if not closes_outside:
+        origin = "CLOSE_NOT_OUTSIDE"
+    elif opens_outside:
+        origin = "OPEN_ALREADY_OUTSIDE"
+    else:
+        origin = "OPEN_TO_CLOSE_CROSS"
+    opening = dict(start=first.start, end=first.end, known_at=first.end + US, open=first.open,
+                   close=first.close, origin=origin)
+    initial_cross = first.end if origin == "OPEN_TO_CLOSE_CROSS" else None
+    expected_start = first.start
+    active = {}
+    for bar in minutes:
+        state = paths[bar.end]
+        if bar.start != expected_start or not state["outside"]:
+            initial_cross = None
+        active[bar.end] = state["active_cross_at"] or initial_cross
+        expected_start = bar.end
+    return opening, active
+
+
+def compare(series, *, side, edge, target, history_start, start, cutoff, session_open=None):
     history = price_states(completed(series[1], history_start, cutoff), side, edge)
-    fresh = price_states(completed(series[1], start, cutoff), side, edge)
+    minutes = completed(series[1], start, cutoff)
+    fresh = price_states(minutes, side, edge)
     carried = carried_breaks(history)
+    modes = ("fresh_segment", "carry_unbroken")
+    opening, opening_crosses = None, {}
+    if session_open is not None:
+        opening, opening_crosses = with_opening_cross(minutes, fresh, side, edge, session_open)
+        modes += ("fresh_segment_or_open_cross",)
     reached = {
         "decision_window": first_reference(series[1], start, cutoff, target, side, overlap_can_block=True),
         "same_trading_day": first_reference(series[1], history_start, cutoff, target, side),
@@ -91,6 +125,8 @@ def compare(series, *, side, edge, target, history_start, start, cutoff):
             available = candidate["available_at"]
             shape_start = candidate["shape_end"] - FIVE
             interruption = {"fresh_segment": fresh[stamp]["active_cross_at"], "carry_unbroken": carried[stamp]}
+            if session_open is not None:
+                interruption["fresh_segment_or_open_cross"] = opening_crosses[stamp]
             rows.append(candidate | dict(
                 interruption_at=interruption,
                 interruption_fresh={kind: when is not None and when + US < shape_start
@@ -102,7 +138,7 @@ def compare(series, *, side, edge, target, history_start, start, cutoff):
 
     comparison = {}
     for period, rows in events.items():
-        for interruption in ("fresh_segment", "carry_unbroken"):
+        for interruption in modes:
             eligible = [r for r in rows if r["interruption_fresh"][interruption]]
             comparison[f"5m_to_{period}m/{interruption}"] = dict(
                 before_target_filter=[row["confirmed_at"] for row in eligible],
@@ -110,10 +146,13 @@ def compare(series, *, side, edge, target, history_start, start, cutoff):
                     row["confirmed_at"] for row in eligible if row["reference_reached_at"][scope] is None
                 ] for scope in reached},
             )
-    return dict(first_interruption_at=next((stamp for stamp, state in history.items() if state["crossing"]), None),
-                first_decision_window_interruption_at=next((stamp for stamp, state in fresh.items()
-                                                           if state["crossing"]), None),
-                first_reference_known_at=reached, events=events, comparison=comparison)
+    result = dict(first_interruption_at=next((stamp for stamp, state in history.items() if state["crossing"]), None),
+                  first_decision_window_interruption_at=next((stamp for stamp, state in fresh.items()
+                                                             if state["crossing"]), None),
+                  first_reference_known_at=reached, events=events, comparison=comparison)
+    if session_open is not None:
+        result["opening_minute"] = opening
+    return result
 
 
 def checked_series(session, market, case, reference):
@@ -131,11 +170,23 @@ def checked_series(session, market, case, reference):
     return bars, identity
 
 
-def study(session, market, reference):
+def study(session, market, reference, *, include_opening=False):
     results = {}
     for case in CASES:
         bars, identity = checked_series(session, market, case, reference)
         start, cutoff = at(f"{case.trading_day}T09:00"), at(case.cutoff)
+        session_open = None
+        if include_opening:
+            from app.market_data.session_clock import resolved_session_windows_for_trading_day
+
+            symbol = case.contract[:-4].lower()
+            sessions = resolved_session_windows_for_trading_day(
+                session, exchange=market.catalog.exchange_for_symbol(symbol), symbol=symbol,
+                trading_day=date.fromisoformat(case.trading_day),
+            )
+            session_open = min((item.window.start for item in sessions if not item.is_night), default=None)
+            if session_open is None or session_open != start:
+                raise ValueError("COUNTER_M_DAY_SESSION_OPEN_MISMATCH")
         histories = {"full_day": at(case.start_previous_night)}
         if case.input_id == "jm_trial":
             # The 22:10 post gives only a conditional pre-image. It is not a fill clock.
@@ -144,7 +195,7 @@ def study(session, market, reference):
         for label, edge in case.levels:
             for history, history_start in histories.items():
                 args = dict(side=case.side, edge=Decimal(edge), target=Decimal(case.target) if case.target else None,
-                            history_start=history_start, start=start)
+                            history_start=history_start, start=start, session_open=session_open)
                 result = compare(bars, cutoff=cutoff, **args)
                 prefix_checks = 0
                 for period, rows in result["events"].items():
@@ -160,7 +211,8 @@ def study(session, market, reference):
         results[case.input_id] = dict(contract=case.contract, trading_day=case.trading_day, side=case.side,
                                       scope=case.evidence_scope, source_ids=case.source_ids, inputs=identity,
                                       windows=windows)
-    return dict(version="lms405-counter-m-segment-study-v1", frozen_reference_sha256=REFERENCE, cases=results,
+    version = "lms405-counter-m-opening-cross-study-v1" if include_opening else "lms405-counter-m-segment-study-v1"
+    return dict(version=version, frozen_reference_sha256=REFERENCE, cases=results,
                 author_actions_scored=0, author_match_rate=None, fills=None, pnl=None, executable=False)
 
 
@@ -169,12 +221,15 @@ def main():
     parser.add_argument("--env-file", type=Path, required=True)
     parser.add_argument("--reference", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--include-opening-cross", action="store_true")
     args = parser.parse_args()
     if args.output.exists():
         parser.error("COUNTER_M_SEGMENT_OUTPUT_EXISTS")
     try:
         reference = verified_json(args.reference, REFERENCE)
-        result = local_market_case(args.env_file, case=lambda market_input: study(*market_input, reference))
+        result = local_market_case(args.env_file, case=lambda market_input: study(
+            *market_input, reference, include_opening=args.include_opening_cross,
+        ))
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(result | {"timezone": str(LOCAL)}))
     except (ValueError, KeyError, OSError) as exc:
