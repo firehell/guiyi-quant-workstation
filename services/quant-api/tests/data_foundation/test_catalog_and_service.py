@@ -2811,6 +2811,75 @@ def test_reference_listing_lower_bound_does_not_require_prelisting_session(sessi
     ) == (date(2025, 11, 27), date(2025, 11, 27), datetime(2025, 11, 27, 7, tzinfo=UTC))
 
 
+@pytest.mark.parametrize("symbol", ["pd", "pt"])
+@pytest.mark.parametrize("fault,code", [
+    (None, None),
+    ("next_week_unopened", None),
+    ("session", "TRADING_SESSION_MISSING"),
+    ("calendar", "TRADING_CALENDAR_MISSING"),
+    ("listing_closed", "TRADING_CALENDAR_MISSING"),
+    ("cutoff_calendar", "TRADING_CALENDAR_MISSING"),
+    ("map", "MAIN_CONTRACT_MAP_MISSING"),
+    ("prelisting_map", "MAIN_CONTRACT_MAP_CONFLICT"),
+    ("week", "MAPPED_CONTRACT_DATASET_MISSING"),
+])
+def test_weekly_actual_range_uses_verified_listing_boundary(session, tmp_path, symbol, fault, code):
+    from sqlalchemy import delete
+
+    market = _listing_market(session, tmp_path, symbol)
+    listing = date(2025, 11, 27)
+    week_end = date(2025, 11, 28)
+    contract = f"{symbol.upper()}2606"
+    session.add(Contract(
+        contract_code=contract, instrument_symbol=symbol, exchange_code="GFEX",
+        listed_date=listing, expired_date=date(2026, 6, 12), provider="rqdata",
+    ))
+    session.add_all(
+        TradingCalendar(exchange_code="GFEX", trade_date=date(2025, 11, day), is_trading_day=False)
+        for day in ((29,) if fault == "cutoff_calendar" else (29, 30))
+    )
+    if fault == "next_week_unopened":
+        session.add(TradingCalendar(
+            exchange_code="GFEX", trade_date=date(2025, 12, 1), is_trading_day=True,
+        ))
+    session.add_all(
+        MainContractMap(symbol=symbol, trade_date=day, contract_code=contract)
+        for day in (listing, week_end) if not (fault == "map" and day == listing)
+    )
+    if fault == "prelisting_map":
+        session.add(MainContractMap(symbol=symbol, trade_date=listing - timedelta(days=1),
+                                    contract_code=contract))
+    if fault == "session":
+        session.execute(update(TradingSession).where(
+            TradingSession.instrument_symbol == symbol).values(effective_from=week_end))
+    if fault == "calendar":
+        session.execute(delete(TradingCalendar).where(
+            TradingCalendar.exchange_code == "GFEX", TradingCalendar.trade_date == listing))
+    if fault == "listing_closed":
+        session.execute(update(TradingCalendar).where(
+            TradingCalendar.exchange_code == "GFEX", TradingCalendar.trade_date == listing,
+        ).values(is_trading_day=False))
+    bar = _bar(28, 100, month=11)
+    if fault != "week":
+        _publish(market.catalog, market.store, DatasetKey("contract", symbol, contract, "1w"), (bar,))
+    session.commit()
+
+    start = datetime(2025, 11, 26, 8, tzinfo=UTC)
+    end = (datetime(2025, 11, 30, 16, tzinfo=UTC) if fault == "next_week_unopened"
+           else datetime(2025, 11, 28, 8, tzinfo=UTC))
+    request = SeriesQuery("actual_dominant", symbol, "1w", start, end)
+    if code is not None:
+        with pytest.raises(MarketDataError, match=code):
+            market.query(request)
+        return
+
+    result = market.query(request)
+    assert result.bars == (bar,)
+    assert result.request_identity["start"] == start.isoformat()
+    assert result.request_identity["end"] == end.isoformat()
+    assert result.resolved_contract_segments == (ResolvedContractSegment(contract, week_end, week_end),)
+
+
 def test_session_lower_bound_keeps_first_trading_days_prior_natural_night(session, tmp_path):
     market = _listing_market(session, tmp_path, "pd", night=True)
     listing = date(2025, 11, 27)

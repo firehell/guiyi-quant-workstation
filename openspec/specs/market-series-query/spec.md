@@ -39,6 +39,14 @@ Physical and actual-dominant interval queries and pages SHALL compare returned B
 - **WHEN** an ordinary range or page query reads the window
 - **THEN** the read fails with a typed missing-data error instead of returning a shortened successful series
 
+#### Scenario: A weekly actual-dominant interval crosses a verified listing date
+
+- **GIVEN** the product's window-start record identifies an independently verified exchange listing date
+- **WHEN** the requested interval starts before that date
+- **THEN** the service keeps the original interval and excludes prelisting trading-day identities from Session resolution
+- **AND** a rank-1 map in the prelisting interval fails as a conflict, while missing Calendar, Session, rank-1 or price endpoints in the eligible interval still fail closed
+- **AND** Calendar proof extends through the ISO week of the last completed Session only as needed to determine its week-end owner
+
 ### Requirement: Narrow D1 quality-aware read never weakens strict market series
 
 普通 historical series 读取遇到含 `PRICE_UNAVAILABLE` 的月分区 MUST 保持 fail-closed，

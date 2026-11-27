@@ -2517,12 +2517,17 @@ class MarketDataService:
         - 映射指向的合约分区缺失或交易日缺 bar 时整体失败，不部分返回。
         """
         try:
+            earliest = (
+                self._weekly_range_listing_boundary(request)
+                if request.frequency is BarFrequency.W1 else None
+            )
             session_windows = self.catalog.session_windows_overlapping_window(
                 request.symbol,
                 request.start,
                 request.end,
+                earliest=earliest,
             )
-        except CatalogError as exc:
+        except (CatalogError, InfrastructureError) as exc:
             raise MarketDataError(exc.code) from exc
         trading_days = tuple(day for day, _ in session_windows)
         if not trading_days:
@@ -2543,6 +2548,12 @@ class MarketDataService:
                 for day, windows in session_windows
                 if max(window.end for window in windows) <= request.end
             )
+            if earliest is not None and completed_mappings:
+                last_day = completed_mappings[-1].trade_date
+                sunday = last_day + timedelta(days=6 - last_day.weekday())
+                cutoff_day = request.end.astimezone(SHANGHAI).date()
+                if cutoff_day < sunday:
+                    self._exact_calendar(request.symbol, cutoff_day + timedelta(days=1), sunday)
             selected = self._weekly_mappings(request, completed_mappings)
         else:
             selected = selected_mappings
@@ -2590,6 +2601,27 @@ class MarketDataService:
                 request.end,
             )
         return self._result(request, tuple(bars), segments)
+
+    def _weekly_range_listing_boundary(self, request: SeriesQuery) -> date | None:
+        """Exclude only trade-date identities before the verified exchange listing."""
+        source = DatabaseCoverageSource(
+            self.catalog.session,
+            PROJECT_ROOT / "data/universe/product_window_starts.csv",
+        )
+        listing = source.exchange_listing_start(request.symbol)
+        start_day = request.start.astimezone(SHANGHAI).date()
+        if listing is None or listing <= start_day:
+            return None
+        end_day = request.end.astimezone(SHANGHAI).date()
+        if self.catalog.main_map(
+            request.symbol, start_day, min(end_day, listing - timedelta(days=1)),
+        ):
+            raise MarketDataError("MAIN_CONTRACT_MAP_CONFLICT")
+        if listing <= end_day:
+            calendar = self._exact_calendar(request.symbol, listing, end_day)
+            if not calendar[0][1]:
+                raise MarketDataError("TRADING_CALENDAR_MISSING")
+        return listing
 
     def _validate_actual_endpoints(
         self,

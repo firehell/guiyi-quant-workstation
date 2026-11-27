@@ -212,6 +212,10 @@ unknown 都停止，不 retry，不触碰窗口外 warm-up/Map/Session、Dataset
 优先完成基础 provider 日线 `1d` 与由其聚合的 `1w`，再按 active universe、Dataset、年月顺序续传基础
 provider 分钟线 `1m`。每完成一个 1m dataset-month，立即生成四个日内派生月。
 
+`product_window_starts.csv` 中的 `exchange_listing_start` 表示独立核实的挂牌日。跨挂牌日的严格
+`actual_dominant` 周线区间保留原时间窗，以此日期约束 Session 的交易日身份，再按 Catalog 验证挂牌后的覆盖。
+PD、PT 的挂牌日为 2025-11-27，Catalog 首批物理合约上市日与挂牌公告一致。[挂牌公告](https://www.gzns.gov.cn/gznsjr/gkmlpt/content/10/10570/post_10570927.html)
+
 18:05 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日。
 该判断要求每个相关交易所存在当天精确的 `provider=rqdata` Calendar 行；缺行或非权威行返回
 `TRADING_CALENDAR_MISSING`，以 `attempts=0` 终止并保留失败事实，不能回退到昨天后伪装成
