@@ -105,6 +105,11 @@ PRIOR_RESISTANCE = {
                    "SH2701": "1511-1516"},
 }
 WEAK_EVENTS = ("first_range_overlap", "first_fresh_near_close", "first_fresh_far_close")
+PROTECTION_PRIORITY = {
+    ("2026-10-23", "SH2701"): ("WRo1A1rN9b", "稍后更新", None),
+    ("2026-10-23", "LH2701"): ("WRo1xzmET9", None, None),
+    ("2026-10-26", "SH2701"): ("WRoqvu4VM9", None, ("WRoqwqpfSc", (1546, 1556))),
+}
 
 
 def archive_case(index, source_id, session_date, contract, author_class):
@@ -518,6 +523,61 @@ def weak_side_revisions(session, market):
                 historical_source_revisions_verified=False)
 
 
+def protection_priority_timeline(session, market, index):
+    root = Path("output/lms405-p4-generated-range-20261127")
+    frozen = {}
+    for cohort, filename, digest in REVISION_REPORTS:
+        for case in verified_json(root / filename, digest)[cohort]["cases"]:
+            frozen[case["trading_day"], case["contract"]] = case
+    results = []
+    for (day, contract), (priority_id, review_text, warning) in PROTECTION_PRIORITY.items():
+        case = frozen[day, contract]
+        prior, latest = case["prior"], case["next_plan"]
+        priority = load_source(index, priority_id)
+        sources = (prior, priority, latest)
+        clocks = tuple(datetime.fromisoformat(row["published_at"]).replace(second=0, microsecond=0) + ONE
+                       for row in sources)
+        for row in sources:
+            if sha((ARCHIVE.parent / row["archive_path"]).read_bytes()) != row["archive_sha256"]:
+                raise ValueError("PROTECTION_PRIORITY_SOURCE_CHANGED")
+        prior_at, priority_at, latest_at = clocks
+        priority_body = (ARCHIVE.parent / priority["archive_path"]).read_text(encoding="utf-8").partition("## 内容记录")[2]
+        if (not prior_at < priority_at < latest_at or priority_at.date() != date.fromisoformat(day)
+                or "移动止盈" not in priority_body or (review_text and review_text not in priority_body)):
+            raise ValueError("PROTECTION_PRIORITY_PUBLICATION_CHANGED")
+        bars = read_session_series(session, market, contract[:-4].lower(), contract, "1m", ONE,
+                                   (date.fromisoformat(day),))
+        market_sha = sha(encoded([(bar.bar_end, *ohlc(bar)) for bar in bars]).encode())
+        if (len(bars) != case["market_count"] or market_sha != case["market_sha256"]
+                or not prior_at < bars[0].bar_end - ONE or not bars[-1].bar_end + US < latest_at):
+            raise ValueError("PROTECTION_PRIORITY_FROZEN_WINDOW_CHANGED")
+        result = dict(contract=contract, trading_day=day, prior=prior, priority=priority, next_plan=latest,
+                      public_knowledge_clocks=clocks, update_preview_disclosed=review_text is not None,
+                      minutes_after_priority_before_next_plan=sum(priority_at < bar.bar_end - ONE for bar in bars),
+                      last_session_bar_end=bars[-1].bar_end, prior_protection=case["prior_protection"],
+                      next_protection=case["next_protection"], published_band_changed=case["published_band_changed"],
+                      old_band_revocation_confirmed=None, author_action_at=None, market_sha256=market_sha)
+        if warning:
+            warning_id, edges = warning
+            warning_source = load_source(index, warning_id)
+            warning_body = (ARCHIVE.parent / warning_source["archive_path"]).read_text(encoding="utf-8").partition(
+                "## 内容记录")[2]
+            warning_at = datetime.fromisoformat(warning_source["published_at"]).replace(second=0, microsecond=0) + ONE
+            if (not priority_at < warning_at < latest_at or "第一个弱侧警告" not in warning_body
+                    or "准备锁定" not in warning_body or "—".join(map(str, edges)) not in warning_body):
+                raise ValueError("PROTECTION_PRIORITY_WARNING_CHANGED")
+            after = [bar for bar in bars if warning_at < bar.bar_end - ONE]
+            comparisons = {role: audited_weak_band(after, latest_at, tuple(Decimal(str(x)) for x in band))
+                           for role, band in (("first_warning", edges), ("prior_published_protection",
+                                                                         case["prior_protection"]))}
+            result["warning"] = dict(source=warning_source, known_after=warning_at, minute_count=len(after),
+                                     low=min(bar.low for bar in after), high=max(bar.high for bar in after),
+                                     author_signal_or_execution_permission=None, price_only=comparisons)
+        results.append(result)
+    return dict(version="lms405-protection-priority-timeline-v1", cases=results, author_action_samples=0,
+                author_action_matches=None, historical_source_revisions_verified=False, executable=False)
+
+
 def study(session, market, *, compare_admission=False, compare_ranges=False, compare_resistance=False,
           compare_revisions=False, transfer_revisions=False):
     reference = verified_json(BASELINE, BASELINE_SHA256)
@@ -586,14 +646,17 @@ def main():
     parser.add_argument("--compare-resistance-pivots", action="store_true")
     parser.add_argument("--compare-protection-revisions", action="store_true")
     parser.add_argument("--transfer-protection-revisions", action="store_true")
-    parser.add_argument("--compare-weak-side-revisions", action="store_true")
+    separate = parser.add_mutually_exclusive_group()
+    separate.add_argument("--compare-weak-side-revisions", action="store_true")
+    separate.add_argument("--compare-protection-priority", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
-    if args.compare_weak_side_revisions and any((args.compare_admission, args.compare_generated_ranges,
-                                                 args.compare_resistance_pivots, args.compare_protection_revisions,
-                                                 args.transfer_protection_revisions)):
-        parser.error("WEAK_SIDE_REVISION_REQUIRES_STANDALONE_MODE")
+    if (args.compare_weak_side_revisions or args.compare_protection_priority) and any((
+        args.compare_admission, args.compare_generated_ranges, args.compare_resistance_pivots,
+        args.compare_protection_revisions, args.transfer_protection_revisions,
+    )):
+        parser.error("PROTECTION_TIMELINE_REQUIRES_STANDALONE_MODE")
     from dotenv import load_dotenv
     load_dotenv(args.env_file, override=False)
     from app.db.readonly import readonly_transaction
@@ -607,6 +670,8 @@ def main():
             market = build_market_data_service(session)
             if args.compare_weak_side_revisions:
                 report = weak_side_revisions(session, market)
+            elif args.compare_protection_priority:
+                report = protection_priority_timeline(session, market, input_sources())
             else:
                 report = study(session, market, compare_admission=args.compare_admission,
                                compare_ranges=args.compare_generated_ranges, compare_resistance=args.compare_resistance_pivots,
