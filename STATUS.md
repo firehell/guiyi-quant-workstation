@@ -1,3 +1,9 @@
+## 2026-11-28 00:23｜策略中心独立发布
+
+- [Strategy Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/strategy-center/v0.1.0) 与
+  [PR #683](https://github.com/firehell/guiyi-quant-workstation/pull/683) 对应精确提交
+  `368920150a30142da81ad9841e85f61f9ebac0d5`。交付六策略只读工作台，工作站采用该组件需按应用发布流程部署。
+
 ## 2026-11-27｜RS 退出新版范围（develop）
 
 - RS 按现有退役合同退出新版数据、计算和产品目录。候选研究及运行范围各为 57 品种。历史 Canonical、Catalog、原始观察和运行凭证保留。
