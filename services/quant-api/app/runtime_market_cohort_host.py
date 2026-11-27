@@ -596,20 +596,31 @@ class MarketCohortHost(CohortHost):
 
     def _prewarm_staged(self, plan, settings):
         candidate = registry(plan["new"]).services["market-feed"]
+        staged = _read(self._attempt(plan) / "state.json")["effects"]["market_source_stage"]
+        return self._prove_staged_warmup(candidate, settings, staged["binding"])
+
+    def _prove_staged_warmup(self, candidate, settings, binding, *, direct=False):
         root = Path(candidate.root)
+        service = "market-direct-staged" if direct else "market-source-staged"
+        core_package = None
+        if direct:
+            from app.compute_runtime.artifact import locked_core
+
+            _, core_package = locked_core(root / "services/quant-api/quant-core-release.toml")
         env = {**os.environ, **settings, "GUIYI_MARKET_SOURCE": "rqdata_tick",
-               "GUIYI_PROJECT_ROOT": candidate.root, "PYTHONDONTWRITEBYTECODE": "1"}
+               "GUIYI_PROJECT_ROOT": candidate.root, "PYTHONDONTWRITEBYTECODE": "1",
+               "GUIYI_OBSERVATION_STREAM_ENABLED": "1", "GUIYI_RUNTIME_HANDOVER_ENABLED": "1"}
         result = subprocess.run(
-            [str(root / "services/quant-api/.venv/bin/python"), "-m", "app.runtime_cohort", "warmup", "market-source-staged"],
+            [str(root / "services/quant-api/.venv/bin/python"), "-m", "app.runtime_cohort", "warmup", service],
             cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, check=False, timeout=min(60, max(1, self.deadline - monotonic())),
         )
         proof = json.loads(result.stdout.strip().splitlines()[-1])
-        staged = _read(self._attempt(plan) / "state.json")["effects"]["market_source_stage"]
         require(result.returncode == 0 and proof.get("status") == "ready"
-                and proof.get("service") == "market-source-staged" and self._candidate_sources(proof, root, candidate.tag)
+                and proof.get("service") == service
+                and self._candidate_sources(proof, root, candidate.tag, core_package=core_package)
                 and proof.get("proof", {}).get("receipt_only") is True
-                and proof["proof"].get("binding") == staged["binding"], "MARKET_SOURCE_STAGED_WARMUP_UNPROVEN")
+                and proof["proof"].get("binding") == binding, "MARKET_SOURCE_STAGED_WARMUP_UNPROVEN")
         return proof["proof"]
 
     def check_staged_market_source(self, plan, proof, retained, staged):

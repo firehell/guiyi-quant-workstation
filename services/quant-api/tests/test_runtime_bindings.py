@@ -28,6 +28,28 @@ def test_atomic_registry_roundtrip_cas_and_pinned_roots(tmp_path):
     assert write_bindings(registry, home=tmp_path, expected_sha256=digest) == digest
 
 
+def test_market_start_replaces_a_missing_old_root_using_exact_preimage(tmp_path):
+    from app.runtime_bindings import market_start_preimage, write_market_start_bindings
+
+    old = tmp_path / "old"
+    new = tmp_path / "new"
+    old.mkdir()
+    new.mkdir()
+    previous = BindingRegistry(1, {"live": binding(old)})
+    expected = write_bindings(previous, home=tmp_path, expected_sha256=None)
+    old.rmdir()
+    with pytest.raises(RuntimeBindingError):
+        read_bindings(home=tmp_path)
+    inventory, digest, raw = market_start_preimage(home=tmp_path)
+    assert inventory == previous and digest == expected
+    assert raw == registry_path(tmp_path).read_bytes()
+    successor = BindingRegistry(1, {"live": binding(new, generation=2)})
+    with pytest.raises(RuntimeBindingError, match="REGISTRY_DRIFT"):
+        write_market_start_bindings(successor, home=tmp_path, expected_sha256="f" * 64)
+    write_market_start_bindings(successor, home=tmp_path, expected_sha256=expected)
+    assert read_bindings(home=tmp_path) == successor
+
+
 @pytest.mark.parametrize("defect", ["json", "permission", "symlink", "duplicate", "invalid_identity"])
 def test_present_invalid_registry_never_falls_back(tmp_path, defect):
     assert read_bindings(home=tmp_path) is None

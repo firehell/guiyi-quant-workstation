@@ -166,7 +166,7 @@ def _require_forward_application_release(tag, previous):
         return tuple(map(int, value[1:].split(".")))
 
     old_versions = [
-        version(binding.tag) for binding in previous.services.values()
+        version(binding.tag) for binding in (previous.services.values() if previous else ())
         if market_release_version(binding.tag) is None
     ]
     require(
@@ -777,7 +777,8 @@ def main(argv=None):
     p = sub.add_parser("resolve-restored")
     p.add_argument("--plan", required=True, type=Path)
     p = sub.add_parser("warmup")
-    p.add_argument("service", choices=(*CONTINUOUS, *sorted(OPTIONAL_CONTINUOUS), "market-source-staged"))
+    p.add_argument("service", choices=(*CONTINUOUS, *sorted(OPTIONAL_CONTINUOUS),
+                                      "market-source-staged", "market-direct-staged"))
     args = parser.parse_args(argv)
     try:
         if args.mode == "warmup":
@@ -786,7 +787,7 @@ def main(argv=None):
             from app.core.env import PROJECT_ROOT
             from app.version import APP_VERSION
 
-            if args.service == "market-source-staged":
+            if args.service in {"market-source-staged", "market-direct-staged"}:
                 from app.db.session import SessionLocal
                 from app.db.readonly import readonly_transaction
                 from app.market_data.composition import build_market_feed_service
@@ -800,7 +801,12 @@ def main(argv=None):
                       open_formal_tick_dispatch() as dispatch):
                     feed = build_market_feed_service(session, tick_dispatch=dispatch)
                     require(feed.quiescent(datetime.now(UTC)), "MARKET_SOURCE_STAGED_FEED_NOT_QUIESCENT")
-                proof = warmup_formal_receipts()
+                if args.service == "market-direct-staged":
+                    from app.market_data.market_archive import formal_archive_directory
+
+                    proof = warmup_formal_receipts(archive_root=formal_archive_directory())
+                else:
+                    proof = warmup_formal_receipts()
             elif args.service == "alert":
                 from app.alerts.composition import warmup_alert_runtime
 

@@ -162,8 +162,7 @@ def _read(path: Path) -> bytes | None:
         os.close(fd)
 
 
-def read_bindings(*, home: Path | None = None) -> BindingRegistry | None:
-    content = _read(registry_path(home))
+def _parse_bindings(content: bytes | None, *, inventory=False) -> BindingRegistry | None:
     if content is None:
         return None
     try:
@@ -173,9 +172,20 @@ def read_bindings(*, home: Path | None = None) -> BindingRegistry | None:
         if any("_history" in row for row in payload["services"].values()):
             raise ValueError
         return BindingRegistry(payload["schema_version"],
-            {key: ServiceBinding(**value) for key, value in payload["services"].items()})
+            {key: ServiceBinding(**value, _history=_HISTORY_CAPABILITY if inventory else None)
+             for key, value in payload["services"].items()})
     except (KeyError, AttributeError, TypeError, ValueError):
         raise RuntimeBindingError("INVALID_BINDING_REGISTRY") from None
+
+
+def read_bindings(*, home: Path | None = None) -> BindingRegistry | None:
+    return _parse_bindings(_read(registry_path(home)))
+
+
+def market_start_preimage(*, home: Path | None = None) -> tuple[BindingRegistry | None, str | None, bytes | None]:
+    """Inventory superseded declarations for a fresh Market start, without activating their roots."""
+    raw = _read(registry_path(home))
+    return _parse_bindings(raw, inventory=True), hashlib.sha256(raw).hexdigest() if raw is not None else None, raw
 
 
 def bindings_sha256(*, home: Path | None = None) -> str | None:
@@ -187,6 +197,16 @@ def bindings_sha256(*, home: Path | None = None) -> str | None:
 def write_bindings(registry: BindingRegistry, *, home: Path | None = None,
                    expected_sha256: str | None) -> str:
     """Atomically replace one validated authority, serialized under a stable flock."""
+    return _write_bindings(registry, home, expected_sha256, bindings_sha256)
+
+
+def write_market_start_bindings(registry: BindingRegistry, *, home: Path | None = None,
+                                expected_sha256: str | None) -> str:
+    """Accept a superseded inventory only as the CAS preimage of a live, validated replacement."""
+    return _write_bindings(registry, home, expected_sha256, lambda *, home: market_start_preimage(home=home)[1])
+
+
+def _write_bindings(registry, home, expected_sha256, current_digest):
     registry.__post_init__()
     for binding in registry.services.values():
         binding.__post_init__()
@@ -203,7 +223,7 @@ def write_bindings(registry: BindingRegistry, *, home: Path | None = None,
         if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1 or stat.S_IMODE(info.st_mode) != 0o600:
             raise RuntimeBindingError("INVALID_REGISTRY_LOCK")
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if bindings_sha256(home=home) != expected_sha256:
+        if current_digest(home=home) != expected_sha256:
             raise RuntimeBindingError("REGISTRY_DRIFT")
         content = json.dumps(asdict(registry), sort_keys=True, separators=(",", ":")).encode()
         fd, temporary = tempfile.mkstemp(prefix=".service-bindings-", dir=path.parent)
