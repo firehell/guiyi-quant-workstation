@@ -1,0 +1,70 @@
+{
+  "version": "lms405-plan-market-sequence-v1",
+  "seed": {
+    "attempt": 1,
+    "contract": "SH2701",
+    "counter_m": "0",
+    "direction": "SHORT",
+    "episode": "WRoAkcEppg:CONDITIONAL",
+    "known_at": "2026-10-27 11:35:00+08:00",
+    "original": "20",
+    "protection": "20"
+  },
+  "revisions": [
+    {
+      "contract": "SH2701",
+      "id": "A5358325972992140",
+      "known_at": "2026-10-26 17:46:00+08:00",
+      "operations": [
+        "RECOVER_ORIGINAL"
+      ],
+      "published_at": "2026-10-26T17:45:00+08:00",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405358325972992140"
+    },
+    {
+      "contract": "SH2701",
+      "id": "A5358686695981271",
+      "known_at": "2026-10-27 17:39:00+08:00",
+      "operations": [
+        "PROTECT_EARLY"
+      ],
+      "published_at": "2026-10-27T17:38:00+08:00",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405358686695981271"
+    }
+  ],
+  "cutoff": "2026-10-27T22:12:00+08:00",
+  "steps": [
+    {
+      "trading_day": "2026-10-27",
+      "start": "2026-10-27T11:35:00+08:00",
+      "cutoff": "2026-10-27T15:00:00+08:00",
+      "band": [
+        "1511",
+        "1516"
+      ],
+      "operation": "RECOVER_ORIGINAL",
+      "quantity": "20",
+      "shape_period": 5,
+      "confirmation_period": 1,
+      "request_expires_at": "2026-10-27T15:00:00+08:00",
+      "id": "recover",
+      "plan_id": "A5358325972992140"
+    },
+    {
+      "trading_day": "2026-10-28",
+      "start": "2026-10-27T21:00:00+08:00",
+      "cutoff": "2026-10-27T22:12:00+08:00",
+      "band": [
+        "1490",
+        "1501"
+      ],
+      "operation": "PROTECT_EARLY",
+      "quantity": "20",
+      "shape_period": 1,
+      "confirmation_period": 1,
+      "request_expires_at": "2026-10-27T22:12:00+08:00",
+      "id": "protect",
+      "plan_id": "A5358686695981271"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "exit": {
+    "scope": "a1d52eab4c2bf2dfbae8cc9bf04ecd01a1785bad499e4deb36a08ee5bf749be1",
+    "id": "fixture:pvc-exit-reenter:exit",
+    "accepted": true,
+    "decided_at": "2026-10-26T02:50:00.000002+00:00",
+    "known_at": "2026-10-26T02:50:00.000003+00:00",
+    "record_kind": "TEST_FIXTURE"
+  },
+  "reenter": {
+    "scope": "eea8da023d8a1c9e02a129d9fb88806933ad694b34da418cc5b3ae1c48b168aa",
+    "id": "fixture:pvc-exit-reenter:reenter",
+    "accepted": true,
+    "decided_at": "2026-10-27T02:46:00.000002+00:00",
+    "known_at": "2026-10-27T02:46:00.000003+00:00",
+    "record_kind": "TEST_FIXTURE"
+  }
+}

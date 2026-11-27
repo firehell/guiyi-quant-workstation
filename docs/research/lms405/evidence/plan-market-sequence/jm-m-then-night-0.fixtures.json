@@ -1,0 +1,94 @@
+{
+  "approvals": {
+    "clear_trend": {
+      "accepted": true,
+      "decided_at": "2026-10-22 14:40:00.000002+00:00",
+      "id": "TEST_FIXTURE:4e7b9144b286a78f3eaa2595ea3aeb829dbc7e1bf5c2f8a224dc832debe720c5",
+      "known_at": "2026-10-22 14:40:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "08154ebd198002c962b42d9fb2e904064df5b83ee898c8eb81950fa651f57e49"
+    },
+    "enter_counter_m": {
+      "accepted": true,
+      "decided_at": "2026-10-22 14:59:00.000002+00:00",
+      "id": "TEST_FIXTURE:0381d43e19c63991c3d9fc141be0cfca87c8e908735b235628bc6a060ea7cc7f",
+      "known_at": "2026-10-22 14:59:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "727a722369cdd364400c170f254c967b3e69d1354695591bfc9f49df16bdb3e4"
+    },
+    "exit_counter_m": {
+      "accepted": true,
+      "decided_at": "2026-10-23 15:00:00.000002+08:00",
+      "id": "TEST_FIXTURE:7864c8c31b0ef3297b842c173f09e75a71091d07158600cbe5be524093cc574f",
+      "known_at": "2026-10-23 15:00:00.000003+08:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "837e30279524d255a38686436d24a0960f6e9a549f3af19497e62a57ca299519"
+    },
+    "night-short": {
+      "accepted": true,
+      "decided_at": "2026-10-23T13:13:00.000002+00:00",
+      "id": "fixture:jm-m-then-night-0:night-short",
+      "known_at": "2026-10-23T13:13:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "d43d85a8eecfaf3221a13a7f86aa67ce1196f1fa61e181fc0156c241b634ef91"
+    }
+  },
+  "facts": {
+    "clear_trend": [
+      {
+        "case_id": "4e7b9144b286a78f3eaa2595ea3aeb829dbc7e1bf5c2f8a224dc832debe720c5",
+        "contract": "JM2701",
+        "known_at": "2026-10-22 14:40:00.000001+00:00",
+        "name": "TREND_EXIT_SIGNAL",
+        "observed_at": "2026-10-22 14:40:00+00:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:d609afa4d02a647627e1991bd5cb7fd05475f81b06f8722487b1a7f3d674a316:TEST_FIXTURE_JM:clear_old",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      }
+    ],
+    "enter_counter_m": [
+      {
+        "case_id": "0381d43e19c63991c3d9fc141be0cfca87c8e908735b235628bc6a060ea7cc7f",
+        "contract": "JM2701",
+        "known_at": "2026-10-22 14:59:00.000001+00:00",
+        "name": "COUNTER_M_ENTRY_PERMITTED",
+        "observed_at": "2026-10-22 14:50:00+00:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:d609afa4d02a647627e1991bd5cb7fd05475f81b06f8722487b1a7f3d674a316:TEST_FIXTURE_JM:open_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      },
+      {
+        "case_id": "0381d43e19c63991c3d9fc141be0cfca87c8e908735b235628bc6a060ea7cc7f",
+        "contract": "JM2701",
+        "known_at": "2026-10-22 14:59:00.000001+00:00",
+        "name": "COUNTER_M_ENTRY_SIGNAL",
+        "observed_at": "2026-10-22 14:50:00+00:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:d609afa4d02a647627e1991bd5cb7fd05475f81b06f8722487b1a7f3d674a316:TEST_FIXTURE_JM:open_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      }
+    ],
+    "exit_counter_m": [
+      {
+        "case_id": "7864c8c31b0ef3297b842c173f09e75a71091d07158600cbe5be524093cc574f",
+        "contract": "JM2701",
+        "known_at": "2026-10-23 15:00:00.000001+08:00",
+        "name": "COUNTER_M_EXIT_PERMITTED",
+        "observed_at": "2026-10-23 15:00:00+08:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:d609afa4d02a647627e1991bd5cb7fd05475f81b06f8722487b1a7f3d674a316:TEST_FIXTURE_JM:exit_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      },
+      {
+        "case_id": "7864c8c31b0ef3297b842c173f09e75a71091d07158600cbe5be524093cc574f",
+        "contract": "JM2701",
+        "known_at": "2026-10-23 15:00:00.000001+08:00",
+        "name": "COUNTER_M_EXIT_SIGNAL",
+        "observed_at": "2026-10-23 15:00:00+08:00",
+        "source": "TEST_FIXTURE_EXTERNAL_EVIDENCE:d609afa4d02a647627e1991bd5cb7fd05475f81b06f8722487b1a7f3d674a316:TEST_FIXTURE_JM:exit_m",
+        "time_kind": "EVENT_TIME",
+        "value": true
+      }
+    ]
+  }
+}

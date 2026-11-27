@@ -302,7 +302,13 @@ def context(bars, index):
     """Exclude signal(index-1) and confirmation(index); no future pivot labels."""
     if index < 7:
         return None
-    w = bars[index - 7 : index - 1]
+    return context_from_window(bars[index - 7 : index - 1])
+
+
+def context_from_window(w):
+    """Classify the six Bars the caller has already admitted to the context."""
+    if len(w) != 6:
+        return None
     a, b = w[:3], w[3:]
     ah, al = max(x.high for x in a), min(x.low for x in a)
     bh, bl = max(x.high for x in b), min(x.low for x in b)

@@ -1,5 +1,118 @@
 # L.M.S 4.0.5 复刻研究说明
 
+使用入口为[近似研究策略使用说明](NEAR405_V1.md)。[作者公开策略说明](AUTHOR_STRATEGY.md)保存公开证据与不可识别条件；本手册保存P0–P5的来源、复算命令和验证结果。
+
+后续第一批重新保护定向取证已收口。新增可评分动作0。烧碱27日夜盘只在21:39这一候选报价标签下能区分区前许可和等触区两条研究路径，实际截图时钟未核定。另复读同版再次锁定、区内锁定和明确等待三个不同动作的来源。 [准入、排除项与检索范围](evidence/SH2701_OCT_CASE.md#重新保护与等待的第一批定向取证)
+
+近似复刻研究范围已经闭环。P0核对焦煤与烧碱跨图分腿，P1将两案加入九品种对照，P2核对其他品种的等待、暂停、旧仓和新动作。P3用计划、已完成行情与外部证据连续重放。P4分别对照确认时钟、环境和价带。P5冻结规则后验证日期外与跨实月窗口。原版的实际动作、私有公式及账户收益仍无法验收。 [九品种及反例](evidence/PORTFOLIO_REPLAY.md#在九品种入口复算烧碱和焦煤的连续分腿) · [留出结果](#p5留出验证口径)
+
+## P5留出验证口径
+
+正式读取留出行情前锁定研究基线 `9543960f8`。首个日期外窗口为2026年11月16–20日交易日，OI、RU、JM、FG、SA、V、TA、SH、I的2701实月。按统一MDS核对1m与5m完整交易时段及聚合一致性。单合约任一必要周期缺失则整段出具缺口。各窗口从显式空仓开始，独立候选使用原有七根5分钟K暖机，期末未平保留盯市。另行选择的跨实月窗口须先核对独立性再读取。
+
+- 作者计划模式沿用 `lms405_plan_driven_replay.py` 在该提交的实现。计划必须有实月、版本、可查决定时点和当时有效修订。行为分母仅含独立可核的动作、信号及时点，排除测试许可和作者动作回填。没有完整证据则记录缺口，匹配率留空。
+- 独立候选固定 `lms-near405-v1` 与原规则hash `ba4a3aa30e499496196bfa36afcd18907e4f4cf5bd50fc6e56cab91d9ef43d07`。分别报告默认无确认和即时测试确认，费用参考阶段只用后者。沿用参考执行内核，实月规格取已有封存源，固定毛损益、假设每边3元加1跳、每边3元加2跳。若缺历史限价、逐日费率或可成交事实，报告仅说明价格和成本敏感性。期间不按结果调整规则。
+
+跨实月先固定焦煤 JM2609 的2026年7月6–10日、烧碱 SH2611 的2026年8月24–28日。选择依据是合约交接记录及现有开发报告未列为这两个实月的案例窗口，两个实月的其他日期已有开发用途，因此这两个窗口用于观察同品种不同交割月和不同日期下的表现。沿用首批规则、暖机和三个成本情景。若精确窗口缺失，保留缺口和原因。作者版本、触发与后续动作证据另行核验。
+
+### 首个日期外窗口结果
+
+九个实月均满足统一MDS完整性与聚合OHLC核验。各有1,725根1m和345根5m，合计15,525根1m和3,105根5m。 [封存覆盖与输入哈希](evidence/portfolio-p5-holdout-coverage-20261116.json)
+
+默认人工确认产生51条建议、0次状态转换。即时测试确认完成42个研究周期、90次单手参考开平操作，出现3次锁定。该窗口没有解锁、回补。各实月独立空仓起步，窗口末均无参考持仓。下表为每个实月各自一手口径，合计是各段净额之和。
+
+| 实月 | 零成本/元 | 每边3元加1跳/元 | 每边3元加2跳/元 |
+| --- | ---: | ---: | ---: |
+| OI2701 | -250 | -484 | -664 |
+| RU2701 | -200 | -730 | -1,230 |
+| JM2701 | -270 | -732 | -1,152 |
+| FG2701 | -200 | -246 | -286 |
+| SA2701 | -20 | -66 | -106 |
+| V2701 | 270 | 126 | 36 |
+| TA2701 | -30 | -238 | -398 |
+| SH2701 | 240 | -90 | -390 |
+| I2701 | 0 | 0 | 0 |
+| 合计 | -460 | -2,460 | -4,190 |
+
+首个日期外窗口未显示整体交易优势。作者一侧扫描了本地归档索引及公开搜索，无对应五日可核行为记录，行为可评分样本暂为0，匹配率留空。费用为敏感性假设，限价及盘口可成交性未获验证。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_holdout_replay.py --env-file .env \
+  --coverage docs/research/lms405/evidence/portfolio-p5-holdout-coverage-20261116.json \
+  --output /tmp/lms405-p5-date-holdout-new.json
+```
+
+两次只读复算逐字节一致。结果 `output/lms405-p5-date-holdout-20261127/report.json` 的SHA256为 `906a443cf83bf942a9bc7d99bc394713be013b30d7e6bf9878e37258561eda8c`。LMS定向测试714通过、1跳过。
+
+### 烧碱与焦煤跨实月留出
+
+两个留出窗口各通过1,725根1m、345根5m完整交易时段与逐根OHLC核验。合约乘数和最小价格变动取已有实月规格，焦煤为60和0.5，烧碱为30和1。每个窗口独立空仓开始，重放期间无跨月迁仓。 [封存窗口及输入哈希](evidence/portfolio-p5-cross-contract-coverage.json)
+
+| 实月 | 默认建议/转换 | 测试确认闭合周期/参考开平次数 | 零成本/元 | 每边3元加1跳/元 | 每边3元加2跳/元 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| JM2609 | 5/0 | 4/8 | -360 | -624 | -864 |
+| SH2611 | 7/0 | 5/12 | -360 | -756 | -1,116 |
+
+烧碱出现一次候选锁定，两个窗口均未出现候选解锁和回补，期末两腿均已清空。两窗口在零成本和两个假设成本情景下均为负。收益变化同时涉及合约和日期，无法单独归因给换月。三个情景共60条参考开平记录，时点都严格晚于各自决定可知时间，逐合约损益与已实现毛损益、盯市、手续费、滑点对账一致。
+
+- **焦煤 7月9日。** 作者盘后将1296.5–1305.5称为强弱分水岭，并复述之前提示等待。MDS含夜交易日最高1297.5，日盘最高1297。全交易日只有3根1m收盘落在该区，且上沿未触及。作者所说的分水岭及等待可留作盘面解释，其观察时段、贴区判据及原始提示不可确认。 [7月9日复盘](../lms-source-archive/03-单品种分析/2026-07-09/焦煤/S5318812691861985.md)
+- **焦煤 7月10日。** 作者报最低1249.5并称触及空向末档1245.5–1252.5。MDS验证含夜盘的交易日低点确为1249.5，出现在自然日7月9日22:22结束的分钟。22:05结束的分钟首次到达近沿1252.5，远沿1245.5全日未到，7月10日日盘低点为1251。该结果可核对价格路径，不能确认原VPLUS何时给出末档。 [7月10日复盘](../lms-source-archive/03-单品种分析/2026-07-10/焦煤/S5319171629910118.md)
+- **作者动作。** 两篇焦煤公开附图均返回403。7月6日午盘、9日和10日收盘汇总仅见搜索节选，未看到可绑定4.0.5和JM2609的逐行持仓。SH2611有8月14日开始更新的公开原帖，8月24–28日未定位同实月的事前计划或持仓。两案可评分动作均为0，原仓退出、撤保护和重新入场的实际条件仍未知。 [烧碱跟踪交接](evidence/SH2701_OCT_CASE.md#烧碱260926112701的公开跟踪交接)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_holdout_replay.py --cross-contract --env-file .env \
+  --coverage docs/research/lms405/evidence/portfolio-p5-cross-contract-coverage.json \
+  --output /tmp/lms405-p5-cross-holdout-new.json
+```
+
+两次跨实月只读复算逐字节一致，首批九品种日期外结果回归逐字节一致。跨实月定稿 `output/lms405-p5-cross-holdout-20261127/report.json` 的SHA256为 `21f044c1680d5bf9b00cdfd1540d5f07e1303fd8df08802051b1aa97b58c6cb9`。
+
+## P4独立价带生成、更新与作废
+
+沿用近似策略最近六根已完成5分钟K的价格区间，比较21:00前冻结与开盘后逐根重算。以同实月、开盘前已知且已生效的空头计划为对照。只有明确标为保护的作者价带参与数字比较。冻结区间的作废定义为完成K首次收在上沿或其上方，研究中作废后不恢复。该定义和滚动方式均为近似研究假设。
+
+九品种三晚共生成27个开盘区间，12个可与作者保护带配对。8个有交集或端点相接，两端完全一致为0。下沿、上沿绝对误差中位数分别为7.5和6个最小价位。开盘后35分钟共有133次端点变化，12个冻结区间触发空头上沿作废。烧碱10月27日夜盘生成1477–1496，作者保护带为1490–1501，生成上沿在21:30完成K后触发作废。保留六根K区间作为独立候选。观察到的误差和更新频率支持继续保留价带人工输入模式，作者生成及作废公式仍未知。 [作者计划与品种对照](evidence/PORTFOLIO_RECONSTRUCTION.md#九品种环境分类与盘后计划对照)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_environment_audit.py \
+  --compare-generated-ranges --env-file .env --output /tmp/lms405-generated-range-new.json
+```
+
+只读MDS复算逐字节一致。定稿 `output/lms405-p4-generated-range-20261127/report.json` 的SHA256为 `e269317cae655ab890ad212c07d0680f99e211f56d55bda627159d62da59edc9`。LMS定向测试714通过、1跳过。全批使用已见开发行情，作者动作评分分母为0。
+
+## P4环境分类与降周期候选
+
+九品种沿用现有三晚开发窗口。19个作者明确盘整或空头标签用六个开盘判读点比较。滚动环境首点相容12/19、六点均相容2/19、有翻转17/19。沿用日盘环境为7/19、7/19、0/19。等连续两个同类开盘判读后切换为7/19、3/19、14/19。固定及两票口径降低翻转，但首点与归档说法相容的次数减少。作者并未逐时点标注环境，三组均保留为研究对照。 [九品种归档标签与时点](evidence/PORTFOLIO_RECONSTRUCTION.md#九品种环境分类与盘后计划对照)
+
+另复算烧碱、焦煤、PVC的五条分钟恢复候选。环境取形态开始前已经可知的最近六根5分钟K，确认前另读一次。烧碱14:08候选由空头转盘整；焦煤14:41由盘整转空头；两次判断阶段不同。仅用整日收缩会放行五条，包括PVC两条作者已明确未解锁的候选。合并同向环境和整日收缩仍会放行PVC 09:33。合并同向环境和超ATR只留下烧碱14:08，两个焦煤候选也被挡。烧碱及焦煤的实际降周期与许可未获证实，这些门槛仅作过滤敏感性比较。高波动保护和锁后恢复继续独立检查。 [既有降周期及PVC负例](evidence/PORTFOLIO_REPLAY.md#分钟恢复的波动与降周期条件)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_environment_audit.py \
+  --compare-admission --env-file .env --output /tmp/lms405-environment-admission-new.json
+```
+
+两次MDS只读复算逐字节一致。原环境报告与分钟波动报告逐字段一致。定稿 `output/lms405-p4-environment-20261127/report.json` 的SHA256为 `3a730d512a7f0bd015e9875d1450a2cb07d40f1a4c9579f07f51e3092c6149cd`。LMS定向测试713通过、1跳过。
+
+## P4关键K穿越、收盘与失效对照
+
+复用菜油OI2609、铁矿I2701、烧碱SH2701和焦煤JM2509四个既有开发窗。对1→1、5→1、5→5、15→15逐项使用同样的母K、形态、连续时段和下一形态周期确认窗。高低价严格越过形态边界，以及收盘严格越过形态边界分别输出。两者均只在对应K已完成后可知，分钟高低价不能推定分钟内成交次序。
+
+按品种和周期累计25次穿越。其中7次同根严格收盘确认，1次较后严格收盘，17次在可观察的确认窗内没有收盘确认。跨周期可能观察同一价格路径，这些计数只用于区分条件。2025年7月22日焦煤5→1的1026.5边界于09:11已穿越，09:12才严格收越。2026年6月3日菜油5→1于14:11收盘确认、14:12回到边界或反侧。区外确认后的复位只在同一形态窗的剩余连续确认周期内观察，本批能观察到该过程的周期配置是5→1。
+
+研究模式继续保留严格完成K收盘作为默认确认。区内穿越保留对照，进入日常回放前需绑定独立粒度和许可。该结果仍无法识别作者BBB的真实确认、失效规则及4.0.5适用配置。四个窗口均为开发证据。 [旧关键K样本准入](evidence/KEYBAR_IDENTIFICATION_20261028.md)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_protection_timeframes.py \
+  --compare-confirmations --env-file .env --output /tmp/lms405-p4-confirm-new.json
+```
+
+两次MDS只读结果逐字节一致，原关键K报告逐字段一致。定稿 `output/lms405-p4-confirmation-20261127/report.json` 的SHA256为 `00f2fcefa9984e7a6e4d5c25ce2b064e79e2fc349315d49a2455451368ccad94`。LMS定向测试711通过、1跳过。
+
 ## P3计划驱动连续回放
 
 首个入口沿用原仓、保护与独立M的三类数量。每次评估从上一有效仓位出发，公开路径要求当时可知的最新修订及对应动作，形态开始早于计划或旧仓时不参与。计划可明确过期时点，最新计划过期时等待新修订。独立原仓清理和独立M退出使用另一个绑定到请求及许可的身份。研究中，作者计划是否实际按此范围和有效期工作仍未知。
@@ -13,6 +126,102 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 ```
 
 两次生成逐字节一致，定稿 `output/lms405-plan-driven-sh-20261127/verified.json` 的SHA256为 `2b2cee4f75250ef2e5681bd4e93111a2499e799d8a5686213e33913ed7287490`。全链测试还覆盖首次进入、提前保护、补足、开独立M、恢复原方向、分别退出、暂停及新计划回补。修订有效期和信号优先级仍按各案可知证据处理。下一批接行情候选生成与输入映射，再补焦煤的跨交易日及部分换腿。
+
+### 从作者计划和行情生成首次入场候选
+
+`--market-request` 现接收 `ENTER_TREND` 和显式 `entry_route`。起点须为空仓、未有尝试。`IN_BAND_SIGNAL` 要求指定方向的新完成K确认收在入场带内。`BREAK_THEN_SIGNAL` 要求完成1m新收越，之后才开始形成新的方向形态。`BREAK_PRESSURE_THEN_SIGNAL` 额外要求破位后回探边界并重新收回突破侧。两种右侧路径都要求确认仍处突破侧，下一档参考此前或同一完成分钟已触及时停等。跨激活时刻的分钟可以保守阻止追价，不能建立突破。休市断开突破与回踩路径。`DO_NOT_CHASE` 要求当次计划未给入场权限，输出等待。
+
+价带用途、方向、周期和下一档参考由输入明确声明。公开正文按原发布分钟结束作回看代理，历史修订未验证。左侧把作者的「附近」收窄为区内确认，右侧以新收越或回踩后再次收在同侧近似。下一档触及停止等候和许可时效均是研究约束。候选须经本次独立许可才改变仓位，许可必须在请求到期或下一根1m可知时刻两者较早者之前进入评估。历史回放不推定分钟内成交顺序。
+
+| 样本 | 北京时间与核对结果 | 无许可投影 |
+|---|---|---|
+| PVC左多，5045–5074 | 10月27日10:45结束的5m形态，10:46用1m收5071确认 | 只输出待许可，保持空仓 |
+| PVC右空，5055–5074 | 09:13收破5055，09:15确认回踩近似，09:16到达下一档5045。此前无同时满足条件的新5→1确认 | 无入场建议 |
+| PVC右多，5195 | 27日夜盘22:07首次严格收过5195，22:14之前未出现满足条件的新5→1确认 | 无入场建议 |
+| 烧碱防守，1653–1667 | 22日09:30发布继续防守及不追空，显式未给新空入场许可。以空仓前像检查是否错误生成新空 | 等待 |
+
+前三案取当前可读常驻VPLUS，其历史修订、实际仓位与成交未获证实。烧碱取单品种公开说明，子版本未知。 [PVC来源和三个分支](evidence/V_TA_CASE.md#pvc-的三条路径) · [烧碱不追空](../lms-source-archive/03-单品种分析/2026-10-22/烧碱/WRnOnrllRX.md)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-request docs/research/lms405/evidence/plan-first-entry/pvc-left-long.json \
+  --output /tmp/lms405-pvc-left-entry-new.json
+```
+
+同目录四份输入可各自复算。四份报告在 `output/lms405-plan-first-entry-20261127/`。两次只读复算逐字节一致，原烧碱两份保护与恢复报告逐字节一致。定向用例另外覆盖目标同分钟、计划生效的重叠分钟、晚许可过期、期后前缀及有效测试许可。作者动作可评分样本仍为0。
+
+### 从作者计划和行情生成退出及回补候选
+
+退出使用 `CLEAR_TREND` 或 `EXIT_COUNTER_M`，并显式声明 `exit_role`。`DIRECTIONAL_TARGET` 要求完整1m的价格实际覆盖顺向远沿，之后新形成的反向形态再完成确认。默认只观察当前仓位前像之后的触价。仅原仓退出可显式启用 `inherit_observed_target`，承接同一交易日及该计划生效后较早的目标观察。它只承接价格事实，始终要求仓位已知后形成新的反向形态。原仓当时是否已在账户中需另证。`ADVERSE_EXIT` 按明确给出的退出带，用完成1m严格收过逆向端点确认候选。触及保护带、价格恰好等于风险端点或没有可信仓位前像时，均无法据此生成原仓退出。
+
+原仓清理只处理整个原仓及其保护腿。独立M按该仓自己的方向核对退出边界，单独退出，数量不超过该腿。撤保护继续由 `RECOVER_ORIGINAL` 处理。`REENTER_TREND` 要求原仓、保护和M均为零，并且已有至少一次参与，另有允许再次参与的当前计划及空仓后新触发。沿用区内确认或右侧突破路径。候选只在本次许可后投影，迟于请求到期或下一根1m可知时刻的许可无法沿用旧候选。
+
+| PVC V2701 条件试验 | 行情结果，北京时间 | 默认投影 |
+|---|---|---|
+| 承接前夜观察到的5180目标 | 10月23日21:32触及目标，26日10:50反向确认，收5175 | 保留原多40，待退出许可 |
+| 从当前已知仓位开始重新观察5180 | 26日10:49触及目标，11:12反向确认，收5115 | 保留原多40，待退出许可 |
+| 以26日止盈后已全平为前提，再用新计划验证回补 | 27日10:46在5045–5074内收5071，形成新多候选 | 仍空仓，待独立回补许可 |
+
+PVC退出是把已归档多向目标和反向形态组合的研究假设。23日VPLUS正文提到5.0的长线持仓，未披露该目标是4.0.5清仓线。26日止盈自述未证实全部退出，回补输入的空仓也是假设。退出与回补是单独试验，未串成作者实际同账户流水。独立M逆向退出、原仓清理后仍留M、旧仓未清完则回补被拒由定向场景验证。玻璃940–946的弱侧极端M继续保留为风险观察，未作为原空退出带使用。 [PVC退出及回补对照](evidence/V_TA_CASE.md#pvc-白天旧多止盈的候选时钟) · [玻璃止盈反例](evidence/FG_SA_PAIR_CASE.md#玻璃止盈反例与随后回补时钟)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-request docs/research/lms405/evidence/plan-lifecycle/pvc-target-fresh-only.json \
+  --output /tmp/lms405-pvc-exit-new.json
+```
+
+三份行情报告在 `output/lms405-plan-lifecycle-20261127/`。两次只读复算逐字节一致，四份既有首次进场报告及两份离线烧碱、焦煤计划案例逐字节一致。作者动作可评分样本仍为0。
+
+### 连续行情和仓位回放
+
+`--market-sequence` 读取 `lms405-plan-market-sequence-v1`。每次只给一个实月和一个初始仓位。`steps` 按时钟声明互不重叠的行情窗口、动作、数量及预期计划ID，后续窗口的仓位总是取上一窗口的结果。窗口先核对当前计划及仓位，再从完成K生成候选，并在许可实际可知时重新核对最新修订。计划已暂停、换版、到期或仓位不符合动作要求时保留仓位。较早目标可在已声明承接的退出试验中作为价格观察，新形态仍须出现在仓位可知后。各次候选在下一根1m可知时或明确到期时失效，取较早者。
+
+支持提前保护、常规保护及补足。补足只在已有部分保护时查指定带内的反向确认，数量必须恰好补齐原仓与保护之差。已有保护的状态不能以提前保护重开；撤腿还是回补按各自当前仓位判断。许可为独立记录，只能为对应窗口和当前作用域生效；示例测试许可单独保存，普通输入默认没有许可。
+
+| 条件试验 | 默认无许可 | 明确提供两份测试许可 |
+|---|---|---|
+| SH2701 烧碱 | 14:08候选待许可。午盘保护多未撤，夜盘不可将原双腿当作只有原空 | 14:08减少保护多20，原空20延续。夜盘21:21重新生成候选并保护多20 |
+| V2701 PVC | 10月26日10:50候选待许可。原多40仍在，次日回补被仓位挡住 | 当日退出原多40成为空仓，次日10:46获独立许可后以1单位开始第二次研究参与 |
+
+烧碱午盘前像来自已见图；PVC允许承接前夜目标使用前述研究假设。两个试验的时间与仓位属于条件投影。作者未公开可核的许可记录，行为匹配分母保持0。 [烧碱连续图](evidence/SH2701_OCT_CASE.md#同一持仓路径核对午盘收盘和夜盘) · [PVC退出对照](evidence/V_TA_CASE.md#pvc-白天旧多止盈的候选时钟)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-sequence docs/research/lms405/evidence/plan-market-sequence/sh-recover-reprotect.json \
+  --output /tmp/lms405-sh-sequence-new.json
+```
+
+若需复算测试确认，先用 `jq --slurpfile approvals <同名.fixtures.json> '. + {approvals: $approvals[0]}' <输入文件>` 生成一份含测试记录的输入，再显式增加 `--allow-test-fixture`，并使用新的输出路径。两案均连续复算两次逐字节一致，四次测试许可的作用域逐项核对。无许可与测试许可报告在 `output/lms405-plan-market-sequence-20261127/`。
+
+### 焦煤抓M证据与夜盘行情持续回放
+
+同一连续回放可混用外部证据窗口和本地行情窗口。外部窗口声明 `evidence.at` 及 `facts`。每条已知事实须绑定当前合约、动作、仓位前像和请求标识，并以 `RESEARCH_EXTERNAL_EVIDENCE:<计划修订SHA256>:<来源标记>` 或测试用的 `TEST_FIXTURE_EXTERNAL_EVIDENCE:<计划修订SHA256>:<来源标记>` 锁定修订内容。同ID换来源或改计划字段，旧事实与许可无法沿用。确认必须严格早于该步骤固定评估时刻，迟到不能改变它。行情窗口继续自动查完成K并为下一步传入确认后的仓位。
+
+焦煤 JM2701 从10月22日图上空20、保护多20开始。初始条件来自图和价格约束。全换及留旧多13手是既有相容路径，各次日盘动作仍用显式测试证据及许可。两条路径独立验证。
+
+| 路径 | 日盘前后条件投影 | 10月23日夜盘 |
+|---|---|---|
+| 全换 | 22日22:40清旧双腿，22:59另开M多20，次日15:00结束M多 | 21:06 1m出现1415.5近沿新穿越，21:13严格收于1404.5且确认空向关键K。独立测试许可后，从空仓开启第二次尝试，原方向空20 |
+| 部分换 | 22日22:59清旧空20，保留13手旧多、替换7手，独立M多共20，次日15:00退出 | 同一完成行情给出相同空候选，单独许可，重新开空20 |
+
+未提交测试证据及许可时，两案均保持双腿。只提供白天的测试输入时，M退出后保持空仓，夜盘新空等待自身许可。带夜盘许可时两案最终均为原空20、保护与M为零、尝试编号2。夜盘1392远沿未到，研究只验证近沿路径，并保持前案关于21:16与22:05报价候选的区别。部分换仓内部开平顺序、实际作者触发和数量仍未确认，作者动作分母为0。 [焦煤前后图与数量推导](evidence/COUNTER_M_STUDY.md#部分留存旧保护多并检验日盘总仓)
+
+```sh
+dir=docs/research/lms405/evidence/plan-market-sequence
+jq --slurpfile fixture "$dir/jm-m-then-night-13.fixtures.json" '
+  . + {approvals: $fixture[0].approvals}
+  | .steps |= map(.id as $id | if has("evidence") then .evidence.facts = $fixture[0].facts[$id] else . end)
+' "$dir/jm-m-then-night-13.json" > /tmp/lms405-jm-m-sequence-input-new.json
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-sequence /tmp/lms405-jm-m-sequence-input-new.json --allow-test-fixture \
+  --output /tmp/lms405-jm-m-sequence-new.json
+```
+
+将13换为0可复算全换路径。两条路径各复算两次逐字节一致，在夜盘开始时截断后，已完成日盘窗口保持一致。无许可及测试报告在 `output/lms405-plan-jm-market-sequence-20261127/`。
 
 ### 烧碱从本地行情生成候选
 

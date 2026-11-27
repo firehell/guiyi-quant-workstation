@@ -181,3 +181,228 @@ def test_market_request_roundtrip_binds_declared_plan_and_preserves_prefix(monke
     )
     with pytest.raises(ValueError, match="BAND_ARRAY_REQUIRED"):
         compile_case(band={"109": False, "110": False})
+
+
+def test_plan_entry_requires_a_fresh_shape_before_target_and_waits_for_approval(monkeypatch):
+    minute = timedelta(minutes=1)
+    microsecond = timedelta(microseconds=1)
+    prices = ((98, 100, 97, 99), (99, 104, 99, 102), (102, 106, 101, 104),
+              (104, 105, 102, 104), (104, 107, 104, 106), (106, 110, 105, 108))
+    bars = [Bar("JM2701", START + (i + 1) * minute, *map(Decimal, prices), start=START + i * minute)
+            for i, prices in enumerate(prices)]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
+    seed = Book("JM2701", "entry-test", "LONG", START - minute)
+    definition = dict(
+        version=plan_replay.MARKET_REQUEST_VERSION, trading_day="2026-10-22", start=START.isoformat(),
+        cutoff=(bars[-1].end + 2 * microsecond).isoformat(), seed=json.loads(encoded(asdict(seed))),
+        operation="ENTER_TREND", quantity="1", shape_period=1, confirmation_period=1, band=["100", "100"],
+        entry_route="BREAK_THEN_SIGNAL", next_reference="110",
+        request_expires_at=(START + 8 * minute).isoformat(),
+        revision=dict(contract=seed.contract, id="market-entry", source="source-entry",
+                      published_at=seed.known_at.isoformat(), known_at=seed.known_at.isoformat(),
+                      operations=["ENTER_TREND"]),
+    )
+
+    def compile_case(**changes):
+        return plan_replay.market_request(session=None, market=None, **(definition | changes))
+
+    report = compile_case()
+    row, = report["replay"]["events"]
+    assert report["candidate"]["confirmed_at"] == bars[4].end
+    assert report["candidate"]["entry_precondition_known_at"] == bars[1].end + microsecond
+    assert row["status"] == "INDETERMINATE" and report["replay"]["final"] == asdict(seed)
+    cutoff = (bars[4].end + 3 * microsecond).isoformat()
+    assert compile_case(cutoff=cutoff)["tape"]["evaluations"] == report["tape"]["evaluations"]
+    assert compile_case(next_reference="107")["candidate"] is None
+    assert compile_case(next_reference="106")["replay"]["events"] == []
+    # The opening minute may block chasing even if its intraminute order is unknown.
+    bars[0] = replace(bars[0], high=Decimal(110))
+    partial_start = (START + timedelta(seconds=30)).isoformat()
+    partial = compile_case(start=partial_start)
+    assert partial["entry"]["next_reference_known_at"] == bars[0].end + microsecond
+    assert partial["candidate"] is None
+    bars[0] = replace(bars[0], high=Decimal(100))
+
+    tape = report["tape"]
+    event, = tape["evaluations"]
+    proposal_at = datetime.fromisoformat(event["at"])
+    event["at"] = (proposal_at + 2 * microsecond).isoformat()
+    event["approval"] = dict(scope=row["pending_approval_scope"], id="entry-fixture", accepted=True,
+                             decided_at=proposal_at.isoformat(), known_at=(proposal_at + microsecond).isoformat(),
+                             record_kind="TEST_FIXTURE")
+    approved = replay_input(**tape, allow_test_fixture=True)
+    assert approved["final"]["original"] == Decimal(1) and approved["final"]["attempt"] == 1
+    event["at"] = report["entry"]["candidate_expires_at"].isoformat()
+    later = replay_input(**(tape | {"cutoff": (bars[-1].end + 3 * microsecond).isoformat()}), allow_test_fixture=True)
+    assert later["events"][0]["status"] == "EXPIRED" and later["final"] == asdict(seed)
+
+    wait_plan = definition["revision"] | {"operations": []}
+    wait = compile_case(entry_route="DO_NOT_CHASE", next_reference=None, revision=wait_plan)
+    assert wait["entry"]["status"] == "PLAN_WAIT_NO_CHASE" and wait["tape"]["evaluations"] == []
+    with pytest.raises(ValueError, match="REQUEST_SCOPE_INVALID"):
+        compile_case(entry_route="DO_NOT_CHASE", next_reference=None)
+
+    reentry = dict(operation="REENTER_TREND", seed=definition["seed"] | {"attempt": 1},
+                   revision=definition["revision"] | {"operations": ["REENTER_TREND"]})
+    retry = compile_case(**reentry)
+    retry_row, = retry["replay"]["events"]
+    assert retry_row["unknown"] == ["SCOPED_APPROVAL"]
+    assert {f["name"] for f in retry_row["known_facts"]} == {"FRESH_REENTRY_SIGNAL", "PLAN_REENTRY_ALLOWED"}
+    assert retry_row["pending_approval_scope"] != row["pending_approval_scope"]
+    with pytest.raises(ValueError, match="ENTRY_SCOPE_INVALID"):
+        compile_case(**(reentry | {"seed": reentry["seed"] | {"original": "1"}}))
+    late_seed = reentry["seed"] | {"known_at": (bars[1].end + microsecond).isoformat()}
+    assert compile_case(**(reentry | {"seed": late_seed}))["candidate"] is None
+
+
+def test_plan_exit_keeps_other_legs_and_requires_explicit_role_and_fresh_evidence(monkeypatch):
+    minute = timedelta(minutes=1)
+    us = timedelta(microseconds=1)
+    prices = ((100, 111, 99, 108), (108, 109, 103, 105), (105, 108, 104, 106),
+              (106, 107, 101, 102), (102, 103, 96, 99), (99, 111, 99, 110), (110, 111, 107, 108))
+    bars = [Bar("SH2701", START + (i + 1) * minute, *map(Decimal, prices), start=START + i * minute)
+            for i, prices in enumerate(prices)]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
+    seed = Book("SH2701", "exit-test", "LONG", START + minute + us, Decimal(2), Decimal(1), Decimal(1), 1)
+    definition = dict(
+        version=plan_replay.MARKET_REQUEST_VERSION, trading_day="2026-10-22", start=START.isoformat(),
+        cutoff=(bars[-1].end + 2 * us).isoformat(), seed=json.loads(encoded(asdict(seed))),
+        revision=dict(contract=seed.contract, id="exit-plan", source="source-exit",
+                      published_at=(START - minute).isoformat(), known_at=(START - minute).isoformat(),
+                      operations=["CLEAR_TREND", "EXIT_COUNTER_M"]),
+        operation="CLEAR_TREND", quantity="3", shape_period=1, confirmation_period=1, band=["110", "110"],
+        request_expires_at=(START + 8 * minute).isoformat(), exit_role="DIRECTIONAL_TARGET",
+    )
+
+    def compile_case(**changes):
+        return plan_replay.market_request(session=None, market=None, **(definition | changes))
+
+    assert compile_case()["exit"]["target_known_at"] == bars[5].end + us
+    assert compile_case()["candidate"] is None
+    report = compile_case(inherit_observed_target=True)
+    assert report["exit"]["target_known_at"] == bars[0].end + us
+    assert report["candidate"]["confirmed_at"] == bars[3].end
+    row, = report["replay"]["events"]
+    assert report["replay"]["final"] == asdict(seed) and row["unknown"] == ["SCOPED_APPROVAL"]
+    tape = report["tape"]
+    event, = tape["evaluations"]
+    at = datetime.fromisoformat(event["at"])
+    event["at"] = (at + 2 * us).isoformat()
+    event["approval"] = dict(scope=row["pending_approval_scope"], id="exit-fixture", accepted=True,
+                             decided_at=at.isoformat(), known_at=(at + us).isoformat(), record_kind="TEST_FIXTURE")
+    cleared = replay_input(**tape, allow_test_fixture=True)["final"]
+    assert (cleared["original"], cleared["protection"], cleared["counter_m"]) == (0, 0, 1)
+
+    with pytest.raises(ValueError, match="EXIT_ROLE_REQUIRED"):
+        compile_case(exit_role="PROTECTION")
+    m = compile_case(operation="EXIT_COUNTER_M", quantity="1", seed=json.loads(encoded(cleared)),
+                     exit_role="ADVERSE_EXIT", band=["98", "109"])
+    assert m["exit"]["managed_side"] == "SHORT"
+    assert m["candidate"]["confirmed_at"] == bars[5].end
+    assert m["replay"]["events"][0]["unknown"] == ["SCOPED_APPROVAL"]
+
+
+def test_market_sequence_uses_only_confirmed_books_and_rechecks_the_active_plan(monkeypatch):
+    minute, us = timedelta(minutes=1), timedelta(microseconds=1)
+    values = ((100, 107, 98, 104), (103, 105, 100, 103), (104, 107, 103, 106), (106, 111, 104, 110))
+    bars = [Bar("SH2701", START + (i + 1) * minute, *map(Decimal, prices), start=START + i * minute)
+            for i, prices in enumerate(values + values + (values[-1],))]
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
+    seed = Book("SH2701", "sequence-test", "SHORT", START - minute, Decimal(20), attempt=1)
+    first = PlanRevision(seed.contract, "protect", START - minute, START - minute, "source-early",
+                         frozenset({"PROTECT_EARLY"}))
+    second = PlanRevision(seed.contract, "topup", START + 3 * minute + 5 * us, START + 3 * minute + 5 * us,
+                          "source-topup", frozenset({"PROTECT_TOPUP"}))
+    first_end, last_end = START + 4 * minute, bars[-1].end + 2 * us
+    common = dict(trading_day="2026-10-22", shape_period=1, confirmation_period=1)
+    steps = [common | dict(id="early", plan_id=first.id, operation="PROTECT_EARLY", quantity="7",
+                           start=START.isoformat(), cutoff=first_end.isoformat(),
+                           request_expires_at=first_end.isoformat(), band=["109", "110"]),
+             common | dict(id="topup", plan_id=second.id, operation="PROTECT_TOPUP", quantity="13",
+                           start=first_end.isoformat(), cutoff=last_end.isoformat(),
+                           request_expires_at=last_end.isoformat(), band=["105", "107"])]
+    plans = json.loads(encoded([plan_replay.revision_record(p) for p in (first, second)]))
+    definition = dict(version=plan_replay.MARKET_SEQUENCE_VERSION, seed=json.loads(encoded(asdict(seed))),
+                      cutoff=last_end.isoformat(), revisions=plans, steps=steps)
+
+    def run(**changes):
+        return plan_replay.market_sequence(session=None, market=None, **(definition | changes))
+
+    def confirm(row, *, accepted=True, delay=1):
+        at = row["evaluation"]["at"]
+        return dict(scope=row["evaluation"]["pending_approval_scope"], id=f"approval-{row['id']}",
+                    accepted=accepted, decided_at=at.isoformat(), known_at=(at + delay * us).isoformat(),
+                    record_kind="TEST_FIXTURE")
+
+    baseline = run()
+    assert [row["status"] for row in baseline["steps"]] == ["INDETERMINATE", "POSITION_PREREQUISITE_UNMET"]
+    first_approval = confirm(baseline["steps"][0])
+    with pytest.raises(ValueError, match="FIXTURE_APPROVAL_DISABLED"):
+        run(approvals={"early": first_approval})
+    left = run(approvals={"early": first_approval}, allow_test_fixture=True)
+    assert left["steps"][1]["before"] == left["steps"][0]["after"]
+    assert left["final"]["protection"] == 7
+    approvals = {"early": first_approval, "topup": confirm(left["steps"][1])}
+    complete = run(approvals=approvals, allow_test_fixture=True)
+    assert [row["status"] for row in complete["steps"]] == ["CONDITIONAL_ACTION"] * 2
+    assert complete["final"]["protection"] == 20
+    assert run(cutoff=first_end.isoformat(), approvals=approvals, allow_test_fixture=True)["steps"] == complete["steps"][:1]
+
+    rejected = run(approvals={"early": confirm(baseline["steps"][0], accepted=False)}, allow_test_fixture=True)
+    assert [row["status"] for row in rejected["steps"]] == ["REJECTED", "POSITION_PREREQUISITE_UNMET"]
+    late = run(approvals={"early": confirm(baseline["steps"][0], delay=6)}, allow_test_fixture=True)
+    assert late["steps"][0]["status"] == "PLAN_SUPERSEDED" and late["final"] == asdict(seed)
+    stale_topup = confirm(left["steps"][1], delay=1_000_000 * 60)
+    expired = run(approvals={"early": first_approval, "topup": stale_topup}, allow_test_fixture=True)
+    assert expired["steps"][1]["status"] == "EXPIRED" and expired["final"] == left["final"]
+    short_end = first_end - 30 * timedelta(seconds=1)
+    shorter_plans = [plans[0] | {"expires_at": short_end.isoformat()}, plans[1]]
+    assert run(revisions=shorter_plans)["steps"][0]["cutoff_exclusive"] == short_end
+
+
+def test_sequence_external_m_evidence_is_scoped_to_the_carried_book():
+    seed = Book("JM2701", "m-sequence", "SHORT", START, Decimal(20), Decimal(20), attempt=1)
+    rev = plan("m-plan", START - SECOND, ("ROTATE_TO_COUNTER_M", "EXIT_COUNTER_M"))
+    def bind(event):
+        prefix = f"{plan_replay.EXTERNAL_FIXTURE_PREFIX}{plan_replay.revision_digest(rev)}:"
+        facts = tuple(replace(fact, source=prefix + fact.source) for fact in event.facts)
+        approval = replace(event.approval, scope=event.request.confirmation_scope(facts))
+        return replace(event, facts=facts, approval=approval)
+
+    rotation = bind(proposal(seed, "ROTATE_TO_COUNTER_M", 7, rev.id, START + SECOND))
+    _, m_book = replay(seed, (rotation,), (rev,), cutoff=rotation.at + SECOND, allow_test_fixture=True)
+    exit_m = bind(proposal(m_book, "EXIT_COUNTER_M", 20, rev.id, rotation.at + 8 * SECOND))
+
+    def step(key, event):
+        return dict(id=key, plan_id=rev.id, operation=event.request.operation,
+                    quantity=str(event.request.quantity), start=event.at - SECOND, cutoff=event.at + SECOND,
+                    request_expires_at=event.request.expires_at,
+                    evidence=dict(at=event.at, facts=[asdict(fact) for fact in event.facts]))
+
+    data = json.loads(encoded(dict(version=plan_replay.MARKET_SEQUENCE_VERSION, seed=asdict(seed),
+                                   revisions=[plan_replay.revision_record(rev)],
+                                   steps=[step("rotate", rotation), step("exit-m", exit_m)],
+                                   cutoff=exit_m.at + SECOND)))
+    approvals = json.loads(encoded({"rotate": asdict(rotation.approval), "exit-m": asdict(exit_m.approval)}))
+
+    def run(**changes):
+        return plan_replay.market_sequence(session=None, market=None, **(data | changes))
+
+    with pytest.raises(ValueError, match="FIXTURE_FACT_DISABLED"):
+        run()
+    pending = run(allow_test_fixture=True)
+    assert [row["status"] for row in pending["steps"]] == ["INDETERMINATE", "POSITION_PREREQUISITE_UNMET"]
+    complete = run(approvals=approvals, allow_test_fixture=True)
+    assert complete["steps"][0]["after"] == complete["steps"][1]["before"]
+    assert complete["steps"][0]["after"]["counter_m"] == 20 and complete["final"]["counter_m"] == 0
+    changed = data["seed"] | {"original": "18", "protection": "18"}
+    mismatched = run(seed=changed, approvals=approvals, allow_test_fixture=True)
+    assert mismatched["steps"][0]["status"] == "EVIDENCE_POSITION_OR_REQUEST_MISMATCH"
+    revised = data["revisions"][0] | {"source": "revised-source"}
+    stale = run(revisions=[revised], approvals=approvals, allow_test_fixture=True)
+    assert stale["steps"][0]["status"] == "EXTERNAL_FACT_PLAN_REVISION_MISMATCH"
+    assert stale["final"] == asdict(seed)
+    late = approvals | {"rotate": approvals["rotate"] | {"known_at": rotation.at.isoformat()}}
+    assert run(approvals=late, allow_test_fixture=True)["final"] == asdict(seed)
+    cut = (rotation.at + SECOND).isoformat()
+    assert run(cutoff=cut, approvals=approvals, allow_test_fixture=True)["steps"] == complete["steps"][:1]
