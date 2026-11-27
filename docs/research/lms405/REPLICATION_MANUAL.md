@@ -105,6 +105,30 @@ services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_environmen
 
 只读MDS复算逐字节一致。定稿 `output/lms405-p4-generated-range-20261127/report.json` 的SHA256为 `e269317cae655ab890ad212c07d0680f99e211f56d55bda627159d62da59edc9`。LMS定向测试714通过、1跳过。全批使用已见开发行情，作者动作评分分母为0。
 
+### 最近局部高点能否作为空单保护带
+
+作者的方法说明把水平区间与最小阻力相联。JM2701的9月2日示例还把已有的抵抗区提升为回调中断区，说明保护带涉及前一区间的用途及当前进度。先测试其中可计算的一环，最近局部阻力是否单独就足以接近保护带端点。以下上影取法是研究假设，价带随进度换档另需证据。 [作者方法说明](https://www.sina.cn/news/detail/5191279529168105.html) · [焦煤抵抗区升档](https://www.sina.cn/news/detail/5338740245135941.html)
+
+固定与基线相同的最近六根已完成5分钟K。取最近一个严格高于左右邻K的局部高点，三根K须连续，右侧K须在评估时点前已可知。区间取该K实体上沿到最高价。若没有已确认高点、无上影或后续完成K已收在高点或以上，则该口径不生成价带。只与原报告中明确标作空单保护的作者带配对，区间分水岭、目标与待重评均不作数字标签。
+
+| 同一组开盘对照 | 六根K区间 | 最近局部高点上影 |
+|---|---:|---:|
+| 27个九品种开盘窗口有输出 | 27 | 16 |
+| 12个明确保护带有数值可比较 | 12 | 7 |
+| 在共同7组中，两区相交或端点相接 | 5 | 3 |
+| 在共同7组中，两端完全相等 | 0 | 0 |
+| 在共同7组中，下沿／上沿绝对误差中位数 | 7／5跳 | 9／9跳 |
+
+例如烧碱10月27日计划1490–1501，局部高点代理给1488–1491，下沿更近，上沿偏差扩大。玻璃10月23日计划829–836，代理给839–840，失去基线原有的区间交集。共同样本的覆盖和两端误差都未支持替换。样本是已见开发窗口，保留有价带时的作者输入和原六根K独立研究口径。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_environment_audit.py \
+  --compare-resistance-pivots --env-file .env --output /tmp/lms405-resistance-pivot-new.json
+```
+
+同一套只读行情复算两次逐字节一致。原 `--compare-generated-ranges` 输出与冻结报告一致。新报告在 `output/lms405-p4-generated-range-20261127/resistance-pivot-comparison.json`，SHA256为 `44d14f5cb42c30cf04dc84579021b57b45e971fd515ff68d05d5c2914c0a34f5`。报告记录逐案端点误差和覆盖数量，作者动作评分分母为0。
+
 ## P4环境分类与降周期候选
 
 九品种沿用现有三晚开发窗口。19个作者明确盘整或空头标签用六个开盘判读点比较。滚动环境首点相容12/19、六点均相容2/19、有翻转17/19。沿用日盘环境为7/19、7/19、0/19。等连续两个同类开盘判读后切换为7/19、3/19、14/19。固定及两票口径降低翻转，但首点与归档说法相容的次数减少。作者并未逐时点标注环境，三组均保留为研究对照。 [九品种归档标签与时点](evidence/PORTFOLIO_RECONSTRUCTION.md#九品种环境分类与盘后计划对照)

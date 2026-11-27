@@ -1,9 +1,17 @@
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
-from lms405_portfolio_environment_audit import LOCAL, context_before, known_and, opening_alternatives, range_revision_audit
+from lms405_portfolio_environment_audit import (
+    LOCAL,
+    context_before,
+    known_and,
+    opening_alternatives,
+    range_revision_audit,
+    resistance_context_before,
+)
 
 
 def test_environment_cutoff_is_strict_before_for_both_full_and_prefix_input():
@@ -29,6 +37,24 @@ def test_two_consecutive_opening_labels_cannot_change_the_first_vote():
     assert scores["HOLD_DAY_CLOSE"]["all_agree"] == 1
     assert known_and(None, False) is False and known_and(False, None) is False
     assert known_and(True, None) is None
+
+
+def test_resistance_requires_an_adjacent_completed_right_bar_and_drops_a_broken_high():
+    start = datetime(2026, 10, 22, 12, tzinfo=UTC)
+    step, us = timedelta(minutes=5), timedelta(microseconds=1)
+    prices = ((102, 104, 101, 103), (103, 105, 102, 104), (104, 106, 103, 105),
+              (105, 108, 104, 106), (106, 110, 105, 107), (107, 107, 104, 105), (105, 111, 104, 110))
+    bars = [Bar("SH2701", start + (i + 1) * step, *map(Decimal, fields), start=start + i * step)
+            for i, fields in enumerate(prices)]
+    known = bars[5].end + us
+    assert resistance_context_before(bars, known) is None
+    band = resistance_context_before(bars, known + us)
+    assert band == resistance_context_before(bars[:6], known + us)
+    assert (band["lower"], band["upper"]) == (107, 110)
+    assert band["pivot_end"] == bars[4].end and band["confirmed_at"] == known
+    gap = bars[:5] + [replace(bars[5], start=bars[5].start + step, end=bars[5].end + step)]
+    assert resistance_context_before(gap, gap[-1].end + 2 * us) is None
+    assert resistance_context_before(bars, bars[-1].end + 2 * us) is None
 
 
 def test_generated_ranges_update_and_frozen_boundary_never_recovers():

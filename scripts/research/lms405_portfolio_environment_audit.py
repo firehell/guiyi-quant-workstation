@@ -5,6 +5,7 @@ from collections import Counter
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
+from statistics import median
 
 from guiyi_quant import lms_near405 as candidate
 from guiyi_quant.lms405 import Bar
@@ -96,6 +97,24 @@ def context_before(bars, cutoff):
     return candidate.context_from_window(prefix[-6:])
 
 
+def resistance_context_before(bars, cutoff):
+    """Use the most recent confirmed high and its upper wick as a research band."""
+    window = [bar for bar in bars if bar.end + US < cutoff][-6:]
+    if len(window) != 6:
+        return None
+    for i in range(len(window) - 2, 0, -1):
+        left, pivot, right = window[i - 1:i + 2]
+        if not (left.end == pivot.start and pivot.end == right.start and pivot.high > max(left.high, right.high)):
+            continue
+        lower, upper = max(pivot.open, pivot.close), pivot.high
+        if lower >= upper or any(bar.close >= upper for bar in window[i + 1:]):
+            return None
+        return dict(lower=lower, upper=upper, valid=True, window_end=window[-1].end,
+                    pivot_end=pivot.end, confirmed_at=right.end + US,
+                    context_hash=sha(encoded(price_digest((left, pivot, right))).encode()))
+    return None
+
+
 def known_and(left, right):
     if left is False or right is False:
         return False
@@ -173,16 +192,16 @@ def endpoint_comparison(context, declared, tick):
         lower_error_ticks=(lower - declared.lower) / tick if matched else None,
         upper_error_ticks=(upper - declared.upper) / tick if matched else None,
         context_hash=context["context_hash"], known_window_end=context["window_end"],
-    )
+    ) | {key: context[key] for key in ("pivot_end", "confirmed_at") if key in context}
 
 
-def range_revision_audit(bars, session_date, declared, tick):
+def range_revision_audit(bars, session_date, declared, tick, *, resolve=context_before):
     start = datetime.combine(session_date, time(21), LOCAL)
     if not max(declared.known_at, declared.effective_after) < start:
         raise ValueError("ENVIRONMENT_RANGE_PLAN_NOT_KNOWN_AT_OPEN")
     if declared.side != "SHORT":
         raise ValueError("ENVIRONMENT_RANGE_PLAN_NOT_SHORT")
-    frozen = context_before(bars, start)
+    frozen = resolve(bars, start)
     first = endpoint_comparison(frozen, declared, tick)
     failure_at, changes = None, 0
     updates = []
@@ -193,9 +212,9 @@ def range_revision_audit(bars, session_date, declared, tick):
         raise ValueError("ENVIRONMENT_RANGE_WINDOW_INCOMPLETE")
     for bar in night:
         at = bar.end + 2 * US
-        ready = context_before(bars, at)
+        ready = resolve(bars, at)
         prefix = [prior for prior in bars if prior.end + US < at]
-        if ready != context_before(prefix, at):
+        if ready != resolve(prefix, at):
             raise ValueError("ENVIRONMENT_RANGE_PREFIX_DIVERGED")
         rolling = endpoint_comparison(ready, declared, tick)
         current = None if rolling is None else (rolling["lower"], rolling["upper"])
@@ -230,11 +249,27 @@ def range_summary(rows):
     )
 
 
-def study(session, market, *, compare_admission=False, compare_ranges=False):
+def paired_band_summary(baseline, alternatives):
+    pairs = [(a["frozen_at_open"], b["frozen_at_open"]) for a, b in zip(baseline, alternatives, strict=True)
+             if a["declared_role"] == "PROTECTION" and a["frozen_at_open"] and b["frozen_at_open"]]
+    result = {}
+    for i, name in enumerate(("baseline", "resistance_pivot")):
+        rows = [pair[i] for pair in pairs]
+        result[name] = dict(
+            overlaps=sum(row["overlap"] for row in rows),
+            exact_matches=sum(row["lower_error_ticks"] == row["upper_error_ticks"] == 0 for row in rows),
+            median_abs_lower_ticks=median(abs(row["lower_error_ticks"]) for row in rows) if rows else None,
+            median_abs_upper_ticks=median(abs(row["upper_error_ticks"]) for row in rows) if rows else None,
+        )
+    return dict(common_pairs=len(pairs), **result)
+
+
+def study(session, market, *, compare_admission=False, compare_ranges=False, compare_resistance=False):
     reference = verified_json(BASELINE, BASELINE_SHA256)
     index = input_sources()
     rows = []
-    ranges = []
+    ranges, resistance = [], []
+    compare_ranges = compare_ranges or compare_resistance
     specs = load_specs(verified_json(SPECS, SPECS_SHA)) if compare_ranges else {}
     for number, contract in enumerate(CONTRACTS):
         raw = read_session_series(session, market, contract[:-4].lower(), contract, "5m", FIVE, DAYS)
@@ -253,6 +288,9 @@ def study(session, market, *, compare_admission=False, compare_ranges=False):
             rows.append(row | clocks(bars, session_date))
             if compare_ranges:
                 ranges.append(range_revision_audit(bars, session_date, updates[source_id], specs[contract]["tick"]))
+            if compare_resistance:
+                resistance.append(range_revision_audit(bars, session_date, updates[source_id], specs[contract]["tick"],
+                                                       resolve=resistance_context_before))
     extra = {}
     if compare_admission:
         extra["admission_comparison"] = dict(
@@ -265,6 +303,13 @@ def study(session, market, *, compare_admission=False, compare_ranges=False):
             version="lms405-generated-range-comparison-v1", summary=range_summary(ranges), cases=ranges,
             known_price_window="LAST_SIX_COMPLETED_FIVES", generated_role="RESEARCH_PRICE_RANGE",
             frozen_short_invalidation="FIRST_COMPLETED_CLOSE_AT_OR_ABOVE_FROZEN_UPPER",
+        )
+    if compare_resistance:
+        extra["resistance_pivot_comparison"] = dict(
+            version="lms405-resistance-pivot-protection-band-v1", cases=resistance,
+            summary=range_summary(resistance), common_opening_comparison=paired_band_summary(ranges, resistance),
+            known_price_window="LAST_SIX_COMPLETED_FIVES", generated_role="SHORT_PROTECTION_RESEARCH_ONLY",
+            rule="LATEST_STRICT_CONTIGUOUS_HIGH_PIVOT_UPPER_WICK",
         )
     return dict(version="lms405-portfolio-environment-audit-v1", label_comparison=summarize(rows), cases=rows,
                 rule_hash=candidate.RULE_HASH, frozen_baseline_sha256=BASELINE_SHA256,
@@ -279,6 +324,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--compare-admission", action="store_true")
     parser.add_argument("--compare-generated-ranges", action="store_true")
+    parser.add_argument("--compare-resistance-pivots", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -293,7 +339,7 @@ def main():
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
             report = study(session, build_market_data_service(session), compare_admission=args.compare_admission,
-                           compare_ranges=args.compare_generated_ranges)
+                           compare_ranges=args.compare_generated_ranges, compare_resistance=args.compare_resistance_pivots)
         with args.output.open("x", encoding="utf-8") as stream:
             stream.write(encoded(report))
     except MarketDataError as exc:
