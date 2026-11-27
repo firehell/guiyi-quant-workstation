@@ -7,6 +7,7 @@ from guiyi_quant.lms405 import Bar
 from guiyi_quant.lms405.protection_band import ProtectionBandUpdate
 from lms405_portfolio_environment_audit import (
     LOCAL,
+    archived_chapter,
     context_before,
     known_and,
     opening_alternatives,
@@ -72,6 +73,20 @@ def test_short_target_progress_keeps_gap_reach_separate_from_range_contact():
     assert short_target_progress(bars, clock + us, Decimal(98), Decimal(100))["near"][
         "first_contact"
     ] == bars[-1].bar_end
+
+
+def test_revision_evidence_does_not_take_target_values_from_neighboring_contracts(tmp_path):
+    archive = tmp_path / "archive.md"
+    archive.write_text(
+        "## 内容记录\n四章节读至结尾。LH空方9725。TA暂停。SH空方1543。RU空方19320—19420。\n",
+        encoding="utf-8",
+    )
+    assert "1543" in archived_chapter(archive, "SH2701")
+    assert "9725" not in archived_chapter(archive, "SH2701")
+    assert "19320-19420" not in archived_chapter(archive, "SH2701")
+    archive.write_text("## 内容记录\n|SH2701|空1543|\n|RU2701|空19320–19420|\n", encoding="utf-8")
+    assert "1543" in archived_chapter(archive, "SH2701")
+    assert "19320-19420" not in archived_chapter(archive, "SH2701")
 
 
 def test_generated_ranges_update_and_frozen_boundary_never_recovers():

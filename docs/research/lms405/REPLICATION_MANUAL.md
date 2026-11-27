@@ -153,6 +153,27 @@ services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_environmen
 
 本地MDS共复算2,760根实月1分钟K，逐端点在可知边界两侧核对价格前缀。两份新输出逐字节一致，以前两份价带报告分别重算一致。新报告在 `output/lms405-p4-generated-range-20261127/protection-revision-progress.json`，SHA256为 `f8a3454a535cd2df9d0bd6b165c09d00fc1ef5d2e33331b9d45b39212fb98e32`。作者实际动作样本为0。
 
+### 10月22至23日保护区换档反例
+
+保留「旧计划所有已列空向目标都达到远沿」候选和原判别口径。读取当轮行情前锁定11个实月和10月22、23日两个交易日，六篇相邻常规计划均已归档。逐对要求同实月、两版都有明确的空单保护区、前版有可计算空向目标。22组中纳入9组、排除13组，逐对记录原因。铁矿22日的中断区与明确保护说明存在量级冲突，焦煤23日的新计划只有另一方向的明确防御，均排除。日期未用于上一节候选比较，所用归档曾读，属于已有材料的跨窗复核。 [21日常驻](../lms-source-archive/01-VPLUS每日复盘/2026-10-21/A5356507058536457.md) · [21日备选](../lms-source-archive/01-VPLUS每日复盘/2026-10-21/A5356507360788540.md) · [22日常驻](../lms-source-archive/01-VPLUS每日复盘/2026-10-22/A5356884629782554.md) · [22日备选](../lms-source-archive/01-VPLUS每日复盘/2026-10-22/A5356884885635211.md) · [23日常驻](../lms-source-archive/01-VPLUS每日复盘/2026-10-23/A5357264059367516.md) · [23日备选](../lms-source-archive/01-VPLUS每日复盘/2026-10-23/A5357264793370945.md)
+
+9组中6组换档、3组沿用。全档远沿条件给出4次换档、5次沿用，与实际相符7组。4组满足条件时都换档，尚未找到全部达到远沿后仍沿用的样本。另有2组未满足条件却已换档，因此全部达到远沿不能作为换档的统一必要条件。
+
+| 反例 | 旧强侧进度 | 下一篇常规保护带 |
+|---|---|---|
+| 烧碱SH2701，10月23日 | 最低1577，未到旧计划唯一明确的1543。19:07作者明确说4.0.5继续做该品种，优先移动止盈与跟踪锁定回撤，弱侧待更新 | 1610–1632改为1595–1603，19:28发布 |
+| 橡胶RU2701，10月22日 | 第一、第二档均达到远沿，第三档19320–19420最低仅到19425。第三档在原计划是前两档完成后才观察的扩展情景 | 19575–19685改为19530–19680，18:19发布。该品种的4.0.5子版本仍待独立确认 |
+
+即使把橡胶的条件扩展档排除，烧碱仍足以反证。价格未到强侧目标时，烧碱公开说明已把管理重点转到锁定回撤。保护用途、弱侧变化和已发的更新计划须继续分别观察，候选条件未进入默认策略。 [烧碱19:07原帖归档](../lms-source-archive/03-单品种分析/2026-10-23/烧碱/WRo1A1rN9b.md)
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_portfolio_environment_audit.py \
+  --transfer-protection-revisions --env-file .env --output /tmp/lms405-protection-revision-transfer-new.json
+```
+
+本地MDS共复算2,865根实月1分钟K，两次输出完全一致，上一节八组报告复算也一致。选样记录与报告分别位于 `output/lms405-p4-generated-range-20261127/protection-revision-transfer-selection.txt` 和 `output/lms405-p4-generated-range-20261127/protection-revision-transfer.json`。SHA256分别为 `a09d8442df4fe478806aa8f094b0e4389fe06c1d9697a8a93ce83657b3270ff9`、`03a6958199742b776a5559ede8a071150f53a5bdfa777f3b066ba99a2d651824`。作者实际动作可评分样本0。
+
 ## P4环境分类与降周期候选
 
 九品种沿用现有三晚开发窗口。19个作者明确盘整或空头标签用六个开盘判读点比较。滚动环境首点相容12/19、六点均相容2/19、有翻转17/19。沿用日盘环境为7/19、7/19、0/19。等连续两个同类开盘判读后切换为7/19、3/19、14/19。固定及两票口径降低翻转，但首点与归档说法相容的次数减少。作者并未逐时点标注环境，三组均保留为研究对照。 [九品种归档标签与时点](evidence/PORTFOLIO_RECONSTRUCTION.md#九品种环境分类与盘后计划对照)
