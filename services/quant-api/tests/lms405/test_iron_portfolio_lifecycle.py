@@ -3,7 +3,7 @@ from decimal import Decimal
 import pytest
 
 from guiyi_quant.lms405 import Bar
-from lms405_iron_portfolio_lifecycle import CONTRACT, START, branch, table_counts
+from lms405_iron_portfolio_lifecycle import CONTRACT, START, anchored_quote_spans, branch, table_counts
 from lms405_right_side_study import ONE, US, at
 
 
@@ -31,3 +31,17 @@ def test_quote_before_and_inside_minute_are_separate_and_same_average_needs_late
     unknown = branch("public", observed, test_permission=False, **args)
     assert unknown["ending"]["protected_long"] == 16
     assert unknown["same_average_rebuild_price_sensitivity"] is None
+
+
+def test_minimum_quote_span_keeps_tied_iron_labels_and_requires_all_rows():
+    stamp = [f"2026-10-27T22:0{value}:00+08:00" for value in range(1, 7)]
+    photo = {"per_symbol": {"i": {"contains": stamp[2:5]}, "v": {"contains": [stamp[3]]},
+                            "sh": {"contains": [stamp[2]]}}}
+    result = anchored_quote_spans(photo)
+    assert result["minimum_label_span_minutes"] == 1
+    assert result["iron_labels_at_minimum"] == stamp[2:4]
+    assert result["by_iron_label"][stamp[4]] == 2
+
+    photo["per_symbol"]["sh"]["contains"] = []
+    with pytest.raises(ValueError, match="IRON_LIFECYCLE_QUOTE_SPAN_INPUT_MISSING"):
+        anchored_quote_spans(photo)

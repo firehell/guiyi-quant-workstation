@@ -7,15 +7,19 @@ from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
 
-from lms405_i2701_case import DAYS, readback
+from lms405_common_protection_window import OCT27_QUOTES
+from lms405_i2701_case import DAYS, FROZEN_COMPARISON_SHA256, PHOTOS, readback
+from lms405_iron_first_protection import fixed_quote_span
 from lms405_iron_leg_visibility import CONTRACT, LUNCH, CLOSE, NIGHT, NEAR, FAR
 from lms405_lifecycle_tape import replay
 from lms405_m_permission_study import read_pair
 from lms405_pa_signal_deadline import comparison
 from lms405_portfolio_lifecycle import candidate, seed
-from lms405_portfolio_replay import ARCHIVE
+from lms405_portfolio_replay import ARCHIVE, input_sources
 from lms405_protection_lot_timing import verified_json
 from lms405_protection_timeframes import read_window
+from lms405_public_plan_roles import load_source
+from lms405_replay import photo_comparison, read_session_series
 from lms405_right_side_study import ONE, US, at
 from lms405_sh_lock_lifecycle import completed, digest, signals
 from lms405_sizing_audit import EXPOSURE_SHA256
@@ -34,6 +38,21 @@ REPROTECTION = (Decimal(667), Decimal(671))
 RELEASE_PAIRS = ((1, 1), (5, 1), (5, 5))
 REPROTECTION_PAIRS = (*RELEASE_PAIRS, (15, 15))
 NIGHT_FLOAT_FIELDS = (24920, 5220, 41200, 46500, 44050, -600, 137400, 33600, 2000, 19000)
+NIGHT_50 = "WRoEvFgWlh"
+VERSION_IMAGES = {
+    NIGHT: (Path("02-持仓记录/2026-10-27/RoEvasxQR-position-screen.png"),
+            "67854d29d606b65cd88efe9af1fa939e86e20b713325732929b8a5a5aa6f9b0a"),
+    NIGHT_50: (Path("02-持仓记录/2026-10-27/RoEvFgWlh-position-screen.png"),
+               "3e1aedcdb40d8dde8c0f0d2c765ab4281b908d5d4f78562cae83704632e76aa5"),
+}
+NIGHT_50_ROWS = {
+    "ta": ("LONG", "6536.0", "22.0"), "v": ("LONG", "5160.0", "40.0"),
+    "oi": ("SHORT", "10283.0", "41.0"), "pp": ("LONG", "9465.0", "653.0"),
+    "cf": ("SHORT", "15770.0", "545.0"), "i": ("SHORT", "694.00", "32.00"),
+    "sp": ("SHORT", "4736.0", "180.0"),
+}
+SNAPSHOT_AUDIT = Path("output/lms405-iron-portfolio-lifecycle-20261126/final-a.json")
+SNAPSHOT_AUDIT_SHA = "b2d4f388c019240a9ef0f8bbd6b37d12f9bec3cc87531803ede6cedc7e40504a"
 
 
 def table_counts(table, footer):
@@ -189,10 +208,76 @@ def study(session, market):
     )
 
 
+def anchored_quote_spans(photo):
+    rows = photo["per_symbol"]
+    quotes = {symbol: tuple(map(datetime.fromisoformat, row["contains"])) for symbol, row in rows.items()}
+    if not quotes.get("i") or not all(quotes.values()):
+        raise ValueError("IRON_LIFECYCLE_QUOTE_SPAN_INPUT_MISSING")
+    other = [ends for symbol, ends in quotes.items() if symbol != "i"]
+    by_anchor = {anchor.isoformat(): fixed_quote_span(anchor, other) for anchor in quotes["i"]}
+    best = min(by_anchor.values())
+    return dict(minimum_label_span_minutes=best, by_iron_label=by_anchor,
+                iron_labels_at_minimum=[stamp for stamp, span in by_anchor.items() if span == best])
+
+
+def cross_version_quote_scope(session, market):
+    from app.market_data.catalog import CatalogError
+    from app.market_data.market_data_service import MarketDataError
+
+    index = input_sources()
+    ref = verified_json(OCT27_QUOTES, FROZEN_COMPARISON_SHA256)
+    previous = verified_json(SNAPSHOT_AUDIT, SNAPSHOT_AUDIT_SHA)["iron"]
+    quotes_405 = PHOTOS[NIGHT][2]
+    quotes_50 = {symbol: str(Decimal(average) + (Decimal(diff) if side == "LONG" else -Decimal(diff)))
+                 for symbol, (side, average, diff) in NIGHT_50_ROWS.items()}
+    sources = {key: load_source(index, key) for key in (NIGHT, NIGHT_50)}
+    post_50 = at("2026-10-27T22:14")
+    if (datetime.fromisoformat(sources[NIGHT]["published_at"]) != END
+            or datetime.fromisoformat(sources[NIGHT_50]["published_at"]) != post_50
+            or any(sha((ARCHIVE.parent / path).read_bytes()) != checksum for path, checksum in VERSION_IMAGES.values())):
+        raise ValueError("IRON_LIFECYCLE_CROSS_VERSION_SOURCE_CHANGED")
+    series, missing, hashes = {}, {}, {}
+    for symbol in sorted(quotes_405.keys() | quotes_50.keys()):
+        contract = f"{symbol.upper()}2701"
+        try:
+            series[symbol] = read_session_series(session, market, symbol, contract, "1m", ONE, (DAYS[1],))
+        except (CatalogError, MarketDataError) as exc:
+            if symbol not in quotes_405 and exc.code in ("INSTRUMENT_EXCHANGE_MISSING", "DATASET_OR_PARTITION_MISSING"):
+                missing[contract] = exc.code
+                continue
+            raise
+        hashes[contract] = readback(series[symbol])[DAYS[1].isoformat()]
+        if symbol in quotes_405 and hashes[contract] != ref["market_1m"][symbol][DAYS[1].isoformat()]:
+            raise ValueError("IRON_LIFECYCLE_NIGHT_MARKET_CHANGED")
+    tables = {
+        "4.0.5": photo_comparison(series, START, END, quotes_405),
+        "5.0": photo_comparison(series, START, post_50, {s: value for s, value in quotes_50.items() if s in series}),
+    }
+    if tables["4.0.5"] != ref["photos"][NIGHT]:
+        raise ValueError("IRON_LIFECYCLE_NIGHT_QUOTE_SCOPE_CHANGED")
+    spans = {version: anchored_quote_spans(rows) for version, rows in tables.items()}
+    tighter = set(map(datetime.fromisoformat, spans["4.0.5"]["iron_labels_at_minimum"]))
+    branches = {name: sum(row["START_EXCLUSIVE"]["visible_table_with_no_long_matches"]
+                          for row in branch["quotes"] if datetime.fromisoformat(row["quote_end"]) in tighter)
+                for name, branch in previous["branches"].items()}
+    return dict(
+        version="lms405-iron-cross-version-quote-scope-v1", sources=sources,
+        images={key: dict(path=path, sha256=checksum) for key, (path, checksum) in VERSION_IMAGES.items()},
+        night_5_rows=NIGHT_50_ROWS, market=hashes, missing_market=missing, tables=tables, quote_spans=spans,
+        replay_sensitivity_at_minimum_405_span=branches,
+        denominators=dict(iron_rows=len(spans["4.0.5"]["by_iron_label"]), at_minimum=len(tighter)),
+        market_bar_count=sum(row["bars"] for row in hashes.values()),
+        price_label_span_is_not_capture_delay=True, cross_version_holdings_merged=False,
+        iron_author_long_qty=None, iron_author_action_at=None, same_account_and_filter=None,
+        author_actions_scored=0, executable=False, fills=None, pnl=None,
+    )
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--env-file", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--cross-version-quote-scope", action="store_true")
     args = parser.parse_args()
     if not args.env_file.is_file() or args.output.exists():
         parser.error("ENV_FILE_MISSING_OR_OUTPUT_EXISTS")
@@ -206,7 +291,8 @@ def main():
 
     try:
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=60):
-            result = study(session, build_market_data_service(session))
+            market = build_market_data_service(session)
+            result = cross_version_quote_scope(session, market) if args.cross_version_quote_scope else study(session, market)
         with args.output.open("x", encoding="utf-8") as output:
             output.write(encoded(result))
     except MarketDataError as exc:

@@ -287,3 +287,24 @@ services/quant-api/.venv/bin/python scripts/research/lms405_iron_portfolio_lifec
 ```
 
 两次只读复算逐字节一致。定稿 `output/lms405-iron-portfolio-lifecycle-20261126/final-a.json`，SHA256 `b2d4f388c019240a9ef0f8bbd6b37d12f9bec3cc87531803ede6cedc7e40504a`。
+
+## 两套夜盘表的铁矿报价与撤腿约束
+
+从22:12的4.0.5持仓表、22:14的5.0持仓表重读合约、方向、开均和盈利价差，并检查相邻软件回报。4.0.5铁矿旧空16，开均682.50、持均665.00，反推显示报价661.5。5.0铁矿开均694.00、持均同为665.00，反推显示报价662，手数未展示。持均相同不足以绑定为同一笔仓位。两张表按各自版本分别核价。5.0原帖的回报名单可见PVC买开和PTA卖平、买开，未见能绑定到4.0.5铁矿的卖平。Chrome连接超时，微博桌面、数字号移动详情及新浪公开转载未取得原图之外的新记录。 [4.0.5夜图](../../lms-source-archive/02-持仓记录/2026-10-27/RoEvasxQR-position-screen.png) · [5.0夜图](../../lms-source-archive/02-持仓记录/2026-10-27/RoEvFgWlh-position-screen.png) · [5.0回报归档](../../lms-source-archive/02-持仓记录/2026-10-27/WRoEvFgWlh.md)
+
+在各表发帖显示分钟之前，为每个合约找价格区间覆盖该行报价的完整1分钟K。固定每一个可能的铁矿分钟标签，求覆盖该版本所有可比较行所需的最小标签跨度。保留全部并列解。跨度只比较分钟标签，不能转换为截图时间或软件延迟。
+
+| 版本 | 可核行及最小跨度 | 最小跨度下的铁矿分钟标签（北京时间） |
+|---|---|---|
+| 4.0.5 | 七个合约。六个合约共同相容22:10，烧碱1491最晚对应22:05。七行最小标签跨度5分钟。 | 22:09、22:10，原铁矿单行仍有31个候选。 |
+| 5.0 | 六个合约的最小标签跨度1分钟。纸浆SP2701缺 `INSTRUMENT_EXCHANGE_MISSING`，因此1分钟仅是七行跨度的下界。 | 22:09、22:10，属于5.0可核行的并列结果，不能回填4.0.5。 |
+
+即使取4.0.5较集中的两个报价标签，并另外假设收盘图与夜图同账户、筛选范围一致，且铁矿长仓在报价前已为零，21:18快确认、21:20慢确认及21:21近沿收破三条既有测试路径仍都相容。远沿654候选在该窗口始终无可用时点。实际长仓、撤腿时钟和许可继续未知，作者动作评分分母为0。要区分三条路径仍需同账户带动作时间的铁矿卖平回报，或者候选时间之间的完整仓位。
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_iron_portfolio_lifecycle.py \
+  --env-file .env --cross-version-quote-scope --output /tmp/lms405-iron-cross-version-new.json
+```
+
+统一MDS累计核对十个合约交易日的3,450根1分钟K，其中4.0.5涉及的七个合约逐一匹配冻结指纹。两次定稿逐字节一致，`output/lms405-iron-cross-version-scope-20261128/a.json` 的SHA256为 `3f6200919837294760100983f0a9f8f00e5507de62c7fe9490b44f7a904d100b`。
