@@ -6,7 +6,7 @@ from pathlib import Path
 from collections import Counter
 from guiyi_quant.indicators.ema import initial_ema_state, step_ema
 from guiyi_quant.indicators.subing_range import direction_transition
-from app.market_data.new_subing_research import payload_hash
+from app.market_data.research_inputs import payload_hash
 from scripts.research.regime_trend_review import validate
 
 

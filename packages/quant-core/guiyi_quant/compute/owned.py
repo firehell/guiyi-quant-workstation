@@ -9,10 +9,8 @@ from types import MappingProxyType
 from .. import subing_recent_structure
 from ..indicators import subing_conditions, subing_macd, subing_price, subing_range, subing_trend, subing_volume
 from ..indicators.htdy_original import INDICATOR_VERSION as HTDY_VERSION, compute_htdy_original
-from ..indicators.htdy_strict import BOOLEAN_FIELDS, NUMERIC_FIELDS, compute_strict_fields
 from ..indicators.policy import HTDY_ALERT_OBSERVATION_CONSUMER
 from ..indicators.range_detector_lux import RANGE_DETECTOR_LUX_VERSION, range_detector_lux_series
-from ..indicators.registry import get_indicator
 from ..indicators.subing_ths import SUBING_THS_FORMULA_VERSIONS, SubingThs15mKernel
 from ..newow.cup_handle import CupReadyWitness
 from ..newow.profile import NEWOW_TREND_D1_V1
@@ -70,7 +68,6 @@ def _newow_auxiliary(name, formula_version, data_type, *, repainting=False):
     )
 
 
-_HTDY_STRICT = get_indicator("huotian_dayou_strict_v1")
 
 
 def _subing_ths(frequency: str) -> OwnedIndicatorDefinition:
@@ -198,11 +195,6 @@ _DEFINITIONS = (
         ("zk1", "zd1", "zd2", "yellow_candle", "white_candle", "buy_observation", "sell_observation",
          "observation_conflict"),
         FREQUENCIES, frozenset(("web", HTDY_ALERT_OBSERVATION_CONSUMER)), True, compute_htdy_original,
-    ),
-    OwnedIndicatorDefinition(
-        "htdy_strict", _HTDY_STRICT.indicator_version, "htdy_strict_ohlcv_v1", "htdy_strict_research_v1",
-        (*NUMERIC_FIELDS, *BOOLEAN_FIELDS), FREQUENCIES, frozenset(("research", "backtest")),
-        False, compute_strict_fields,
     ),
     *(_subing_ths(frequency) for frequency in SUBING_THS_FORMULA_VERSIONS),
     *_SUBING_PAPER_FACTORS,

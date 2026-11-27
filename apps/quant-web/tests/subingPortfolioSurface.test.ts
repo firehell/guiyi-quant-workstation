@@ -22,9 +22,6 @@ async function loadPage() {
   }
   const portfolio = compile('components/subing/SubingPortfolioWorkbench.vue', {
     './SubingReplayChart.vue': stub,
-    './SubingTradeComparison.vue': compile('components/subing/SubingTradeComparison.vue', {
-      './labels': new URL('../src/components/subing/labels.ts', import.meta.url).href,
-    }),
     './labels': new URL('../src/components/subing/labels.ts', import.meta.url).href,
   })
   return (await import(compile('pages/research/SubingDecisionPage.vue', {
@@ -60,18 +57,7 @@ test('mount and switching use only shared APIs, show all16 and preserve honest n
     assert.ok(!textOf(root).includes('焦煤独立'))
     click(root, '历史回放'); await flush()
     assert.ok(textOf(root).includes('暂无已登记组合回放'))
-    const upload = findNode(root, node => node.type === 'input' && node.props.type === 'file')!
-    const header = {kind:'THREE_PRODUCT_RETROSPECTIVE_HISTORICAL_RESEARCH', matched:0, differences:0, trade_rows:0}
-    await upload.props.onChange({target:{files:[new File([JSON.stringify(header)], 'trades.jsonl')]}})
-    await flush()
-    assert.ok(textOf(root).includes('退出分歧 0 组'))
-    const fill = {rule:'A', fill_id:'same', contract:'JM2505', fill_at:'2026-01-02T02:01:00Z',
-      match:'单侧入场', exit_reasons:null}
-    const duplicate = [{...header, trade_rows:2}, fill, fill].map(row => JSON.stringify(row)).join('\n')
-    await upload.props.onChange({target:{files:[new File([duplicate], 'duplicate.jsonl')]}})
-    await flush()
-    assert.ok(textOf(root).includes('读取失败，请选择逐笔说明'))
-    assert.ok(!textOf(root).includes('退出分歧 0 组'))
+    assert.equal(findNode(root, node => node.type === 'input' && node.props.type === 'file'), null)
     click(root, '持续模型'); await flush()
     assert.deepEqual(calls, ['/api/v1/subing-portfolio/status', '/api/v1/subing-portfolio/history', '/api/v1/subing-portfolio/status'])
   } finally { app.unmount(); globalThis.fetch = original }

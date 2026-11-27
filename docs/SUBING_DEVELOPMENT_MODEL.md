@@ -11,7 +11,7 @@
 JM、LC、RB、SA、FG、MA、EC、V、PR、TA、UR、SH、SC、CJ、OI、I。
 政策身份沿用 `subing_portfolio_one_lot_v2`，100万元共享初始资金、每品种最多一手、单笔预算5000元、
 组合日亏预算20000元、保证金上限70%；同刻先处理退出，再按固定品种顺序分配新增风险。
-14品种旧身份仅供原历史结果读取和重放，不允许新建现役14品种run。
+14 品种旧身份仅供原件审计。
 
 记录真实启动时刻。启动前历史和完成观察只用于指标预热，不恢复历史持仓或补开旧信号。
 新实时账本 `subing_portfolio_minute_journal_v2` 使用 `strict_after_pending_and_current_facts_capture_v1`：
@@ -30,7 +30,9 @@ JM、LC、RB、SA、FG、MA、EC、V、PR、TA、UR、SH、SC、CJ、OI、I。
 继续使用本机独立 `guiyi_subing_development` 数据库的既有ModelStore，不迁移其他生产业务表。
 run identity、政策、原输入、当时执行事实、真实知识时间、决定、模拟成交、状态及hash链一起保存。
 事件不可UPDATE/DELETE/TRUNCATE，运行identity不可改写；sequence、进程排他锁和单worker advisory lock防止并发写入。
-重启从原run完整重放并逐事件核验投影，不创建替代run。提交结果不明先读回，失败内存对象不能继续消费。
+重启从原 run 完整重放并逐事件核验投影。提交结果不明时先读回，失败的内存对象停止消费。
+运行代码的源码哈希必须与旧 run 身份逐项匹配。策略退役涉及共享源码路径和哈希清单，进行中的 run 继续使用原精确发布副本。
+新源码接管前需单独验证从原事件重放及账目一致性，并按既有账本身份合同处理。
 
 私有运行状态独立于发布树：`~/Library/Application Support/GuiyiQuant/subing-paper`。
 其中数据库连接权限0600，active指针、心跳和逐品种facts登记随原run保留；发布切换不移动或重置原账本。
@@ -70,26 +72,19 @@ PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin
 `GET /api/v1/subing-portfolio/status` 和 `/history` 只读快照，不在HTTP中建表、创建run、捕获行情或驱动模型。
 无 active 且无启动心跳时显示 NOT_STARTED，未知权益显示未知。首次建账前，缺日历、主力映射、正式观察前缀或当日执行事实时，由同一进程在原门槛内等待。正式观察前缀缺失时先等待原件，避免消耗执行事实采集次数。心跳陈旧时显示 STALE_OR_STOPPED，保留最近可读的启动状态码和心跳时间。读取失败返回 503。
 历史回放使用独立登记和原政策身份，不把回顾性执行事实作为持续模型当时可知的事实。
-历史14品种结果可作为原身份审计读取，不作为另一套可启动现役模型。
+历史 API 只展示经核验的 16 品种结果。登记仍指向有效的 14 品种结果时，页面显示“暂无已登记组合回放”，原件供审计。
 
-旧JM和14品种的历史模拟证据不是本次16品种的OOS、自然成交、跨日或长期运行证明。
+旧 JM 和 14 品种的模拟证据按原身份供审计。16 品种的 OOS、自然成交、跨日与长期运行各需自己的证据。
 实际启动、自然信号/成交和待验事项只记录在 `STATUS.md`。
 
-## 本地研究与逐笔核对
+## 16 品种组合历史回放
 
-在仓库根目录运行。首次准备用只读 Catalog 和 Canonical 核对小时线来源，输出保存到自己选择的研究目录。每次使用新的输出文件名。
-
-```sh
-archive='/Volumes/扩展盘/subing-knowledge-foundation-data/third-camp-v2/refined/research/strategy-stage-c-20261108'
-work=$(mktemp -d)
-scripts/research/subing-replay.sh legacy-hours --source "$archive" --output "$work/hours.json"
-```
-
-已有核对过的小时文件即可直接执行以下步骤。固定物理合约、分钟档案、小时文件和成本参数后，回放只读本地文件，不启动 Web、行情、推送或账户服务。
+在仓库根目录显式指定已冻结的 16 品种执行事实和新输出路径。命令经 MarketDataService
+只读核对同物理合约的行情、交易时段与证据，随后生成带输入和源码哈希的回放原件。
 
 ```sh
-scripts/research/subing-replay.sh legacy-pairs --contract JM2505 --source "$archive" --hours "$work/hours.json" --output "$work/pairs.json"
-python3 scripts/research/subing_trade_report.py "$work/pairs.json" --archive "$archive" > "$work/trades.jsonl"
+PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python \
+  -m scripts.research.subing_portfolio_replay --facts-dir /absolute/frozen/facts --output /absolute/new/result.json
 ```
 
-在苏冰工作台的历史回放页展开“比较历史研究规则”，选择 trades.jsonl。首行记录输入和代码身份、入场机会与拒绝原因；后续每行对应一条规则的一笔交易，分别保存信号与模拟成交时间、接管时间和退出原因。焦煤开发样本提供归档后可附加当时使用的小时和日线方向时刻。三品种、历史14品种的组合比较同样可用逐笔命令读取 result.json（省略 --archive）；单侧独有的入场另外列出，组合净损益和最大回撤取自各自完整账户。空值表示原始研究结果无对应事实。
+工作台读取独立登记的结果和 SHA。缺少任一品种的必要事实时保留缺口。

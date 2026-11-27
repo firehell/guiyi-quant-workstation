@@ -2,7 +2,7 @@ from datetime import timedelta
 from dataclasses import replace
 import pytest
 from app.subing_model.account import ContinuousAccount,encode_execution
-from tests.unit.subing_account.test_account import inputs,BASE
+from tests.unit.subing_one_lot.fixtures import inputs,BASE
 
 def packets():
     xs,obs=inputs([100,101,102,102,101,101],frames={0:dict(regime='TREND_UP',near_zero_golden=True)})

@@ -150,7 +150,6 @@ def main():
         'DATABASE_URL', 'GUIYI_CANONICAL_DATA_ROOT')})
     os.environ['REDIS_URL'] = redis_url
     os.environ['GUIYI_HOME_PROJECTION_PATH'] = str(root / '.run/develop-newow-home.json')
-    os.environ['GUIYI_SUBING_DECISION_RESULTS_ROOT'] = str(root / 'output/subing-workbench-20261104/registered')
     if args.command == 'build':
         result = prepare_home_projection()
         counts = {state: sum(item['projection_status'] == state for item in result['items'])

@@ -54,35 +54,6 @@ for (const [width,height] of dimensions) {
     }
     await page.screenshot({path:`/private/tmp/guiyi-ui-free-${width}.png`,fullPage:true})
   })
-  test(`research complete curve independent of paging ${width}`,async({page})=>{
-    await page.setViewportSize({width,height})
-    const meta=(v)=>({run_id:(v===1?'a':'b').repeat(64),product:'AL',scenario:'baseline',initial_cash:'100000',status:'COMPLETED',strategy_code:`new_subing_v${v}`,formula_version:`v${v}`,profile_id:'frozen',risk_profile_version:'r1',execution_profile_version:'e1',code_revision:'c'.repeat(40),requested_since:'2026-01-01',requested_through:'2026-09-03',input_snapshot_hash:'d'.repeat(64),execution_facts_hash:'e'.repeat(64),source:'historical_replay',auto_order:false,case_parity:'PENDING',oos_status:'NOT_PROVEN'})
-    const curve=[0,1,2].map(i=>({at:`2026-01-0${i+1}T07:00:00Z`,equity:String(100000+i*100),physical_contract:'AL2603',qty:0,cash:'100000'}))
-    let curveRequests=0
-    await page.route('**/api/v1/research/new-subing/**',route=>{
-      const url=new URL(route.request().url()),id=url.pathname.split('/')[6],v=id==='a'.repeat(64)?1:2
-      if(url.pathname.endsWith('/profiles')) return route.fulfill({json:{strategy_code:'new_subing_v1',profiles:[],case_parity:'PENDING',oos_status:'NOT_PROVEN',auto_order:false}})
-      if(url.pathname.endsWith('/runs'))return route.fulfill({json:{runs:[meta(1),meta(2)]}})
-      if(url.pathname.endsWith('/equity-curve')){curveRequests++;return route.fulfill({json:{run_id:id,sha256:'f'.repeat(64),items:curve,total:100,sampled:true,sampling_version:'exact_extrema_boundaries_v1',since:'2026-01-01',through:'2026-09-03',status:'COMPLETED'}})}
-      if(/\/(decisions|trades|equity)$/.test(url.pathname))return route.fulfill({json:{run_id:id,sha256:'f'.repeat(64),items:[{at:'2026-01-01T07:00:00Z',equity:'100000',action:'OPEN',side:'LONG'}],next_cursor:url.searchParams.has('cursor')?null:'next'}})
-      return route.fulfill({json:{sha256:'f'.repeat(64),metadata:meta(v),summary:{status:'COMPLETED',account_return_pct:'0.2',max_drawdown_pct:'0.001',final_equity:'100200',closed_trades:1},diagnostics:{}}})
-    })
-    await page.goto('/research/new-subing')
-    for(const version of ['new_subing_v2','new_subing_v1']){
-      await page.locator('.chooser select').nth(0).selectOption(version)
-      const panel=page.locator('.performance-panel');await expect(panel.locator('.return-curve svg')).toBeVisible()
-      await expect(panel).toContainText('模型账户回撤');await expect(panel).toContainText('抽样')
-      await panel.locator('.return-curve svg').focus();await page.keyboard.press('End');await expect(panel.locator('.return-curve__readout')).toContainText('100200元')
-      const before=curveRequests
-      await page.getByRole('button',{name:'加载更多',exact:true}).click()
-      await expect(page.getByRole('button',{name:'加载更多',exact:true})).toHaveCount(0)
-      expect(curveRequests).toBe(before);await noOverflow(page)
-    }
-    await page.screenshot({path:`/private/tmp/guiyi-ui-research-${width}.png`,fullPage:true})
-  })
-}
-
-for (const [width,height] of dimensions.filter(([width]) => [1440,390].includes(width))) {
   test(`four experiment strategies share the curve and keep model identity ${width}`,async({page})=>{
     await page.setViewportSize({width,height});await newowFixtures(page)
     await page.route('**/api/v1/market/newow/experiments?**',route=>{

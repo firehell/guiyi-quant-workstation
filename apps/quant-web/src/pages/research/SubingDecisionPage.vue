@@ -12,7 +12,7 @@ const view = ref<'status' | 'history'>(route.query.mode === 'history' ? 'history
 <template>
   <div class="market-dashboard-page subing-workbench">
     <MarketNavigation active-tab="subing-decision">
-      <template #actions><span class="boundary">16品种共享模型 · 研究候选</span></template>
+      <template #actions><span class="boundary">苏冰独立量化 · 16品种共享 Paper</span></template>
     </MarketNavigation>
     <main>
       <nav class="mode-nav" aria-label="苏冰数据模式">

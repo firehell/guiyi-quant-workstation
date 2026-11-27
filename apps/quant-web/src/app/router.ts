@@ -23,12 +23,6 @@ const routes: RouteRecordRaw[] = [
       },
       { path: 'research/subing-decision', name: 'subing-decision', component: () => import('@/pages/research/SubingDecisionPage.vue'), meta: { title: '苏冰决策' } },
       {
-        path: 'research/new-subing',
-        name: 'new-subing-research',
-        component: () => import('@/pages/research/NewSubingPage.vue'),
-        meta: { title: '新苏冰历史研究' },
-      },
-      {
         path: ':pathMatch(.*)*',
         name: 'not-found',
         component: () => import('@/pages/NotFound.vue'),

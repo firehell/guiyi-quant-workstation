@@ -304,6 +304,7 @@ BUSINESS = frozenset({"api", "live", "market-feed", "alert", "reference-worker",
 OFFLINE_RESEARCH = frozenset({
     "scripts/research/subing-replay.sh",
     "scripts/research/subing_exit_comparison.py",
+    "scripts/research/subing_portfolio_inputs.py",
     "scripts/research/subing_portfolio_replay.py",
     "scripts/research/subing_research_diagnostics.py",
     "scripts/research/subing_three_exit_validation.py",

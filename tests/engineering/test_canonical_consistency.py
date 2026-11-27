@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 ROOT = Path(__file__).resolve().parents[2]
 
-PUBLIC_WEB_ROUTES = {"/market", "/market/chart", "/research/new-subing"}
+PUBLIC_WEB_ROUTES = {"/market", "/market/chart"}
 PUBLIC_OVERLAYS = {"none", "htdy"}
 MARKET_TABLES = {
     "exchanges",
@@ -91,6 +91,8 @@ RETIRED_HTTP_404_PATHS = (
     "/api/v1/market/research/subing-strategy/performance",
     "/api/alerts/strategy-actions/current",
     "/api/v1/research/newow-futures/runs",
+    "/api/v1/research/new-subing/profiles",
+    "/api/v1/research/subing-decision/runs",
     "/api/v1/market/newow/trend-detail",
     "/api/alerts/rules/htdy_original_15m/scope/jm/60m",
     "/api/v1/backtests/health",

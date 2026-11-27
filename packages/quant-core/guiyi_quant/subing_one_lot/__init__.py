@@ -24,9 +24,6 @@ from guiyi_quant.subing_decision import (
 from guiyi_quant.subing_demand_account_candidate import build_engine as build_base
 
 VERSION = "subing_jm_one_lot_fixed2000_v1"
-HOUR_EXIT = "profitable_h1_ema21_exit_v1"
-RANGE_EXIT = "trend_to_m30_range_close_v1"
-RESEARCH_EXIT_PROFILES = (HOUR_EXIT, RANGE_EXIT)
 POLICY = MappingProxyType(
     {
         "version": VERSION,
@@ -45,7 +42,6 @@ PORTFOLIO_PRODUCTS = tuple("jm lc rb sa fg ma ec v pr ta ur sh sc cj".split())
 
 # The 14-product identity remains decodeable only for historical research.
 EXPANDED_PORTFOLIO_PRODUCTS = TRADING_PRODUCTS
-THREE_PRODUCT_RESEARCH = ("jm", "sa", "ta")
 PORTFOLIO_POLICY = MappingProxyType({
     **POLICY,
     "version": "subing_portfolio_one_lot_v1",
@@ -55,10 +51,7 @@ PORTFOLIO_POLICY = MappingProxyType({
 })
 
 
-def portfolio_policy(products, *, research_scope=False):
-    if research_scope and products == THREE_PRODUCT_RESEARCH:
-        return {**PORTFOLIO_POLICY, "version": "subing_three_product_research_v1",
-                "products": list(products)}
+def portfolio_policy(products):
     if products == PORTFOLIO_PRODUCTS:
         return dict(PORTFOLIO_POLICY)
     if products == EXPANDED_PORTFOLIO_PRODUCTS:
@@ -92,29 +85,15 @@ def planned_loss(entry, stop, side, facts, slippage_ticks):
 
 def build_engine(
     executions, schedule, *, structures, execution_model="theoretical_open", portfolio=False,
-    portfolio_products=PORTFOLIO_PRODUCTS, exit_profile=None, legacy_close_witness=False,
-    research_scope=False,
+    portfolio_products=PORTFOLIO_PRODUCTS,
 ):
-    policy = portfolio_policy(portfolio_products, research_scope=research_scope) if portfolio else POLICY
-    if exit_profile is not None and exit_profile not in RESEARCH_EXIT_PROFILES:
-        raise ValueError("ONE_LOT_EXIT_PROFILE_INVALID")
-    if exit_profile:
-        policy = {
-            **policy,
-            "version": f"{policy['version']}:{exit_profile}",
-            "exit_profile": exit_profile,
-        }
+    policy = portfolio_policy(portfolio_products) if portfolio else POLICY
     version = policy["version"]
     products = portfolio_products if portfolio else ("jm",)
     if portfolio and execution_model != "completed_close":
         raise ValueError("PORTFOLIO_COMPLETED_CLOSE_REQUIRED")
     if execution_model not in ("theoretical_open", "completed_close"):
         raise ValueError("ONE_LOT_EXECUTION_MODEL_INVALID")
-    if legacy_close_witness:
-        if portfolio or execution_model != "theoretical_open":
-            raise ValueError("ONE_LOT_LEGACY_WITNESS_INVALID")
-        policy = {**policy, "version": f"{policy['version']}:legacy_close_witness_v1"}
-        version = policy["version"]
     bars = (
         executions
         if isinstance(executions, dict)
@@ -159,7 +138,6 @@ def build_engine(
             self.loss_pause_at = None
             self.last_closed_net = None
             self.closed_trade_count = 0
-            self.hour_exit_since = None
 
         def state(self):
             state = dict(
@@ -172,31 +150,7 @@ def build_engine(
                 last_closed_net=_wire(self.last_closed_net),
                 closed_trade_count=self.closed_trade_count,
             )
-            if exit_profile == HOUR_EXIT:
-                state["hour_exit_since"] = _wire(self.hour_exit_since)
             return state
-
-        def _exit_frame(self, frame):
-            if self.hour_exit_since is None or frame is None:
-                return frame
-            return dict(frame, below_previous_low=False, below_ema=False)
-
-        def _current_hour(self, at):
-            hour = structures[at.isoformat()].get("hourly")
-            if not hour:
-                return None
-            hour_at = datetime.fromisoformat(hour["at"])
-            if hour_at.utcoffset() is None or hour_at > at:
-                raise ValueError("ONE_LOT_H1_TIME_CONFLICT")
-            if hour_at != at:
-                return None
-            close = _number(hour["close"], positive=True)
-            ema = _number(hour["ema21"], nullable=True, positive=True)
-            if close != bars[at].bar.close:
-                raise ValueError("ONE_LOT_H1_CLOSE_CONFLICT")
-            if ema is None and self.hour_exit_since is not None:
-                raise ValueError("ONE_LOT_H1_EMA_UNAVAILABLE_AFTER_HANDOFF")
-            return (close, ema, hour["direction"]) if ema is not None else None
 
         def _ack(self, event, at):
             pending = deepcopy(self.pending)
@@ -205,13 +159,7 @@ def build_engine(
             trade = deepcopy(self.trade_entry)
             facts = None
             if event.get("status") == "FILLED":
-                end = (
-                    at + timedelta(minutes=1)
-                    if execution_model == "theoretical_open" and not (
-                        legacy_close_witness and pending and pending["kind"] == "CLOSE"
-                    )
-                    else at
-                )
+                end = at + timedelta(minutes=1) if execution_model == "theoretical_open" else at
                 if end not in bars:
                     raise ValueError("ONE_LOT_FILL_SOURCE_MISSING")
                 facts = bars[end].facts
@@ -261,7 +209,6 @@ def build_engine(
                 self.closed_trade_count += 1
                 self.loss_streak = self.loss_streak + 1 if net < 0 else 0
                 self.trade_entry = None
-                self.hour_exit_since = None
                 if self.loss_streak >= policy["loss_streak_trigger"]:
                     self.loss_pause_day = facts.trading_day.isoformat()
                     self.loss_pause_at = at
@@ -276,28 +223,6 @@ def build_engine(
             raw = event["m30"]
             side = self.side or candidate_side(raw or self.latest_frame)
             view = directional_frame(raw, side)
-            hour = self._current_hour(at) if exit_profile == HOUR_EXIT else None
-            hour_distance = (
-                direction_sign(side) * (hour[0] - hour[1])
-                if hour and self.layers else None
-            )
-            if (
-                self.hour_exit_since is not None
-                and at > self.hour_exit_since
-                and hour_distance is not None
-                and hour_distance < 0
-                and not (self.pending or self.clear_reasons or self.exit_layers)
-            ):
-                self.clear_reasons.append("H1_EMA21_CLEAR")
-            if (
-                exit_profile == RANGE_EXIT
-                and self.layers
-                and self.regime == ("TREND_UP" if side == "LONG" else "TREND_DOWN")
-                and raw is not None
-                and raw["regime"] == "RANGE"
-                and not (self.pending or self.clear_reasons or self.exit_layers)
-            ):
-                self.clear_reasons.append("M30_TREND_TO_RANGE_CLEAR")
             risk = None
             denied = False
             if not self.layers and not self.pending and view is not None:
@@ -385,23 +310,6 @@ def build_engine(
             if pause_active:
                 adjusted["admission"] = False
             actions = super()._observe(adjusted, at)
-            if (
-                exit_profile == HOUR_EXIT
-                and self.hour_exit_since is None
-                and self.layers
-                and at > self.round_started_at
-                and not (self.pending or self.clear_reasons or self.exit_layers)
-                and event["reconciled"] is True
-                and event["round_loss"] is False
-                and event["day_loss"] is False
-                and hour_distance is not None
-                and hour_distance > 0
-                and hour[2] == ("UP" if side == "LONG" else "DOWN")
-            ):
-                net = _number(event["remaining_net"], nullable=True)
-                technical_risk = self.risk_distance * bars[at].facts.multiplier
-                if net is not None and technical_risk > 0 and net >= technical_risk:
-                    self.hour_exit_since = at
             if resume_attempt:
                 if any(action.get("kind") == "OPEN" for action in actions):
                     self.loss_pause_day = None
@@ -511,11 +419,6 @@ def build_engine(
             self.failed = False
             self.portfolio_finance = None
 
-        def _fill_on_open(self, pending):
-            if legacy_close_witness and pending and pending["kind"] == "CLOSE":
-                return False
-            return super()._fill_on_open(pending)
-
         def finance(self, mark, facts, side):
             result = super().finance(mark, facts, side)
             result["admission"] = result["admission"] and not self.layers
@@ -551,11 +454,6 @@ def build_engine(
         def step(self, execution, technical, *, observed_at=None):
             if self.failed:
                 raise ValueError("ONE_LOT_RESTORE_REQUIRED")
-            if exit_profile and self.live and (
-                observed_at != execution.bar.bar_end
-                or execution.bar.confirmed_at != execution.bar.bar_end
-            ):
-                raise ValueError("ONE_LOT_EXIT_RESEARCH_REQUIRES_BAR_END_KNOWLEDGE")
             source = bars.get(execution.bar.bar_end)
             if source is None or _wire(asdict(source)) != _wire(asdict(execution)):
                 raise ValueError("ONE_LOT_ACCOUNT_INPUT_CHANGED")
@@ -601,11 +499,6 @@ def build_engine(
             result["assumptions"] = result["assumptions"].replace(
                 "capacity assumed up to 3 lots", "capacity assumed up to 1 lot"
             )
-            if legacy_close_witness:
-                result["assumptions"] = (
-                    "Development witness: theoretical entry; next executable "
-                    "completed 1m exit with adverse slippage; no terminal liquidation"
-                )
             return result
 
         def checkpoint(self):

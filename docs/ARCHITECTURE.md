@@ -143,20 +143,12 @@ HTTP、snapshot 与 readiness 显式保留各自质量、缓存和预算政策�
 Runtime 的 launchd、文件快照及心跳身份读取位于 `app.runtime_identity`；安全配置读取位于
 `app.private_settings`，专项恢复入口只组合政策并适配既有错误。共享依赖纳入 Runtime 与有界恢复执行指纹。
 
-## 新苏冰固定参数历史研究
+## 苏冰独立量化
 
-V2纯新包 `guiyi_quant.new_subing_v2` 复用不可变输入类型与行情适配器，独立维护阶段、分层账户与身份；
-快照、背离扫描和输入校验共用显式版本 `new_subing_common_v1`，Profile 与执行引擎分别维护；
-逐prefix指标准备不缓存账户状态。新脚本只读重测并验证V1输入/执行事实哈希，既有结果库与页面区分版本和两档本金。
-V2合同见 [NEW_SUBING_STRATEGY_V2.md](NEW_SUBING_STRATEGY_V2.md)；V1公式与结果保持原样。
-
-`MarketDataService -> app.market_data.new_subing_research -> guiyi_quant.new_subing / new_subing_v2`
-提供同物理合约 lifecycle 指标前缀、completed 多周期决策与后续1m双向整数手研究模型。
-成本、限价与多空保证金来自独立冻结的 RQData facts，缺事实不回退。
-离线 CLI 写任务结果；`app.new_subing_research.store` 的精确 SHA index 是结果读取入口，
-只读 `/api/v1/research/new-subing/*` 与 `/research/new-subing` 不导入 provider 或运行研究。
-本链没有生产数据库、Paper账本、Alert Rule、Live订阅或订单传输依赖；旧苏冰算法和 JM Paper
-保持既有身份。V1业务与时序定义见 [基线合同](NEW_SUBING_STRATEGY.md)，V2见上文独立合同。
+Paper 持续模型读取 completed ObservationStream 和已登记的同物理合约执行事实。历史回放读取
+MarketDataService 和显式冻结的执行事实。两条路径共用模型规则与成交政策，分别保存现场和回顾时序。
+行情图表、回放和持续模型共用行情输入验证。Paper 使用 `guiyi_quant.subing_inputs` 的 Bar 和执行事实类型。
+只读 API 独立校验结果路径、大小和 SHA。 [苏冰共享模型合同](SUBING_DEVELOPMENT_MODEL.md)
 
 ## Preserved seams
 
@@ -241,4 +233,4 @@ manage/trade实现有各自执行限制，不能由observe运行推导交易开�
 
 ## 苏冰16品种共享 Paper 模型
 
-`app.subing_portfolio_worker` 从 MDS 取得物理合约与预热输入，消费既有 completed ObservationStream。`PortfolioJournal` 按分钟提交不可变事实与共享账户状态。16 品种共享资金，每品种最多一手；事实中断时保留保护义务，换月需显式处理。历史14品种和单JM账户按原身份重放。工作台的持续模式读取已提交快照，历史模式读取登记回放，本地研究对照可直接导入。详细合同与启动恢复入口见[苏冰共享模型](SUBING_DEVELOPMENT_MODEL.md)。
+`app.subing_portfolio_worker` 从 MDS 取得物理合约与预热输入，消费既有 completed ObservationStream。`PortfolioJournal` 按分钟提交不可变事实与共享账户状态。16 品种共享资金，每品种最多一手；事实中断时保留保护义务，换月需显式处理。旧 14 品种和单 JM 账目按原身份留存。工作台的持续模式读取已提交快照，历史模式读取经核验的 16 品种登记回放。详细合同与启动恢复入口见[苏冰共享模型](SUBING_DEVELOPMENT_MODEL.md)。

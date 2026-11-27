@@ -256,12 +256,13 @@ def test_registered_htdy_and_subing_do_not_grant_new_consumers():
 
     for feature, frequency, use in (
         ("htdy_original", "60m", "backtest"),
-        ("htdy_strict", "60m", "web"),
         ("subing_ths_1d", "1d", "simulation"),
         ("subing_ths_1d", "15m", SUBING_THS_OBSERVATION_USE),
     ):
         with pytest.raises(ValueError, match="FEATURE_USE_NOT_ALLOWED"):
             owned_indicator(feature, frequency=frequency, use=use)
+    with pytest.raises(ValueError, match="UNSUPPORTED_OWNED_FEATURE"):
+        owned_indicator("htdy_strict", frequency="60m", use="backtest")
     with pytest.raises(ValueError, match="UNSUPPORTED_OWNED_FEATURE"):
         subing_ths_state_step("1m", use=SUBING_THS_OBSERVATION_USE)
 

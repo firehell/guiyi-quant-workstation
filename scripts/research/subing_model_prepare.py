@@ -13,7 +13,7 @@ from app.db.url import normalize_database_url
 from app.market_data.catalog import MarketCatalog
 from app.market_data.storage import CanonicalMonthlyStore
 from app.market_data.market_data_service import MarketDataService
-from app.market_data.new_subing_research import _wire
+from app.market_data.research_inputs import _wire
 from app.subing_model.factors import Factors
 PRODUCTS='jm lc rb sa fg ma ec v pr ta ur sh sc cj'.split()
 

@@ -6,7 +6,7 @@ from copy import deepcopy
 from guiyi_quant.subing_account import AccountEngine
 from guiyi_quant.subing_demand_account_candidate import build_engine
 from guiyi_quant.subing_decision import REGIME_PROFILE,_wire,_digest,directional_frame,technical_full_exit_reasons,technical_exit_targets
-from guiyi_quant.new_subing import StrategyBar,ExecutionFacts,ExecutionBar
+from guiyi_quant.subing_inputs import StrategyBar,ExecutionFacts,ExecutionBar
 from guiyi_quant.paper import FeeSchedule
 
 VERSION='subing_development_completed_close_v1'

@@ -2,7 +2,6 @@
 
 import argparse
 from datetime import UTC, date, datetime, timedelta
-from decimal import Decimal as D
 import hashlib
 import json
 from pathlib import Path
@@ -16,26 +15,22 @@ from app.market_data.actual_dominant_research import ActualDominantResearchSegme
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import BarFrequency, ContractTradingDayQuery
 from app.market_data.market_data_service import MarketDataService
-from app.market_data.new_subing_research import (
-    NewSubingInputError,
+from app.market_data.research_inputs import (
+    ResearchInputError,
     payload_hash,
     validate_series,
 )
 from app.market_data.storage import CanonicalMonthlyStore
 from app.private_settings import load_private_readonly_settings
-from guiyi_quant.indicators import subing_range
 from guiyi_quant.indicators.subing_trend import initial_state, step
 from guiyi_quant.subing_decision import _wire
-from guiyi_quant.subing_one_lot import (
-    EXPANDED_PORTFOLIO_PRODUCTS, PORTFOLIO_PRODUCTS, THREE_PRODUCT_RESEARCH,
-)
+from guiyi_quant.subing_one_lot import EXPANDED_PORTFOLIO_PRODUCTS
 from guiyi_quant.subing_one_lot.portfolio import Segment, replay
-from scripts.research.subing_account import load
-from scripts.research.subing_one_lot_stress import build_context, dump, hashes
-from scripts.research.subing_trend import TrendExportError, load as load_factors
+from scripts.research.subing_portfolio_inputs import build_context, dump, hashes, load
+from scripts.research.subing_trend import load as load_factors
 
 
-def load_hourly(market, product, contract, through, cutoff, *, include_range=False):
+def load_hourly(market, product, contract, through, cutoff):
     source = market.contract_source_evidence(
         symbol=product, contract=contract, frequency=BarFrequency.H1, before=cutoff,
     )
@@ -47,7 +42,7 @@ def load_hourly(market, product, contract, through, cutoff, *, include_range=Fal
         cutoff=cutoff,
     )
     if not expected:
-        raise NewSubingInputError("HOURLY_INPUT_EMPTY")
+        raise ResearchInputError("HOURLY_INPUT_EMPTY")
     series = market.query_contract_trading_days(
         ContractTradingDayQuery(
             product, contract, BarFrequency.H1, expected[0][1], through
@@ -62,7 +57,6 @@ def load_hourly(market, product, contract, through, cutoff, *, include_range=Fal
     )
     hourly = {}
     state = initial_state(contract, "60m")
-    range_state = subing_range.initial_state(contract, "60m") if include_range else None
     for bar in series.bars:
         state, point = step(
             state,
@@ -77,25 +71,17 @@ def load_hourly(market, product, contract, through, cutoff, *, include_range=Fal
             at=bar.bar_end.isoformat(), direction=point.direction,
             close=str(bar.close), ema21=None if point.ema21 is None else str(point.ema21),
         )
-        if range_state is not None:
-            range_state, range_point = subing_range.step(
-                range_state, contract=contract, frequency="60m", bar_end=bar.bar_end,
-                high=bar.high, low=bar.low, close=bar.close,
-                atr=None if point.atr14 is None else D(str(point.atr14)),
-                trend_direction=point.direction,
-            )
-            hourly[bar.bar_end]["regime"] = range_point.regime
     if source != market.contract_source_evidence(
         symbol=product, contract=contract, frequency=BarFrequency.H1, before=cutoff,
     ):
-        raise NewSubingInputError("HOURLY_SOURCE_CHANGED")
-    return hourly, source
+        raise ResearchInputError("HOURLY_SOURCE_CHANGED")
+    return hourly
 
 
-def prepare_segment(market, product, contract, days, schedule, facts, *, compare_exits=False, diagnostics=False):
+def prepare_segment(market, product, contract, days, schedule, facts):
     since, through = map(date.fromisoformat, (days[0], days[-1]))
     segments, evidence = load(
-        market, facts, since, through, product=product, include_range=True, portfolio=True,
+        market, facts, since, through, product=product,
     )
     (segment,) = segments
     if segment["contract"] != contract:
@@ -108,23 +94,12 @@ def prepare_segment(market, product, contract, days, schedule, facts, *, compare
     if factors["input_hash"] != evidence["factors_input_hash"]:
         raise ValueError("PORTFOLIO_FACTOR_SOURCE_CHANGED")
     cutoff = xs[-1].bar.bar_end
-    hourly, h1_source = load_hourly(
-        market, product, contract, through, cutoff, include_range=diagnostics,
-    )
-    if compare_exits:
-        evidence["hourly_source"] = h1_source
-        marks = {x.bar.bar_end: x.bar.close for x in xs}
-        if any(at not in marks or marks[at] != D(hour["close"])
-               for at, hour in hourly.items() if xs[0].bar.bar_end <= at <= cutoff):
-            raise NewSubingInputError("H1_M1_ENDPOINT_OR_CLOSE_CONFLICT")
-    else:
-        hourly = {at: {key: hour[key] for key in ("at", "direction")} for at, hour in hourly.items()}
+    hourly = {
+        at: {key: hour[key] for key in ("at", "direction")}
+        for at, hour in load_hourly(market, product, contract, through, cutoff).items()
+    }
     structures = build_context(factors["rows"], xs, contract, hourly)
     prepared = Segment(product, tuple(xs), segment["observations"], structures, schedule)
-    if diagnostics:
-        from scripts.research.subing_research_diagnostics import diagnose_segment
-
-        evidence["diagnostics"] = diagnose_segment(market, prepared, factors["rows"], hourly)
     return prepared, evidence, [
         {**{key: row[key] for key in ("open", "high", "low", "close", "ema21")},
          "at": row["time"], "contract": contract, **{
@@ -172,13 +147,11 @@ def verify_schedule(market, product, item, since, through):
             raise ValueError("PORTFOLIO_SESSION_PLAN_CHANGED")
 
 
-def load_segments(facts_dir, *, compare_exits=False, diagnostics=False, research_scope=False):
+def load_segments(facts_dir):
     plan = json.loads((facts_dir / "plan.json").read_text())
     since, through = map(date.fromisoformat, plan["dates"])
-    scopes = (THREE_PRODUCT_RESEARCH,) if research_scope else (PORTFOLIO_PRODUCTS, EXPANDED_PORTFOLIO_PRODUCTS)
-    products = next((scope for scope in scopes
-                     if set(plan["products"]) == set(scope)), None)
-    if products is None:
+    products = EXPANDED_PORTFOLIO_PRODUCTS
+    if set(plan["products"]) != set(products):
         raise ValueError("PORTFOLIO_PLAN_SCOPE_INVALID")
     settings, _ = load_private_readonly_settings(
         Path.home() / "Library/Application Support/GuiyiQuant/project.env"
@@ -233,14 +206,9 @@ def load_segments(facts_dir, *, compare_exits=False, diagnostics=False, research
                     try:
                         segment, evidence, chart = prepare_segment(
                             market, product, contract, days, schedule, facts,
-                            compare_exits=compare_exits, diagnostics=diagnostics,
                         )
-                    except NewSubingInputError as exc:
+                    except ResearchInputError as exc:
                         row.update(status=exc.code, diagnostic=exc.diagnostic)
-                    except TrendExportError as exc:
-                        if not compare_exits:
-                            raise
-                        row.update(status=str(exc))
                     else:
                         segments.append(segment)
                         charts.setdefault(product, []).extend(chart)
@@ -276,7 +244,7 @@ def main():
     timeline = []
     if not segments:
         raise ValueError("PORTFOLIO_NO_VERIFIED_SEGMENTS")
-    if products == EXPANDED_PORTFOLIO_PRODUCTS and any(row["status"] != "VERIFIED" for row in coverage):
+    if any(row["status"] != "VERIFIED" for row in coverage):
         raise ValueError("PORTFOLIO_EXPANDED_FACTS_INCOMPLETE")
     def record(portfolio):
         marks = {}
@@ -299,7 +267,7 @@ def main():
         )))
 
     result = replay(segments, f"subing-portfolio-replay:{since}:{through}",
-                    products=products, on_batch=record)
+                    on_batch=record)
     if (
         source_hashes != hashes()
         or runner_hash != hashlib.sha256(Path(__file__).read_bytes()).hexdigest()

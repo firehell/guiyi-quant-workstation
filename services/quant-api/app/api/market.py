@@ -453,7 +453,7 @@ def dynamic_range_indicator(
     from fastapi.encoders import jsonable_encoder
     from app.db.readonly import readonly_transaction
     from app.market_data.dynamic_range import chart_window, DynamicRangeError
-    from app.market_data.new_subing_research import NewSubingInputError
+    from app.market_data.research_inputs import ResearchInputError
 
     if not _DYNAMIC_RANGE_GATE.acquire(blocking=False):
         raise HTTPException(503, detail={'code': 'DYNAMIC_RANGE_BUSY'})
@@ -474,7 +474,7 @@ def dynamic_range_indicator(
         return jsonable_encoder(result, custom_encoder={Decimal: str})
     except ContractError:
         raise HTTPException(422, detail={'code': 'DYNAMIC_RANGE_QUERY_INVALID'}) from None
-    except (DynamicRangeError, MarketDataError, NewSubingInputError) as exc:
+    except (DynamicRangeError, MarketDataError, ResearchInputError) as exc:
         raise HTTPException(409, detail={'code': exc.code}) from None
     except Exception:
         raise HTTPException(503, detail={'code': 'DYNAMIC_RANGE_UNAVAILABLE'}) from None

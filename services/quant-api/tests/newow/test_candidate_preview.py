@@ -339,18 +339,14 @@ def test_subing_reference_path_is_narrowly_admitted(preview):
         assert _preview_path_allowed(path) is False
 
 
-def test_new_subing_frozen_research_paths_are_narrowly_admitted(preview):
+def test_preview_rejects_retired_subing_research_paths(preview):
     from app.preview import _preview_path_allowed
 
-    root = "/api/v1/research/new-subing"
-    for suffix in ("/profiles", "/runs", "/runs/" + "a" * 64,
-                   "/runs/" + "a" * 64 + "/decisions",
-                   "/runs/" + "a" * 64 + "/trades",
-                   "/runs/" + "a" * 64 + "/equity"):
-        assert _preview_path_allowed(root + suffix)
-    for suffix in ("/apply", "/runs/../profiles", "/runs/" + "A" * 64,
-                   "/runs/" + "a" * 64 + "/rerun", "/runs/"):
-        assert not _preview_path_allowed(root + suffix)
+    app, _sessions, _factory = preview
+    with TestClient(app) as client:
+        for path in ("/api/v1/research/new-subing/profiles", "/api/v1/research/subing-decision/runs"):
+            assert not _preview_path_allowed(path)
+            assert client.get(path).status_code == 403
 
 
 def test_preview_identity_declares_subing_reference_with_the_cutoff_scope(preview):

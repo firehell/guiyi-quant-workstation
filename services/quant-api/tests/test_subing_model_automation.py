@@ -96,7 +96,7 @@ def test_observation_rollover_rewarms_only_new_physical_contract_and_replays():
 
 def test_daily_no_trade_admission_still_requires_complete_series_and_exact_zeros():
     from app.market_data.domain import BarFrequency
-    from app.market_data.new_subing_research import validate_series
+    from app.market_data.research_inputs import validate_series
     from app.subing_model.pipeline import bar
     from dataclasses import replace
     from decimal import Decimal

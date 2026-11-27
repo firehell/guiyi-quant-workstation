@@ -5,10 +5,10 @@ from datetime import datetime
 from decimal import Decimal
 from itertools import groupby
 
-from guiyi_quant.new_subing import ExecutionBar
+from guiyi_quant.subing_inputs import ExecutionBar
 from guiyi_quant.subing_decision import REGIME_PROFILE, _wire
 
-from . import PORTFOLIO_POLICY, PORTFOLIO_PRODUCTS, RESEARCH_EXIT_PROFILES, build_engine, portfolio_policy
+from . import EXPANDED_PORTFOLIO_PRODUCTS, PORTFOLIO_POLICY, build_engine, portfolio_policy
 
 D = Decimal
 INITIAL_CASH = D(PORTFOLIO_POLICY["initial_cash"])
@@ -40,21 +40,10 @@ def opening_quote(mark, facts, side, slippage_ticks=1):
 
 
 class Portfolio:
-    def __init__(self, segments, run_id, *, products=PORTFOLIO_PRODUCTS,
-                 exit_profile=None, slippage_ticks=1, research_scope=False):
+    def __init__(self, segments, run_id, *, products=EXPANDED_PORTFOLIO_PRODUCTS):
         self.products = products
-        self.policy = portfolio_policy(products, research_scope=research_scope)
-        self.research_scope = research_scope
-        if (exit_profile is not None and exit_profile not in RESEARCH_EXIT_PROFILES
-                or type(slippage_ticks) is not int or slippage_ticks not in (1, 2, 3)):
-            raise ValueError("PORTFOLIO_RESEARCH_SETTINGS_INVALID")
-        self.exit_profile = exit_profile
-        self.slippage_ticks = slippage_ticks
-        if exit_profile:
-            self.policy = {**self.policy, "version": f"{self.policy['version']}:{exit_profile}",
-                           "exit_profile": exit_profile}
-        if slippage_ticks != 1:
-            self.policy["research_slippage_ticks"] = slippage_ticks
+        self.policy = portfolio_policy(products)
+        self.slippage_ticks = 1
         self.run_id = run_id
         self.accounts = {}
         self.last_observed_at = None
@@ -93,8 +82,6 @@ class Portfolio:
             execution_model="completed_close",
             portfolio=True,
             portfolio_products=self.products,
-            exit_profile=self.exit_profile,
-            research_scope=self.research_scope,
         )
         account = module.AccountEngine(
             contract,
@@ -315,12 +302,8 @@ class Portfolio:
         )
 
 
-def replay(segments, run_id, *, products=PORTFOLIO_PRODUCTS, on_batch=None,
-           exit_profile=None, slippage_ticks=1, research_scope=False):
-    portfolio = Portfolio(
-        segments, run_id, products=products, exit_profile=exit_profile, slippage_ticks=slippage_ticks,
-        research_scope=research_scope,
-    )
+def replay(segments, run_id, *, on_batch=None):
+    portfolio = Portfolio(segments, run_id)
     rows = sorted(
         (
             (x, segment.observations[x.bar.bar_end])

@@ -10,7 +10,7 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 
 ## Market Web
 
-- Market 页面为 `/market` 与 `/market/chart`；独立历史研究入口为 `/research/new-subing`。
+- Market 页面为 `/market` 与 `/market/chart`；苏冰独立量化工作台为 `/research/subing-decision`。
 - Web 隐藏主连入口，仅保留真实主力及已有指定合约。旧 `series_kind=continuous` 链接在请求前迁移为真实主力，保留品种、视图与合法周期，清除旧合约及记录定位，替换地址并提示；旧显示偏好只迁移序列。不匹配当前序列的统计不展示。底层 continuous API、行情与内部研究能力保留。
 - Market 首页分为市场与消息 Tab，以独立 bulk 只读资源展示 Runtime health、active completed D1/W1 generic overview、operational completed 1m 报价与 immutable Alert Events；浏览器不按品种请求、不重算指标或策略。人工点击品种或 Event 后进入 `/market/chart` 复核。
 - 首页采用白色全宽卡片列表、期货板块本地筛选与涨跌幅表头三态排序；返回恢复成功快照、偏好与位置，必要更新在后台进行。分钟报价通过单个批量 WebSocket 更新，明确时间、来源与状态；较昨收涨跌幅只用同物理合约昨收。日周状态、量比、增仓率仍标明 completed-period 口径。趋势/震荡摘要、日周图标、目标/吸筹与展开后的普通参考收益来自版本化持久投影，首页交互不回放策略；源更新后预计算，缺失/失败保留明确状态。增仓率不能解释为做多。
@@ -24,25 +24,14 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 
 多周期波段路径使用独立展示身份 `guiyi_futures_historical_path_v1`。历史双线与周期样本仅限同物理合约、同计算段，普通参考和 trueup 样本分离；保持公开 v3.4.49 的周期与剩余价格幅度估算，不修改策略或参考收益。剩余时长与预计日期分别验证：日期基于快照行情交易日，通过 MarketDataService 的 Catalog 日历和 Session 证明逐日推进（最长366个自然日），不使用浏览器日期或星期推断。缺历史日历前缀不估算时长；缺未来证明只保留时长及原因；历史快照没有当时捕获的日历身份不借当前日历补日期。日期证明参与快照缓存身份，旧路径身份不视为新模型。无有效 ETA 日期时只画持有清仓目标或空仓吸筹参考，不生成预计日期端点或未来持仓背景；没有同身份止损来源不展示止损距离比。
 
-## 苏冰决策持续观察与历史回放
+## 苏冰独立量化与 L.M.S 研究
 
-`/research/subing-decision` 提供焦煤统一环境—需求候选的独立历史回放，入口位于模拟交易之后；只读 `/api/v1/research/subing-decision/*` 消费显式登记SHA结果，展示环境、条件、模型持仓及决策/成交历史。v2基础分类与近期结构确认约束分别解释，收益属于独立模型账户已见开发样本，不是持续模型或真实账户。规则与边界见[交易需求合同](docs/research/subing-trading-demands.md#应用内焦煤统一历史回放候选2026-11-04)。
+苏冰量化的唯一策略是16品种共享资金 Paper。`/research/subing-decision`
+通过只读的 `/api/v1/subing-portfolio/status` 与 `/history` 展示同一策略的持续观察和历史回放。
+新苏冰 V1/V2、焦煤日线及环境—需求等旧研究已经退役，原件供历史审计。苏冰同花顺预警继续使用独立的 Alert 合同。
 
-同一页面提供独立开发持续模型，首版仅JM可进入模型撮合；14品种先观察，其余参数只提供ATR尺度研究候选。模型实际启动时空仓，历史仅预热，使用后续完成1m收盘和真实获知时刻的新执行身份；独立开发PostgreSQL事件与账户投影不混入Paper试点、天勤或真实账户。只读 `/api/v1/subing-model/status` 不启用账户。运行、恢复、执行事实及换月边界见[开发模型合同](docs/SUBING_DEVELOPMENT_MODEL.md)。
-
-## 新苏冰策略独立研究
-
-修正版 `new_subing_v2` 使用独立[阶段/分层合同](docs/NEW_SUBING_STRATEGY_V2.md)，保留V1规则与结果。
-10万元主结果及100万元诊断具有不同Profile；只读页面按版本与本金筛选，不能合并收益或从研究自行晋升。
-
-`new_subing_v1` 是固定参数顺势波段研究版，规则与来源只由
-[新苏冰合同](docs/NEW_SUBING_STRATEGY.md)定义。它采用 MA21、日线方向、5m/15m确认、
-三项共振及统一净仓模型，首轮 AL/RB/TA 各自以10万元进行双向整数手历史研究。
-CLI 经唯一 MarketDataService 读取冻结 Canonical；独立的有界 RQData collector 只采集成本与限价
-证据，不修复或写行情。只读 Web/API 消费哈希绑定的研究结果，不启动回测或外部请求。
-模型成交与账户收益独立于旧苏冰 Event、乐观参考、JM Paper 账本和真实账户。
-缺口、未成交、换月中断、原案例未核验及 OOS 未证明均显式展示；不恢复旧研究或执行入口，
-不启用 Runtime、通知、Shadow、Broker 或自动交易。发布与运行状态仍只看 `STATUS.md`。
+L.M.S 仅有作者计划和 Near405 两个研究模式。人工确认回放属于研究工具，关键 K、保护、锁仓、解锁和回补由研究组件提供。
+LMS-inspired V1 的历史证据已归档。作者规则和收益仍未完整验证。 [L.M.S 研究手册](docs/research/lms405/REPLICATION_MANUAL.md)
 
 ## Newow 与参考交易
 
@@ -141,8 +130,8 @@ RQData -> staging + hard validation -> Canonical Parquet
 - `MarketDataService` 是 Historical consumer 的唯一入口；Redis Live 只承载当日 observation，不能提升为 Canonical。
 - 同物理 contract 的上市有效期内真实 warm-up Bar 可与 rank1 required Bar 共存；它不改变 actual-dominant owner，且任何越界/非 session Bar 都 fail-closed。唯一维护入口是 hash-locked `data contract-warmup`：dry-run 只读，真实 RQData/Canonical apply 必须在 `AGENTS.md` 定义的交办范围内；数据补全或历史候选闭环无需逐批人工批准，由执行者冻结并校验 exact plan hash。
 
-稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*`、`/api/v1/reference-trading/*`、`/api/simulation/monitor/*` 及独立只读 `/api/v1/research/new-subing/*`。
-统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 为 `data`、`runtime`、`reference` 与 `home`。`reference` 提供精确计划及 build/advance/rebuild/resume，`home build` 显式构建首页派生投影；写入边界仍遵守各自合同。新苏冰离线研究使用上文专用脚本，不恢复退役研究产品。
+稳定 HTTP 面为 `/api/v1/market/*`、`/api/alerts/*`、只读 `/api/runtime/*`、`/api/v1/reference-trading/*`、`/api/simulation/monitor/*` 及只读 `/api/v1/subing-portfolio/*`。
+统一 CLI 为 `uv run --project services/quant-api guiyi`，active domain 为 `data`、`runtime`、`reference` 与 `home`。`reference` 提供精确计划及 build/advance/rebuild/resume，`home build` 显式构建首页派生投影；写入边界仍遵守各自合同。
 
 ## 模拟交易
 

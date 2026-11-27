@@ -6,7 +6,7 @@ from typing import Callable
 
 from guiyi_quant.indicators import subing_range, subing_trend
 from .domain import BarFrequency, ContractTradingDayQuery, SeriesPageQuery, SeriesKind
-from .new_subing_research import payload_hash, validate_series
+from .research_inputs import payload_hash, validate_series
 
 
 class DynamicRangeError(ValueError):

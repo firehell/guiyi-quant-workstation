@@ -1,5 +1,7 @@
 # 焦煤苏冰3.3：历史账户回放
 
+> 已归档。本页记录旧研究。现行合同见 [苏冰独立量化](../SUBING_DEVELOPMENT_MODEL.md)。原实现见 Git 提交 `567b62bffa`。
+
 以[3.2持仓决策](subing-position-decisions.md)为策略入口，复用阶段二全部因子。当前仅是开发核对的离线模型账户，不是Broker成交、正式Runtime或OOS证据。
 
 ## 输入与时间

@@ -6,7 +6,7 @@
 
 - `/market`：Runtime 健康、completed D1/W1 市场概览与当前 Alert Events。
 - `/market/chart`：主力连续 K 线、当日 Live、Newow/HTDY/苏冰/Free 四视角、通用 EMA/MACD/Range 与只读参考交易。
-- `/research/new-subing`：独立新苏冰历史研究结果；Market 导航未提供直接入口。
+- `/research/subing-decision` 提供苏冰独立量化的 16 品种 Paper 持续观察与历史回放。
 - CLI：`guiyi data ...`、`guiyi runtime ...`、`guiyi reference ...` 与 `guiyi home build`。
 
 各视角、指标及参考交易的身份与开放边界统一见 [稳定产品面](PROJECT_SOURCE.md)。

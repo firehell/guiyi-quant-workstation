@@ -22,8 +22,6 @@ from app.api.market_subing_reference import router as market_subing_reference_ro
 from app.api.market_live import router as market_live_router
 from app.api.runtime import router as runtime_router
 from app.api.reference_trading import router as reference_trading_router
-from app.api.research_new_subing import router as research_new_subing_router
-from app.api.research_subing_decision import router as subing_decision_router
 from app.api.subing_model import router as subing_model_router
 from app.api.subing_portfolio import router as subing_portfolio_router
 from app.middleware.request_timing import RequestTimingMiddleware
@@ -106,10 +104,8 @@ app.include_router(market_live_router)
 app.include_router(alerts_router)
 app.include_router(runtime_router)
 app.include_router(reference_trading_router)
-app.include_router(subing_decision_router)
 app.include_router(subing_model_router)
 app.include_router(subing_portfolio_router)
-app.include_router(research_new_subing_router)
 
 
 @app.get("/health")

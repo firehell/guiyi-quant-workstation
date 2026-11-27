@@ -9,7 +9,7 @@ from guiyi_quant import subing_account
 from guiyi_quant.paper import FeeSchedule
 from guiyi_quant.subing_decision import REGIME_PROFILE
 from guiyi_quant.subing_one_lot import POLICY, build_engine, planned_loss
-from tests.unit.subing_account.test_account import inputs
+from tests.unit.subing_one_lot.fixtures import inputs
 
 
 def fixture(prices, frames, *, next_day_at=None):
@@ -89,13 +89,18 @@ def setup(prices, frames, **kwargs):
 
 
 def run(xs, obs, eng):
-    return eng.replay(
-        xs,
-        obs,
+    first = xs[0]
+    account = eng.AccountEngine(
+        first.bar.physical_contract,
+        first.bar.product,
+        first.facts.multiplier,
         "one-lot",
         execution_model="theoretical_open",
         regime_research_profile=REGIME_PROFILE,
     )
+    for execution in xs:
+        account.step(execution, obs[execution.bar.bar_end])
+    return account.snapshot()
 
 
 def test_policy_isolated_capital_and_original_globals_unchanged():

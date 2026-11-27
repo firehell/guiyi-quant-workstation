@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import SubingTradeComparison from './SubingTradeComparison.vue'
 import SubingReplayChart from './SubingReplayChart.vue'
 import { label } from './labels'
 
@@ -124,7 +123,6 @@ watch(() => props.mode, (mode, _, onCleanup) => {
     <p class="model-context">{{ mode === 'status' ? '持续观察' : '历史回放' }} · 同一16品种共享资金与风险模型 · 自动下单关闭</p>
     <p v-if="snapshot?.run_id" class="model-context">{{ mode === 'status' ? '持续运行' : '历史结果' }}身份：{{ snapshot.run_id }}</p>
     <p v-if="error" class="notice" role="alert">读取失败。{{ snapshot ? '正在显示最后一次读取的快照。' : '暂无可用快照。' }}</p>
-    <SubingTradeComparison v-if="mode === 'history'" />
     <section class="panel overview" aria-label="共享账户摘要">
       <div>组合权益<strong>{{ money(combined?.equity) }}</strong></div>
       <div>日内净损益<strong>{{ money(dayNet) }}</strong></div>

@@ -1,5 +1,7 @@
 # JM日线阶段B：独立离线模型与工程验收
 
+> 已归档。本页记录旧研究。现行合同见 [苏冰独立量化](../SUBING_DEVELOPMENT_MODEL.md)。原实现见 Git 提交 `567b62bffa`。
+
 状态：离线模型实现、定向测试和本地工程回放完成；不构成盈利、OOS、持续Paper或Runtime证据。规则以[冻结设计](subing-jm-daily-v1-design-20261022.md)为准，输入范围与缺口沿用[阶段A](subing-jm-daily-v1-phase-a-20261022.md)。
 
 ## 实现与边界

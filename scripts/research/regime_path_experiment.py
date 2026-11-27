@@ -7,7 +7,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 
-from app.market_data.new_subing_research import payload_hash
+from app.market_data.research_inputs import payload_hash
 from guiyi_quant.indicators import atr as atr_kernel
 from guiyi_quant.indicators.atr import initial_atr_state, step_atr
 from scripts.research import regime_learning_core

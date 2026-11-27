@@ -7,9 +7,6 @@ from .htdy_original import (
     normalize_period,
     xma,
 )
-from .htdy_strict import BOOLEAN_FIELDS as HTDY_STRICT_BOOLEAN_FIELDS
-from .htdy_strict import NUMERIC_FIELDS as HTDY_STRICT_NUMERIC_FIELDS
-from .htdy_strict import compute_strict_fields
 from .macd import initial_macd_state, macd_series, step_macd
 from .subing_ths import (
     SUBING_THS_FORMULA_VERSION,
@@ -81,8 +78,6 @@ __all__ = [
     "FORMAL_BACKTEST_CONSUMER",
     "FROZEN_LEGACY_BACKTEST_CONSUMER",
     "HTDY_ALERT_OBSERVATION_CONSUMER",
-    "HTDY_STRICT_BOOLEAN_FIELDS",
-    "HTDY_STRICT_NUMERIC_FIELDS",
     "HistogramScale",
     "IndicatorDefinition",
     "IndicatorPoint",
@@ -114,7 +109,6 @@ __all__ = [
     "build_indicator_definition",
     "definition_to_metadata",
     "compute_htdy_original",
-    "compute_strict_fields",
     "ema_series",
     "ema21_slope_10_bps_per_bar",
     "initial_ema_state",

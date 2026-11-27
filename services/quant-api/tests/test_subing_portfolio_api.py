@@ -61,3 +61,25 @@ def test_prestart_status_keeps_last_wait_reason(monkeypatch, age, expected):
     assert result["run_id"] is None
     assert result["account"] == {}
     assert result["auto_order"] is False
+
+
+def test_history_exposes_only_current_scope(tmp_path, monkeypatch):
+    from guiyi_quant.subing_one_lot import PORTFOLIO_PRODUCTS
+
+    data = json.dumps({"result": {"policy": portfolio_policy(PORTFOLIO_PRODUCTS),
+                                  "accounts": {}}, "requested": [], "coverage": []}).encode()
+    path = tmp_path / "history.json"
+    path.write_bytes(data)
+    registration = {"path": str(path), "sha256": hashlib.sha256(data).hexdigest()}
+    monkeypatch.setattr(api, "read_registration", lambda _: registration)
+    app = FastAPI()
+    app.include_router(api.router)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/subing-portfolio/history")
+        assert response.status_code == 200
+        assert response.json()["status"] == "NOT_REGISTERED"
+        assert response.json()["run_id"] is None
+        assert not any(item["enabled"] for item in response.json()["products"])
+        registration["sha256"] = "0" * 64
+        assert client.get("/api/v1/subing-portfolio/history").status_code == 503
+    assert path.read_bytes() == data

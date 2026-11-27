@@ -4,7 +4,7 @@ import gzip
 from hashlib import sha256
 import json
 from pathlib import Path
-from app.market_data.new_subing_research import payload_hash
+from app.market_data.research_inputs import payload_hash
 from guiyi_quant.indicators.ema import initial_ema_state, step_ema
 from scripts.research.regime_trend_review import VERSION
 

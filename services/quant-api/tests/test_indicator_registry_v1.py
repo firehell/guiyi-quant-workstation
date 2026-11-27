@@ -86,7 +86,6 @@ def test_registry_uses_per_indicator_frequency_contracts() -> None:
         for code in (
             "range_detector_lux_v1",
             "huotian_dayou_original_v0",
-            "huotian_dayou_strict_v1",
         )
     }
     from guiyi_quant.compute import REGISTRY
@@ -280,10 +279,6 @@ def test_formal_policy_enforces_allowed_and_blocked_consumers() -> None:
         == "ema_sma_window_v1"
     )
     assert (
-        require_formal_policy("huotian_dayou_strict_v1", consumer=FORMAL_BACKTEST_CONSUMER).policy_id
-        == "huotian_dayou_strict_v1"
-    )
-    assert (
         require_formal_policy(
             "ema_first_value_legacy_v1",
             consumer=FROZEN_LEGACY_BACKTEST_CONSUMER,
@@ -342,19 +337,13 @@ def test_htdy_original_is_alert_capable_but_not_live_or_backtest_capable() -> No
         require_formal_policy(original.formal_policy_id, consumer="alert")
 
 
-def test_htdy_strict_is_strategy_candidate_backtest_only() -> None:
-    from guiyi_quant.indicators import get_indicator
+def test_retired_htdy_strict_is_unknown_to_indicator_and_backtest_registries() -> None:
+    from guiyi_quant.indicators import FORMAL_BACKTEST_CONSUMER, get_indicator, require_formal_policy
 
-    strict = get_indicator("huotian_dayou_strict_v1")
-    original = get_indicator("huotian_dayou_original_v0")
-    assert strict.indicator_code != original.indicator_code
-    assert strict.indicator_version != original.indicator_version
-    assert strict.status == "strategy_candidate"
-    assert strict.backtest_capable is True
-    assert strict.live_capable is False
-    assert strict.alert_capable is False
-    assert strict.web_capable is False
-    assert "因果" in strict.display_name
+    with pytest.raises(KeyError):
+        get_indicator("huotian_dayou_strict_v1")
+    with pytest.raises(KeyError, match="unknown formal_policy_id"):
+        require_formal_policy("huotian_dayou_strict_v1", consumer=FORMAL_BACKTEST_CONSUMER)
 
 
 def test_jm_v1b_frozen_policy_is_fail_closed_lookup() -> None:

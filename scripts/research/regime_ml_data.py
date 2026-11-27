@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 
 import numpy as np
-from app.market_data.new_subing_research import payload_hash
+from app.market_data.research_inputs import payload_hash
 from scripts.research.regime_ml_core import fold_masks
 
 FEATURES = (

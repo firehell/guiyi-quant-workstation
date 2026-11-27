@@ -303,11 +303,11 @@ def test_same_night_accounts_replay_while_previous_day_research_fails_and_recove
 
     from app.market_data.after_market import _atomic_write_status
     from app.services import newow_backtest_eod as eod
-    from tests.unit.subing_account import test_account
+    from tests.unit.subing_one_lot import fixtures
     from tests.unit.tq_simulation import test_execution as tq
 
     night = datetime(2026, 11, 4, 13, 1, tzinfo=UTC)
-    monkeypatch.setattr(test_account, "BASE", night)
+    monkeypatch.setattr(fixtures, "BASE", night)
     contexts, batches = inputs()
 
     def account_replay(folder):

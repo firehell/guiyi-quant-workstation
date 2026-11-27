@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 from app.subing_model.store import ModelStore
 from app.subing_model.account import ContinuousAccount
-from tests.unit.subing_account.test_account import BASE
+from tests.unit.subing_one_lot.fixtures import BASE
 from test_subing_continuous_account import packets
 from datetime import timedelta
 

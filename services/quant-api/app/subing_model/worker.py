@@ -82,8 +82,16 @@ def facts_for(index,day):
     return json.loads(raw)
 
 def code_hashes():
-    files=[*sorted((ROOT/'packages/quant-core/guiyi_quant').glob('subing*.py')),*sorted((ROOT/'packages/quant-core/guiyi_quant/indicators').glob('*.py')),*sorted((ROOT/'packages/quant-core/guiyi_quant/paper').glob('*.py')),*sorted((ROOT/'packages/quant-core/guiyi_quant/new_subing').glob('*.py')),*sorted(Path(__file__).parent.glob('*.py'))]
-    return {str(p.relative_to(ROOT)):hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
+    core = ROOT / "packages/quant-core/guiyi_quant"
+    files = (
+        *sorted(core.glob("subing*.py")),
+        *sorted((core / "indicators").glob("*.py")),
+        *sorted((core / "paper").glob("*.py")),
+        ROOT / "services/quant-api/app/market_data/research_inputs.py",
+        *sorted(Path(__file__).parent.glob("*.py")),
+    )
+    return {str(path.relative_to(ROOT)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in files}
 
 def main():
     raise SystemExit("SUBING_INDEPENDENT_MODEL_RETIRED_USE_SUBING_PORTFOLIO_WORKER")

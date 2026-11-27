@@ -1,50 +1,15 @@
-"""Single-contract offline SuBing account replay. No provider, broker or Runtime I/O."""
+"""Per-contract account engine used by SuBing Paper."""
 from __future__ import annotations
 from copy import deepcopy
 from datetime import datetime, timedelta, time
-from decimal import Decimal, localcontext
-from typing import Mapping, Sequence
+from decimal import Decimal
 from zoneinfo import ZoneInfo
-from .new_subing import ExecutionBar
+from .subing_inputs import ExecutionBar
 from .subing_decision import _contract_version, RISK_RESEARCH_PROFILES, DecisionModel, _wire, candidate_side, daily_allows, directional_frame, direction_sign
 D = Decimal
 VERSION = 'subing_jm30_account_next1m_close_v5'
 INITIAL_CASH = D('100000')
 TECHNICAL_FIELDS = set('event_id kind at contract trading_day close daily_direction daily_at day_end_window m30'.split())
-
-def replay(executions: Sequence[ExecutionBar], observations: Mapping[datetime, dict], run_id: str, *, slippage_ticks: int=1, execution_model: str='completed_close', research_profile: str | None=None, risk_research_profile: str | None=None, regime_research_profile: str | None=None) -> dict:
-    """Replay verified complete 1m input; observations contain no financial overrides.
-
-    Historical confirmation is assumed at bar end. Fills use the strictly later
-    completed minute's close +/- slippage ticks, inside OHLC and daily limits.
-    theoretical_open instead assumes up to three lots at a strictly later minute
-    start, using open plus adverse slippage without future OHLCV filtering.
-    Its liquidity is assumed, not evidenced. Fixed research_profile scenarios
-    alter only the declared decision parameters and carry separate identities.
-    The caller proves coverage, rank1 ownership and historical execution sources.
-    """
-    if type(slippage_ticks) is not int or slippage_ticks not in (1, 2, 3):
-        raise ValueError('ACCOUNT_SLIPPAGE_SCENARIO_INVALID')
-    if execution_model not in ('completed_close', 'theoretical_open'):
-        raise ValueError('ACCOUNT_EXECUTION_MODEL_INVALID')
-    if (research_profile is not None or risk_research_profile is not None or regime_research_profile is not None) and execution_model != 'theoretical_open':
-        raise ValueError('ACCOUNT_RESEARCH_PROFILE_REQUIRES_THEORETICAL_OPEN')
-    with localcontext() as ctx:
-        ctx.prec = 28
-        return _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile, regime_research_profile)
-
-def _replay(executions, observations, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile, regime_research_profile):
-    if not executions:
-        raise ValueError('ACCOUNT_INPUT_EMPTY')
-    b = executions[0].bar
-    if b.product.lower() not in ('jm', 'ma', 'ta') or not b.physical_contract.startswith(b.product.upper()):
-        raise ValueError('ACCOUNT_PHYSICAL_IDENTITY_CHANGED')
-    engine = AccountEngine(b.physical_contract, b.product.lower(), executions[0].facts.multiplier, run_id, slippage_ticks, execution_model, research_profile, risk_research_profile, regime_research_profile)
-    if len(observations) != len(executions):
-        raise ValueError('ACCOUNT_OBSERVATION_COVERAGE')
-    for execution in executions:
-        engine.step(execution, observations.get(execution.bar.bar_end))
-    return engine.snapshot()
 
 class AccountEngine:
 

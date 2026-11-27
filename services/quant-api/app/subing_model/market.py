@@ -1,7 +1,7 @@
 """Authoritative physical-prefix reads used by development model preparation."""
 from dataclasses import asdict
 from app.market_data.domain import BarFrequency,ContractTradingDayQuery
-from app.market_data.new_subing_research import validate_series,payload_hash
+from app.market_data.research_inputs import validate_series,payload_hash
 
 def prefix(m,symbol,contract,frequency,through):
     freq=BarFrequency(frequency);cutoff=max(w.end for w in m.session_windows(symbol=symbol,trading_day=through))

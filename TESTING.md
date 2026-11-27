@@ -124,7 +124,7 @@ NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-we
 NODE_OPTIONS=--max-old-space-size=512 pnpm -C apps/quant-web test
 NODE_OPTIONS=--max-old-space-size=768 pnpm -C apps/quant-web build
 NODE_OPTIONS=--max-old-space-size=512 PLAYWRIGHT_PORT=5197 pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/ui-unification.spec.mjs e2e/return-curve-layout.spec.mjs --workers=1 --output /private/tmp/guiyi-ui-unification-e2e
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_market_messages.py services/quant-api/tests/test_message_snapshots.py services/quant-api/tests/reference_trading/test_messages.py services/quant-api/tests/research/test_new_subing_api.py services/quant-api/tests/research/test_new_subing_store.py services/quant-api/tests/newow/test_page_performance.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider services/quant-api/tests/test_market_messages.py services/quant-api/tests/test_message_snapshots.py services/quant-api/tests/reference_trading/test_messages.py services/quant-api/tests/test_subing_portfolio_api.py services/quant-api/tests/newow/test_page_performance.py
 ```
 
 中断后确认本任务进程已经退出再启动新一轮；超时终止精确测试进程树，禁止宽泛杀进程。
@@ -152,7 +152,7 @@ fixture通过与默认跳过都不证明生产、发布或Runtime状态。
 
 ## 后续三批工程收敛
 
-Reference 事务、Newow 组装、Runtime 公共工具、新苏冰共享计算与能力合同的范围见
+Reference 事务、Newow 组装、Runtime 公共工具与能力合同的历史工程范围见
 [实施记录](docs/tasks/architecture-convergence-followups.md)。能力合同 JSON 是唯一版本资料，
 修改后运行生成器，build 会拒绝过期的 TypeScript 产物。
 
@@ -160,7 +160,7 @@ Reference 事务、Newow 组装、Runtime 公共工具、新苏冰共享计算�
 node tools/generate_newow_capabilities.mjs
 node tools/generate_newow_capabilities.mjs --check
 node --test apps/quant-web/tests/newowCapabilityContract.test.ts apps/quant-web/tests/newowProductTypes.test.ts
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/engineering/test_newow_capability_contract.py tests/unit/new_subing tests/unit/new_subing_v2 services/quant-api/tests/newow/test_composition.py services/quant-api/tests/reference_trading/test_checkpoint.py services/quant-api/tests/test_runtime_shared_tools.py
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/engineering/test_newow_capability_contract.py services/quant-api/tests/newow/test_composition.py services/quant-api/tests/reference_trading/test_checkpoint.py services/quant-api/tests/test_runtime_shared_tools.py
 ```
 
 `test_transaction_guards_postgresql.py` 与既有 repository/conflict PostgreSQL 测试使用
@@ -2044,33 +2044,6 @@ PYTHONPATH=services/quant-api:packages/quant-core \
 
 隔离通过只证明工程收尾与原子性边界，不证明新 Runtime 已切换或自然盘后验收。
 
-## 新苏冰固定参数历史研究
-
-V1基线合同为 [NEW_SUBING_STRATEGY.md](docs/NEW_SUBING_STRATEGY.md)，V2独立版本为 [NEW_SUBING_STRATEGY_V2.md](docs/NEW_SUBING_STRATEGY_V2.md)。
-
-```bash
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core \
-  services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider \
-  tests/unit/new_subing services/quant-api/tests/research tests/unit/paper \
-  services/quant-api/tests/test_subing_ths_kernel.py tests/engineering/test_canonical_consistency.py
-```
-
-`scripts/research/new_subing_execution_facts.py --plan /exact/plan.json --project-env /private/project.env --out /new/attempt`
-先核对当前 Catalog 所有权与精确计划，再在预算内一次采集 RQData instrument、交易参数、
-交易所结算与独立日限价事实。已有或失败 attempt 不复用、不自动重试，不写 Canonical/Catalog。
-`scripts/research/new_subing.py --project-env /private/project.env --facts-dir /exact/attempt --out /new/results`
-只读固定 AL/RB/TA、2024-10-14..2026-10-09，与独立三成本场景、前后年及季度诊断。
-要求已提交代码身份；缺行情/成本时仍输出哈希绑定缺口包，不虚构零收益。
-`GUIYI_NEW_SUBING_RESULTS_ROOT=/exact/results` 仅配置本地候选 API 读取已有结果，HTTP不会启动研究。
-Web 定向验证：`node --test tests/newSubingResearch.test.ts tests/newSubingPageRace.test.ts tests/candidatePreview.test.ts`，以及通常的 Web build。
-隔离候选预览只放行精确 GET profiles/runs/SHA详情与 decisions/trades/equity 分页；POST、未知动作和编码路径不可转发。
-工程构造数据不证明原案例一致性；固定历史验证不自动称未见 OOS，收益不触发策略晋升。
-
-V2追加 `tests/unit/new_subing_v2` 与 `services/quant-api/tests/research/test_new_subing_v2_cli.py`。
-`scripts/research/new_subing_v2.py --project-env /private/project.env --facts-dir /exact/v1-facts --reference-root /exact/v1-results --out /new/v2-results`
-核对V1已索引结果的输入和执行事实哈希；同一逐prefix指标准备复用于两本金、三成本和七个独立账户窗口。
-10万元为主账户，100万元是单独诊断，不合并本金/收益。新attempt只写任务结果，不下载provider或改Canonical。
-
 ## Alert 内存交接与日周质量重预热 v2
 
 `test_alert_delivery_handoff.py` 覆盖同 Bar 批次、512 含在途容量、原始观察期限、不可恢复交接、
@@ -2413,28 +2386,20 @@ PostgreSQL 参数仍须在专用隔离库实际运行；skip 不计验证通过�
 原3/48流入口不变，mixed generation/5OPEN、未选流保持、精确inventory与旧revision/capture/checkpoint/tradeID漂移拒绝，
 以及真实旧退休→后继capture/calculation→二次退休的typed proof并集、旧proof篡改拒绝。生产执行仍需新鲜原生source/停止写入围栏和单次attempt，测试不替代恢复读回。
 
-## 焦煤统一环境—需求历史回放
+## 苏冰独立量化
+
+现役合同、回放命令和源码身份见 [苏冰共享模型](docs/SUBING_DEVELOPMENT_MODEL.md)。
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:tests/unit/subing_account:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider scripts/research/test_subing_demand_explanation.py scripts/research/test_subing_unified.py scripts/research/test_subing_recent_structure.py scripts/research/test_subing_demand_policy.py scripts/research/test_subing_demand_observer.py scripts/research/test_subing_demand_account_candidate.py services/quant-api/tests/test_subing_decision_replay_api.py tests/unit/subing_account tests/unit/subing_decision tests/unit/subing_conditions
-pnpm -C apps/quant-web build
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -B -m pytest -q -p no:cacheprovider \
+  services/quant-api/tests/test_subing_portfolio_api.py services/quant-api/tests/test_subing_portfolio_journal.py \
+  services/quant-api/tests/test_subing_portfolio_supervision.py services/quant-api/tests/research/test_research_inputs.py \
+  services/quant-api/tests/test_subing_model_current_facts.py tests/unit/subing_one_lot
+node --test apps/quant-web/tests/subingPortfolioSurface.test.ts
 ```
 
-真实历史复算入口 `scripts/research/subing_unified_replay.py --contract CONTRACT --since YYYY-MM-DD --through YYYY-MM-DD --output EXPLICIT_NEW_DIRECTORY`；使用现有MDS只读加载与既有JM执行事实，不下载或写行情。只读API需显式 `GUIYI_SUBING_DECISION_RESULTS_ROOT`，目录内index.json逐项登记SHA文件；损坏/缺失失败，不扫描其他研究目录。开发浏览器验收需真实登记四窗口，检查导航、切窗、时间游标、历史分页及游标前成交；fixture不代替真实回放。
-
-## 苏冰开发持续模型
-
-合同与运行入口见[开发模型](docs/SUBING_DEVELOPMENT_MODEL.md)。直接测试：
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_account tests/unit/subing_decision services/quant-api/tests/test_subing_continuous_account.py services/quant-api/tests/test_subing_model_pipeline.py services/quant-api/tests/test_subing_model_api.py services/quant-api/tests/test_subing_model_current_facts.py
-# 显式建立隔离测试数据库，禁止连接生产库
-PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/dev/subing_model_setup.py --test-only
-GUIYI_SUBING_MODEL_PG_TEST=1 PYTHONPATH=.:services/quant-api:services/quant-api/tests:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/test_subing_model_postgresql.py
-```
-
-真实PG测试保留隔离标识的不可变测试事件，不删除生产记录。四个固定历史窗口用既有统一回放入口复算，比较全部结果字段，不能仅比总收益。浏览器须检查持续/历史模式切换、真实14品种状态、初始空仓和未成交、错误恢复及停止/过期状态；自然新Bar、JM意图、Fill分别凭实际日志读回，测试fixture不能替代自然事件。
-
+核对有效 16 品种回放、旧 14 品种文件、哈希错误、回放游标、持续状态与账本重放。
+隔离测试只验证代码和测试输入。自然新 Bar、意图与模型成交分别依据正式原件读回。
 
 2026-11-05 RS/UR恢复使用独立 `htdy_conflict_recovery_20261105_v1`，仅冻结两路旧revision、capture、checkpoint和activation generation（RS1、UR2），OPEN集合必须为空。复用既有权威MDS来源、完整原件/Inbox及历史retirement证明、真实停驻锁、两路同事务与单次attempt；旧历史不重算，从未来FLAT继续。正常HTDY窗口比较、公式和schema均不变。定向验证 `test_htdy_two_conflict_scope.py`，并回归既有来源、retirement、PostgreSQL和CLI测试。
 
@@ -2448,31 +2413,6 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=services/quant-api:packages/quant-core serv
 真实输入构建只选择 Canonical 外独立 JSON 目标；默认正式CLI不创建独立写入者。
 故障注入与真实业务结果分开记录；HTTP成功、worker活性、恢复状态和策略预热不能互相替代。
 
-
-## 苏冰一手与固定预算研究
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:tests/unit/subing_account:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_one_lot tests/unit/subing_decision tests/unit/subing_account scripts/research/test_subing_unified.py scripts/research/test_subing_demand_account_candidate.py
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/subing_unified_replay.py --owner-one-lot --contract JM2601 --since 2025-11-17 --through 2025-11-24 --output /absolute/new/private/research-directory
-```
-
-新目录必须不存在；只读现有MDS、Session与历史执行事实，不下载行情或写持续模型。
-包含资本对照；一手候选另做完整账户中途恢复比较。已见窗口不是OOS，测试通过不证明策略收益优势。
-规则、资金和风险口径见 [交易需求合同](docs/research/subing-trading-demands.md#一手与固定预算研究候选2026-11-08)。
-
-
-## 苏冰一手候选固定输入成本压力
-
-```sh
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:tests/unit/subing_account:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q -p no:cacheprovider tests/unit/subing_one_lot
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/subing_one_lot_stress.py prepare --output /absolute/new/private/prepared --locked-at 2026-11-08T12:51:53+00:00
-PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:scripts/research:services/quant-api:packages/quant-core services/quant-api/.venv/bin/python scripts/research/subing_one_lot_stress.py run --prepared /absolute/new/private/prepared --output /absolute/private/scenarios --contract JM2505 --variant one_lot --fee 1 --slip 1
-```
-
-其余场景按输入index中的七合约、两个variant和九种预定成本组合执行。prepare只读现有权威数据及执行事实；
-run完全离线，拒绝覆盖已有结果。复跑须保留原规则固定时间；策略行为变化后不能沿用旧OOS时间资格。
-验证包括完整MDS日历行、未知未来Session、跨夜盘时间资格、费用派生不改原件、逐轮净额/身份/成交覆盖反例。
-完整规则与使用边界见 [交易需求合同](docs/research/subing-trading-demands.md#一手候选扩大开发与成本压力2026-11-08)。
 
 Nov-19 Newow H1 interval retirement: run `PYTHONPATH=services/quant-api:packages/quant-core services/quant-api/.venv/bin/python -m pytest -q services/quant-api/tests/reference_trading/test_interval_retirement.py services/quant-api/tests/reference_trading/test_formula_transition.py`.
 The tests use SQLite and the existing opt-in isolated PostgreSQL database guard;

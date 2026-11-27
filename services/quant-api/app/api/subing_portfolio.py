@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.readonly import readonly_transaction
-from app.new_subing_research.store import _read_file, _safe_root
+from app.research_result_files import read_result_file, safe_result_root
 from app.private_settings import read_private_settings_content
 from app.subing_model.store import ModelStore, events, runs
 from app.subing_portfolio_paths import ACTIVE_PORTFOLIO, HEARTBEAT, HISTORY, DB_PATH
@@ -127,13 +127,15 @@ def history(index: int | None = Query(default=None, ge=0)):
         if entry is None:
             return project({"accounts": {}}, products=(), status="NOT_REGISTERED", run_id=None)
         path = Path(entry["path"])
-        _safe_root(path.parent)
-        raw = _read_file(path)
+        safe_result_root(path.parent)
+        raw = read_result_file(path)
         if hashlib.sha256(raw).hexdigest() != entry["sha256"]:
             raise ValueError("PORTFOLIO_HISTORY_HASH_MISMATCH")
         asset = json.loads(raw)
         result = asset["result"]
         products = verified_scope(result["policy"])
+        if products != EXPANDED_PORTFOLIO_PRODUCTS:
+            return project({"accounts": {}}, products=(), status="NOT_REGISTERED", run_id=None)
         timeline = asset.get("timeline", [])
         if index is not None and index >= len(timeline):
             raise HTTPException(404, detail={"code": "PORTFOLIO_CURSOR_UNAVAILABLE"})

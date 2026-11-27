@@ -8,7 +8,7 @@
 
 | 路径 | 职责 | 合同 |
 |---|---|---|
-| `guiyi_quant/indicators/` | EMA、MACD、ATR、Range、HTDY original/strict、SuBing 公式，以及 Registry/formal policy | [Indicator Kernel](../../docs/INDICATOR_KERNEL.md)、[SuBing Alert](../../openspec/specs/subing-ths-alert/spec.md) |
+| `guiyi_quant/indicators/` | EMA、MACD、ATR、Range、HTDY original、SuBing 公式，以及 Registry/formal policy | [Indicator Kernel](../../docs/INDICATOR_KERNEL.md)、[SuBing Alert](../../openspec/specs/subing-ths-alert/spec.md) |
 | `guiyi_quant/newow/` | 趋势、震荡、主升浪、共享解释与 Hint、参考交易/统计、页面比较器，以及因果研究和 Walk-forward 计算 | [Newow 产品与参考交易](../../openspec/specs/newow-product-reference-trading/spec.md) |
 | `guiyi_quant/subing_reference.py` | 同物理合约内的苏冰历史参考信号、双向反手和独立窗口统计 | [稳定产品面](../../PROJECT_SOURCE.md#htdy-与-alert) |
 

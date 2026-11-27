@@ -209,6 +209,23 @@ test('operations reads two independent accounts, goes directly to the held old c
   await expect(page).toHaveURL(/view=subing.*contract=JM2601/)
 })
 
+test('SuBing research navigation shows only the shared portfolio', async ({ page }) => {
+  await fixtures(page)
+  await page.route('**/api/v1/subing-portfolio/history', route => route.fulfill({
+    json: { status: 'NOT_REGISTERED', products: [], account: {}, auto_order: false },
+  }))
+  await page.goto('/research')
+  await expect(page.getByRole('link', { name: '新苏冰历史研究' })).toHaveCount(0)
+  await page.getByRole('link', { name: '苏冰独立量化回放' }).click()
+  await expect(page).toHaveURL(/\/research\/subing-decision\?mode=history$/)
+  await expect(page.getByRole('button', { name: '历史回放' })).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByRole('complementary', { name: '品种列表' }).getByRole('button')).toHaveCount(16)
+  await expect(page.getByText('比较历史研究规则')).toHaveCount(0)
+
+  await page.goto('/research/new-subing')
+  await expect(page.getByRole('heading', { name: '页面不存在' })).toBeVisible()
+})
+
 test('strategy and indicator changes preserve a panned chart, requests, order coordinates and frozen research', async ({ page }) => {
   const { requests } = await fixtures(page)
   await chartProbe(page)
@@ -341,6 +358,6 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
   await expect(page.getByText('该研究 Run 已无法通过当前发布入口核对，行情保留。')).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '0')
   await page.getByRole('tab', { name: '研究' }).click()
-  await page.getByRole('link', { name: '苏冰历史回放' }).click()
+  await page.getByRole('link', { name: '苏冰独立量化回放' }).click()
   await expect(page.getByRole('button', { name: '历史回放' })).toHaveAttribute('aria-pressed', 'true')
 })

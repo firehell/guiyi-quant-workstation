@@ -86,38 +86,6 @@ _REGISTRY: dict[str, IndicatorDefinition] = {
         smoothing_policy=None,
         histogram_scale=None,
     ),
-    "huotian_dayou_strict_v1": build_indicator_definition(
-        indicator_code="huotian_dayou_strict_v1",
-        indicator_version="strict-v1",
-        display_name="火天大有（因果改写）",
-        display_type="overlay",
-        input_fields=("high", "low", "close"),
-        supported_intervals=_ALL_INTERVALS,
-        default_parameters={"channel_period": 25, "var23_period": 6},
-        lookback_bars=73,
-        warmup_bars=72,
-        calculation_source="guiyi_quant.indicators.htdy_strict.compute_strict_fields",
-        closed_bar_only=True,
-        confirmed_only=True,
-        status="strategy_candidate",
-        repainting_risk="none",
-        repainting_notes=(
-            "Causal trailing double-EMA rewrite; approved for formal historical research input. "
-            "It remains strategy_candidate only and is not live/alert capable. "
-            "Former vn.py strategy package path retired; Kernel module is the calculation source."
-        ),
-        web_capable=False,
-        backtest_capable=True,
-        live_capable=False,
-        alert_capable=False,
-        default_visible=False,
-        default_color="#f97316",
-        output_schema="channel",
-        formal_policy_id="huotian_dayou_strict_v1",
-        seed_policy="sma_window",
-        smoothing_policy=None,
-        histogram_scale=None,
-    ),
 }
 
 indicator_registry = MappingProxyType(_REGISTRY)

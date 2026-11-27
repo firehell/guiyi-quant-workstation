@@ -3,8 +3,8 @@ from datetime import datetime,date,time
 from decimal import Decimal as D
 from zoneinfo import ZoneInfo
 from app.market_data.domain import CanonicalBar
-from app.market_data.new_subing_research import load_execution_facts
-from guiyi_quant.new_subing import StrategyBar
+from app.market_data.research_inputs import load_execution_facts
+from guiyi_quant.subing_inputs import StrategyBar
 from guiyi_quant.subing_decision import _wire
 from .factors import Factors
 from .account import ContinuousAccount,encode_execution

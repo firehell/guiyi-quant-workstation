@@ -34,7 +34,7 @@ class TrendExportError(ValueError):
 
 
 def diagnostic(exc):
-    from app.market_data.new_subing_research import safe_diagnostic
+    from app.market_data.research_inputs import safe_diagnostic
     from sqlalchemy.exc import SQLAlchemyError
     if isinstance(exc, SQLAlchemyError):
         return {'symbol': 'jm', 'stage': 'trend_factor', 'code': 'LOCAL_DATABASE_UNAVAILABLE'}
@@ -63,7 +63,7 @@ def load(market, since, through, *, include_macd=False, include_volume=False, in
         include_macd = include_volume = include_price = True
     from app.market_data.actual_dominant_research import ActualDominantResearchSegmentLoader
     from app.market_data.domain import BarFrequency, ContractTradingDayQuery
-    from app.market_data.new_subing_research import payload_hash, validate_series
+    from app.market_data.research_inputs import payload_hash, validate_series
     owners = ActualDominantResearchSegmentLoader(market).owner_segments(symbol=product, since=since, through=through)
     if len({o.contract for o in owners}) != len(owners):
         raise TrendExportError('TREND_REPEATED_OWNER_UNSUPPORTED')

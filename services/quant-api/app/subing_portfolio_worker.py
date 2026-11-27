@@ -19,7 +19,7 @@ from app.market_data.aggregation import expected_intraday_ends
 from app.market_data.catalog import MarketCatalog
 from app.market_data.domain import BarFrequency, ContractTradingDayQuery
 from app.market_data.market_data_service import MarketDataService
-from app.market_data.new_subing_research import validate_series
+from app.market_data.research_inputs import validate_series
 from app.market_data.observation_stream import DAILY_LIMIT, ObservationEnvelope, ObservationStream, _text
 from app.market_data.storage import CanonicalMonthlyStore
 from app.private_settings import read_private_settings_content

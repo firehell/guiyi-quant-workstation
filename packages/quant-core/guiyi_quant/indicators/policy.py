@@ -129,24 +129,6 @@ _POLICIES: dict[str, FormalPolicy] = {
             "while generic alert/live/Signal/notification and formal backtest remain blocked."
         ),
     ),
-    "huotian_dayou_strict_v1": FormalPolicy(
-        policy_id="huotian_dayou_strict_v1",
-        indicator_family="HTDY",
-        seed_policy="sma_window",
-        smoothing_policy=None,
-        histogram_scale=None,
-        lookback="channel49_zd2_73_var23_12",
-        confirmed_only=True,
-        frozen_legacy=False,
-        allowed_consumers=(
-            "offline_candidate",
-            "manual_review",
-            "research_only_backtest",
-            FORMAL_BACKTEST_CONSUMER,
-        ),
-        blocked_consumers=("live", "alert", "notification"),
-        notes="Causal rewrite strategy_candidate approved for formal historical backtest/report input only.",
-    ),
     "jm_v1b_report14_frozen_v1": FormalPolicy(
         policy_id="jm_v1b_report14_frozen_v1",
         indicator_family="JM_V1B",

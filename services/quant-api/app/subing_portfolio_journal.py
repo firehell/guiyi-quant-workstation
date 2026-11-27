@@ -10,13 +10,13 @@ import re
 
 from app.market_data.aggregation import SessionWindow, expected_intraday_ends
 from app.market_data.live_market import live_bar_channel
-from app.market_data.new_subing_research import load_execution_facts
+from app.market_data.research_inputs import load_execution_facts
 from app.market_data.observation_stream import ObservationEnvelope
 from app.subing_model.account import decode_execution, encode_execution
 from app.subing_model.pipeline import bar
 from app.subing_model.store import digest
 from app.subing_model.worker import ROOT, code_hashes
-from guiyi_quant.new_subing import StrategyBar
+from guiyi_quant.subing_inputs import StrategyBar
 from guiyi_quant.subing_one_lot import PORTFOLIO_PRODUCTS, EXPANDED_PORTFOLIO_PRODUCTS, portfolio_policy
 from guiyi_quant.subing_one_lot.portfolio import Portfolio
 

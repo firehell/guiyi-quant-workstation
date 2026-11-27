@@ -38,7 +38,7 @@ def raw_bar(bar):
 def physical_rows(market, symbol, owner, frequency, since, through):
     """Full physical lifecycle, exact endpoints; no consumer-local data resolver."""
     from app.market_data.domain import BarFrequency, ContractTradingDayQuery
-    from app.market_data.new_subing_research import validate_series, payload_hash
+    from app.market_data.research_inputs import validate_series, payload_hash
     start, end = max(since, owner.start_trading_day), min(through, owner.end_trading_day)
     freq = BarFrequency(frequency)
     cutoff = max(w.end for w in market.session_windows(symbol=symbol, trading_day=end))
@@ -112,7 +112,7 @@ def run(output: Path, through: date):
     from app.market_data.market_data_service import MarketDataService
     from app.market_data.actual_dominant_research import ActualDominantResearchSegmentLoader
     from app.market_data.domain import DatasetKind
-    from app.market_data.new_subing_research import payload_hash, safe_diagnostic
+    from app.market_data.research_inputs import payload_hash, safe_diagnostic
 
     code_paths = (Path(__file__),Path(__file__).with_name('regime_learning_core.py'),
                   Path(__file__).with_suffix('.html'),Path(subing_trend.__file__),Path(subing_range.__file__))

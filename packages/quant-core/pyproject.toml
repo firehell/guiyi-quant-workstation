@@ -1,6 +1,6 @@
 [project]
 name = "guiyi-quant-core"
-version = "0.4.1"
+version = "0.4.2"
 description = "Authoritative indicator kernel for Guiyi Quant"
 readme = "README.md"
 requires-python = ">=3.13"

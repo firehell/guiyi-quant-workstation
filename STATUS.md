@@ -1986,7 +1986,7 @@ Ruff/OpenSpec12/secret0/diff通过。证据在 `output/htdy-source-conflicts-202
 
 AL15m续算及RB四周期追加脚本原先先导入应用、后加载私有配置，数据库连接池提前缓存开发配置。已调整初始化顺序，默认离线行为保留；新增只读check-only和安全错误定位。18项定向测试通过、独立Review无Confirmed Issue。正式v18现场只读：AL225792/320074原生续算位置一致、RB四周期exact append/旧事实校验全部PREFLIGHT_PASSED，production_writes=0。旧失败目录不重写，修复版v2目录独占；本步未执行apply，不代表全量历史计算完成。下一步仍须确认旧writer退出、现场锁和来源后精确续算/追加。详见[修复记录](docs/tasks/subing-history-preflight-fix-20261024.md)。
 
-## 新苏冰固定参数研究版：工程与历史回放验收完成，未晋升
+## 新苏冰固定参数研究版（已退役，以下为当时记录）
 
 新增独立 `new_subing_v1`，规则见 [策略合同](docs/NEW_SUBING_STRATEGY.md)，
 交付记录见 [任务验收](docs/tasks/new-subing-v1-20261012.md)。独立只读页面 `/research/new-subing`

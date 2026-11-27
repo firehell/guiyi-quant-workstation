@@ -1,5 +1,7 @@
 # JM日线阶段D：独立验证范围与证据
 
+> 已归档。本页记录旧研究。现行合同见 [苏冰独立量化](../SUBING_DEVELOPMENT_MODEL.md)。原实现见 Git 提交 `567b62bffa`。
+
 结论：阶段D工程一致性验证通过，OOS和参数稳定性证据不足，阶段D整体验收仍为PARTIAL；不得晋升至持续Paper。验证程序与证据允许集成develop。
 
 本轮只做离线独立验证，不改策略、风险、成交或账户政策，不启用Paper/Runtime，不下载或修复数据。冻结基线为阶段C数值提交`f36dd1dd3f1e546cb62639ebb319c2bc8ae98006`与`phase-c-002.json`；研究合同沿用[设计](subing-jm-daily-v1-design-20261022.md)及[阶段C](subing-jm-daily-v1-phase-c-20261022.md)。

@@ -4,7 +4,7 @@ import json
 import pandas as pd
 import pytest
 from scripts.research.subing_model_facts import collect,snapshot_daily
-from scripts.research.new_subing_execution_facts import FactsCaptureError
+from scripts.research.subing_fact_capture import FactsCaptureError
 
 DAY=date(2026,11,5);NOW=datetime(2026,11,5,0,tzinfo=UTC)
 WINDOWS=[NS(start=datetime(2026,11,4,13,tzinfo=UTC),end=datetime(2026,11,4,15,tzinfo=UTC)),NS(start=datetime(2026,11,5,1,tzinfo=UTC),end=datetime(2026,11,5,7,tzinfo=UTC))]
