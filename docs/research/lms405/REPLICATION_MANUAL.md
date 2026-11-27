@@ -253,6 +253,22 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 若需复算测试确认，先用 `jq --slurpfile approvals <同名.fixtures.json> '. + {approvals: $approvals[0]}' <输入文件>` 生成一份含测试记录的输入，再显式增加 `--allow-test-fixture`，并使用新的输出路径。两案均连续复算两次逐字节一致，四次测试许可的作用域逐项核对。无许可与测试许可报告在 `output/lms405-plan-market-sequence-20261127/`。
 
+### 抓M部分退出后承接同一个目标
+
+研究序列 `lms405-plan-market-sequence-v2` 可在 `EXIT_COUNTER_M` 的 `DIRECTIONAL_TARGET` 路径显式声明 `inherit_observed_target: true`。只有同一序列先完成获准的部分退出、仍有同一短线仓剩余时，才保存目标已达的分钟。下一步须绑定当时的剩余仓位、同一实月交易日、完整价带和计划修订。若确认前像变动且无法沿用、计划换版或目标K线改变，则停止继承。继承只提供已达目标这项信息，仍要等待剩余仓位可知后全新形成的反向确认及独立许可。全平后丢弃承接信息。`v1`和独立基线继续使用原有口径。
+
+焦煤10月23日研究示例使用10:36报价的条件性前像，假设可见多20手归入同一短线任务。实际MDS行情显示10:38达到1427.5，10:48与10:57分别出现新的5→1反向确认。两份显式测试许可给出20→19→0。只给第一份时剩19手，第二步待确认。无许可时仍为20手。旧序列在第二窗没有新的1427.5触及，只推进第一步。第2次退出量用19手只为检验续接及清空，原版减仓比例、实际动作与账户身份未知。 [带TEST_FIXTURE的输入](evidence/counter-m-target-carry-jm2701.json) · [短线仓证据边界](evidence/COUNTER_M_STUDY.md#焦煤同开均长腿跨越极端m后的管理)
+
+```bash
+dir=$(mktemp -d /tmp/lms405-m-carry.XXXXXX)
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
+services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.py --env-file .env \
+  --market-sequence docs/research/lms405/evidence/counter-m-target-carry-jm2701.json \
+  --allow-test-fixture --output "$dir/report.json"
+```
+
+公开、部分和完整确认以及旧版比较两次复算一致。CLI定稿 `output/lms405-counter-m-target-carry-20261128/cli-verified.json`，SHA256 `22aba5e4c3bb1e9f410124dac9b0b145b983a3e01a3be7897101f9b53e924ccc`。原烧碱与焦煤计划结果逐字节一致，可评分作者动作0。
+
 ### 焦煤抓M证据与夜盘行情持续回放
 
 同一连续回放可混用外部证据窗口和本地行情窗口。外部窗口声明 `evidence.at` 及 `facts`。每条已知事实须绑定当前合约、动作、仓位前像和请求标识，并以 `RESEARCH_EXTERNAL_EVIDENCE:<计划修订SHA256>:<来源标记>` 或测试用的 `TEST_FIXTURE_EXTERNAL_EVIDENCE:<计划修订SHA256>:<来源标记>` 锁定修订内容。同ID换来源或改计划字段，旧事实与许可无法沿用。确认必须严格早于该步骤固定评估时刻，迟到不能改变它。行情窗口继续自动查完成K并为下一步传入确认后的仓位。

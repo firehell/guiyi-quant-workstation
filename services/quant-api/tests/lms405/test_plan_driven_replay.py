@@ -2,6 +2,7 @@ from dataclasses import asdict, replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 import json
+import sys
 
 import pytest
 
@@ -410,6 +411,103 @@ def test_market_sequence_uses_only_confirmed_books_and_rechecks_the_active_plan(
     short_end = first_end - 30 * timedelta(seconds=1)
     shorter_plans = [plans[0] | {"expires_at": short_end.isoformat()}, plans[1]]
     assert run(revisions=shorter_plans)["steps"][0]["cutoff_exclusive"] == short_end
+
+
+def test_partial_counter_m_exit_carries_same_target_but_requires_fresh_signal_and_approval(monkeypatch):
+    minute, us = timedelta(minutes=1), timedelta(microseconds=1)
+    bars = []
+    for index in range(9):
+        bar_start = START + index * minute
+        high = Decimal(110) if index == 0 else Decimal(105)
+        bars.append(Bar("JM2701", bar_start + minute, Decimal(101), high, Decimal(99), Decimal(100), start=bar_start))
+
+    def mock_signals(series, shape, confirmation, *, side, start, cut):
+        assert side == "SHORT" and (shape, confirmation) == (1, 1)
+        result = []
+        for shape_end, confirmed in ((bars[2].end, bars[3].end), (bars[6].end, bars[7].end)):
+            if start <= shape_end - minute and confirmed + us < cut:
+                result.append(dict(shape_end=shape_end, confirmed_at=confirmed, available_at=confirmed + us,
+                                   close=Decimal(100), boundary=Decimal(101)))
+        return result
+
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: bars})
+    monkeypatch.setattr(plan_replay, "signals", mock_signals)
+    seed = Book("JM2701", "partial-exit", "SHORT", START - minute, Decimal(20), Decimal(20), Decimal(2), 1)
+    active = plan("same-target", START - minute, ("EXIT_COUNTER_M",))
+    final = bars[-1].end + 2 * us
+    middle = START + 5 * minute
+    shared = dict(plan_id=active.id, trading_day="2026-10-22", operation="EXIT_COUNTER_M", quantity="1",
+                  shape_period=1, confirmation_period=1, band=["110", "110"], exit_role="DIRECTIONAL_TARGET")
+    first = shared | dict(id="part", start=START.isoformat(), cutoff=middle.isoformat(),
+                          request_expires_at=middle.isoformat())
+    second = shared | dict(id="rest", start=middle.isoformat(), cutoff=final.isoformat(),
+                           request_expires_at=final.isoformat(), inherit_observed_target=True)
+    definition = dict(version=plan_replay.MARKET_SEQUENCE_TARGET_CARRY_VERSION,
+                      seed=json.loads(encoded(asdict(seed))), cutoff=final.isoformat(),
+                      revisions=json.loads(encoded([plan_replay.revision_record(active)])), steps=[first, second])
+
+    def run(**changes):
+        return plan_replay.market_sequence(session=None, market=None, **(definition | changes))
+
+    def approval(row):
+        at = row["evaluation"]["at"]
+        return dict(scope=row["evaluation"]["pending_approval_scope"], id=row["id"], accepted=True,
+                    decided_at=at.isoformat(), known_at=(at + us).isoformat(), record_kind="TEST_FIXTURE")
+
+    public = run()
+    assert [row["status"] for row in public["steps"]] == ["INDETERMINATE", "COUNTER_M_TARGET_NOT_CARRIED"]
+    with pytest.raises(ValueError, match="SEQUENCE_WINDOW_INVALID"):
+        run(steps=[first, second | {"_capture_counter_m_target": True}])
+    partial_approval = {"part": approval(public["steps"][0])}
+
+    def approved(**changes):
+        return run(allow_test_fixture=True, approvals=partial_approval, **changes)
+
+    partial = approved()
+    partial_step, next_step = partial["steps"]
+    assert partial_step["status"] == "CONDITIONAL_ACTION"
+    assert next_step["status"] == "INDETERMINATE"
+    assert next_step["market"]["exit"]["target_known_at"] == bars[0].end + us
+    assert next_step["market"]["exit"]["target_bar_sha256"] == partial_step["market"]["exit"]["target_bar_sha256"]
+    assert next_step["market"]["candidate"]["confirmed_at"] == bars[7].end
+    assert next_step["evaluation"]["pending_approval_scope"] != partial_approval["part"]["scope"]
+    approvals = partial_approval | {"rest": approval(next_step)}
+    complete = run(allow_test_fixture=True, approvals=approvals)
+    assert [row["status"] for row in complete["steps"]] == ["CONDITIONAL_ACTION"] * 2
+    assert (complete["final"]["original"], complete["final"]["protection"], complete["final"]["counter_m"]) == (20, 20, 0)
+    assert approved(cutoff=middle.isoformat())["steps"] == complete["steps"][:1]
+
+    legacy_input = dict(version=plan_replay.MARKET_SEQUENCE_VERSION,
+                        steps=[first, second | {"inherit_observed_target": False}])
+    legacy_public = run(**legacy_input)
+    legacy = run(**legacy_input, allow_test_fixture=True,
+                 approvals={"part": approval(legacy_public["steps"][0])})
+    assert legacy["steps"][1]["market"]["exit"]["status"] == "TARGET_NOT_TOUCHED"
+    assert legacy["final"]["counter_m"] == 1
+    for change in ({"band": ["109", "110"]}, {"trading_day": "2026-10-23"}):
+        assert approved(steps=[first, second | change])["steps"][1]["status"] == "COUNTER_M_TARGET_NOT_CARRIED"
+    new_plan = replace(active, id="revised", published_at=middle - us, known_at=middle - us)
+    revisions = definition["revisions"] + json.loads(encoded([plan_replay.revision_record(new_plan)]))
+    diverged = approved(revisions=revisions, steps=[first, second | {"plan_id": new_plan.id}])
+    assert diverged["steps"][1]["status"] == "COUNTER_M_TARGET_NOT_CARRIED"
+
+    revised_bar = replace(bars[0], high=Decimal(111))  # Same target and timestamp, different market fact.
+    reading = iter((bars, [revised_bar, *bars[1:]]))
+    monkeypatch.setattr(plan_replay, "read_window", lambda *args: {1: next(reading)})
+    with pytest.raises(ValueError, match="COUNTER_M_TARGET_MARKET_MISMATCH"):
+        run(allow_test_fixture=True, approvals=approvals)
+
+
+def test_standalone_market_request_rejects_internal_target_capture(monkeypatch, tmp_path, capsys):
+    request = tmp_path / "request.json"
+    request.write_text('{"sequence_window": true, "_capture_counter_m_target": true}', encoding="utf-8")
+    output = tmp_path / "result.json"
+    monkeypatch.setattr(sys, "argv", ["plan_replay", "--market-request", str(request), "--env-file", ".env",
+                                      "--output", str(output)])
+    with pytest.raises(SystemExit, match="2"):
+        plan_replay.main()
+    assert capsys.readouterr().err == "PLAN_REPLAY_MARKET_REQUEST_INTERNAL_FIELDS\n"
+    assert not output.exists()
 
 
 def test_sequence_external_m_evidence_is_scoped_to_the_carried_book():

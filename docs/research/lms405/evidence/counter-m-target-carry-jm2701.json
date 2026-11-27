@@ -1,0 +1,81 @@
+{
+  "cutoff": "2026-10-23T11:05:00+08:00",
+  "revisions": [
+    {
+      "contract": "JM2701",
+      "id": "A5356884629782554",
+      "known_at": "2026-10-22T18:19:00+08:00",
+      "operations": [
+        "EXIT_COUNTER_M"
+      ],
+      "published_at": "2026-10-22T18:18:00+08:00",
+      "source": "https://weibo.com/ttarticle/p/show?id=2309405356884629782554"
+    }
+  ],
+  "seed": {
+    "attempt": 1,
+    "contract": "JM2701",
+    "counter_m": "20",
+    "direction": "SHORT",
+    "episode": "JM2701:COUNTER_M_REMAINDER:TEST",
+    "known_at": "2026-10-23T10:36:00.000001+08:00",
+    "original": "0",
+    "protection": "0"
+  },
+  "steps": [
+    {
+      "band": [
+        "1420.5",
+        "1427.5"
+      ],
+      "confirmation_period": 1,
+      "cutoff": "2026-10-23T10:50:00+08:00",
+      "exit_role": "DIRECTIONAL_TARGET",
+      "id": "part",
+      "operation": "EXIT_COUNTER_M",
+      "plan_id": "A5356884629782554",
+      "quantity": "1",
+      "request_expires_at": "2026-10-23T10:50:00+08:00",
+      "shape_period": 5,
+      "start": "2026-10-23T10:37:00+08:00",
+      "trading_day": "2026-10-23"
+    },
+    {
+      "band": [
+        "1420.5",
+        "1427.5"
+      ],
+      "confirmation_period": 1,
+      "cutoff": "2026-10-23T11:05:00+08:00",
+      "exit_role": "DIRECTIONAL_TARGET",
+      "id": "rest",
+      "inherit_observed_target": true,
+      "operation": "EXIT_COUNTER_M",
+      "plan_id": "A5356884629782554",
+      "quantity": "19",
+      "request_expires_at": "2026-10-23T11:05:00+08:00",
+      "shape_period": 5,
+      "start": "2026-10-23T10:50:00+08:00",
+      "trading_day": "2026-10-23"
+    }
+  ],
+  "version": "lms405-plan-market-sequence-v2",
+  "approvals": {
+    "part": {
+      "accepted": true,
+      "decided_at": "2026-10-23T02:48:00.000002+00:00",
+      "id": "part",
+      "known_at": "2026-10-23T02:48:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "4454d95f416b71f11824dca07e7f6aa065d3badf303ac2c996e29d647ed14e30"
+    },
+    "rest": {
+      "accepted": true,
+      "decided_at": "2026-10-23T02:57:00.000002+00:00",
+      "id": "rest",
+      "known_at": "2026-10-23T02:57:00.000003+00:00",
+      "record_kind": "TEST_FIXTURE",
+      "scope": "02b86e25472dc45af0d33eb466a5d8d747eae2cf98487bb6583a6ff71744a435"
+    }
+  }
+}

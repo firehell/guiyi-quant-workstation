@@ -674,3 +674,5 @@ services/quant-api/.venv/bin/python scripts/research/lms405_counter_m_continuati
 ```
 
 统一MDS核对冻结行情345根1m、69根5m、23根15m。14次退出候选前缀对照一致，两次完整输出逐字节一致，独立复核通过。定稿 `output/lms405-counter-m-continuation-20261128/sized.json` 的SHA256为 `4239e31beaf2fff76d100aba5dde2267f878cecd0fd389a379127c0122f9843a`。作者可评分动作0，原策略基线保留。
+
+1月9日五次持仓原图复查仍未取得。Chrome连接作者主页超时，公开检索只返回同一相关阅读节选，无实月、账户或策略版本新增证据。独立工程验证已用焦煤条件前像实现同一短线仓的分批退出，第二步可以复用按原价带核实过的目标K线，须另有反向确认与许可。该验证解决研究回放缺口，作者实际是否分批仍未知。 [可复算的分批退出](../REPLICATION_MANUAL.md#抓m部分退出后承接同一个目标)
