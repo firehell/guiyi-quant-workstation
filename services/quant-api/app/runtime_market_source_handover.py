@@ -52,7 +52,7 @@ def _consumers(stream):
 
 
 def _journal_snapshot(
-    stream, cutoff, consumers, *, retain, check_budget, terminals=None,
+    stream, cutoff, consumers, *, retain, check_budget, terminals=None, validate_event=None,
 ) -> dict:
     if _consumers(stream) != consumers:
         raise CohortError("MARKET_SOURCE_CONSUMER_SCOPE_CHANGED")
@@ -85,7 +85,11 @@ def _journal_snapshot(
             parsed = [ObservationEnvelope.from_json(raw, stream_id=identifier) for identifier, raw in events]
             indices = stream.redis.hmget(stream.identity_key(day), [event.observation_id for event in parsed])
             for event, (_identifier, raw), index in zip(parsed, events, indices, strict=True):
-                if event.trading_day != day or event.source_generation is not None or index is None:
+                if event.trading_day != day or index is None:
+                    raise CohortError("MARKET_SOURCE_OLD_IDENTITY_UNPROVEN")
+                if validate_event is not None:
+                    validate_event(stream.kind, event)
+                elif event.source_generation is not None:
                     raise CohortError("MARKET_SOURCE_OLD_IDENTITY_UNPROVEN")
                 proof = json.loads(index)
                 if proof.get("id") != event.stream_id or proof.get("payload") != raw:

@@ -46,7 +46,7 @@ class StartHost:
         return {"subscriptions": {"rb": "RB2701"}, "prior_day": "2026-11-27",
                 "first_session": "2026-11-27T13:00:00+00:00"}
 
-    def empty_target(self, settings):
+    def target_instance(self, settings, authority):
         return "target"
 
     def installation_preimage(self, new):
@@ -142,6 +142,20 @@ def test_active_session_is_explicit_and_rechecked_before_effects(start):
     host.active_authority = lambda *_: authority
     assert direct.apply_market_direct_start(host, plan) == {"status": "switched", "generation": 95}
     assert host.calls == ["park", "stage", "install", "precommit", "start"]
+
+
+def test_journal_preserving_cutover_drains_before_guard_and_does_not_reseed(start):
+    host, _, _ = start
+    previous_authority = host.authority({}, host.release_root, _DAY)
+    host.authority = lambda *_: {**previous_authority, "retained_tick": {"archive": "confirmed"}}
+    host.prepare_retained_scope = lambda *_: host.calls.append("drain-confirmed")
+    host.stage = lambda *_, **kw: host.calls.append("retain-existing")
+    plan = direct.freeze_market_direct_start(
+        host, root=host.release_root, tag="v1.16.151", commit="c" * 40, day=_DAY,
+    )
+    assert direct.apply_market_direct_start(host, plan) == {"status": "switched", "generation": 95}
+    assert host.calls == ["drain-confirmed", "park", "retain-existing", "install", "precommit", "start"]
+    assert host.redis_writes == 0
 
 
 @pytest.mark.parametrize("failure, registry, expected_phase", [
