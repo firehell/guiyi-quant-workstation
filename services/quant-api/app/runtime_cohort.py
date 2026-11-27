@@ -69,6 +69,16 @@ def require(value, code):
         raise CohortError(code)
 
 
+def terminal_cohort_state(directory, state):
+    if state.get("phase") not in TERMINAL:
+        return False
+    if "market_forward_sha256" not in state:
+        return True
+    from app.runtime_market_forward_recovery import verified_forward_pointer
+
+    return verified_forward_pointer(directory, state)
+
+
 def registry(value, *, historical=False, history_directory=None, history_verifier=None):
     from app.runtime_bindings import historical_binding
 
@@ -129,10 +139,11 @@ def _market_host(host):
 
 
 def _valid_market_intent(value):
-    if type(value) is not dict or set(value) != {
+    fields = {
         "old_instance", "target_instance", "old_day", "target_day", "catalog_sha256",
         "tqkq_sha256", "subing_sha256",
-    }:
+    }
+    if type(value) is not dict or set(value) not in (fields, fields | {"host_sha256"}):
         return False
     from datetime import date
     try:
@@ -143,7 +154,7 @@ def _valid_market_intent(value):
         old_day.isoformat() == value["old_day"] and target_day.isoformat() == value["target_day"]
         and old_day < target_day and value["old_instance"] != value["target_instance"]
         and all(isinstance(value[field], str) and re.fullmatch(r"[0-9a-f]{64}", value[field])
-                for field in ("old_instance", "target_instance", "catalog_sha256", "tqkq_sha256", "subing_sha256"))
+                for field in value if field not in {"old_day", "target_day"})
     )
 
 
@@ -180,7 +191,7 @@ def freeze_cohort(host, *, candidate_root, tag, commit, market_source=False):
     )
     state = _read(host.directory / "cohort-release.json")
     require(
-        state is None or state.get("phase") in TERMINAL,
+        state is None or terminal_cohort_state(host.directory, state),
         "COHORT_RECOVERY_READBACK_REQUIRED",
     )
     _release_layout(candidate_root, tag, previous)
@@ -380,7 +391,7 @@ def apply_cohort(host, plan):
     with deployment_lock(runtime_dir=host.directory):
         current = _read(host.directory / "cohort-release.json")
         require(
-            current is None or current.get("phase") in TERMINAL,
+            current is None or terminal_cohort_state(host.directory, current),
             "COHORT_RECOVERY_READBACK_REQUIRED",
         )
         require(
@@ -571,14 +582,26 @@ def market_source_recovery_direction(plan, state, observed_registry):
     """Classify an independent registry readback without starting either source."""
     require("market_source_handover" in plan, "COHORT_MARKET_SOURCE_PLAN_INVALID")
     old, new = validate(plan, datetime.fromisoformat(plan["created_at"]), allow_market_source=True)
+    post_intent = {
+        "committing", "committed", "consumers", "consumers_complete", "consumers_ready",
+        "consumers_ready_complete", "feed", "feed_complete", "verified", "verified_complete",
+        "calendars_on", "calendars_on_complete", "outcome_unknown",
+    }
+    pre_intent = {
+        "claimed", "prewarmed", "calendars_off", "calendars_off_complete", "drain", "drain_complete",
+        "old_exited", "old_exited_complete", "preserve", "preserve_complete", "market_source_preserve",
+        "market_source_preserve_complete", "market_source_stage", "market_source_stage_complete",
+        "install", "install_complete", "restore_unknown",
+    }
+    phase = state.get("phase")
     require(
         state.get("schema_version") == 1 and state.get("plan_sha256") == plan["plan_sha256"]
-        and state.get("phase") in {"outcome_unknown", "restore_unknown"},
+        and phase in (pre_intent | post_intent),
         "COHORT_MARKET_SOURCE_RECOVERY_REQUIRED",
     )
-    if observed_registry == new and state["phase"] == "outcome_unknown":
+    if observed_registry == new and phase in post_intent:
         return "forward_only"
-    if observed_registry == old and state["phase"] == "restore_unknown":
+    if observed_registry == old and phase in pre_intent:
         return "target_readback_required"
     return "binding_readback_required"
 
@@ -754,7 +777,7 @@ def main(argv=None):
     p = sub.add_parser("resolve-restored")
     p.add_argument("--plan", required=True, type=Path)
     p = sub.add_parser("warmup")
-    p.add_argument("service", choices=(*CONTINUOUS, *sorted(OPTIONAL_CONTINUOUS)))
+    p.add_argument("service", choices=(*CONTINUOUS, *sorted(OPTIONAL_CONTINUOUS), "market-source-staged"))
     args = parser.parse_args(argv)
     try:
         if args.mode == "warmup":
@@ -763,7 +786,22 @@ def main(argv=None):
             from app.core.env import PROJECT_ROOT
             from app.version import APP_VERSION
 
-            if args.service == "alert":
+            if args.service == "market-source-staged":
+                from app.db.session import SessionLocal
+                from app.db.readonly import readonly_transaction
+                from app.market_data.composition import build_market_feed_service
+                from app.market_data.market_foundation_scope import formal_tick_requested
+                from app.market_data.newow.market_reference_after_close import warmup_formal_receipts
+                from app.market_data.tick_runtime import open_formal_tick_dispatch
+                from datetime import UTC
+
+                require(formal_tick_requested(), "COHORT_MARKET_SOURCE_HANDOVER_REQUIRED")
+                with (SessionLocal() as session, readonly_transaction(session, timeout_seconds=20),
+                      open_formal_tick_dispatch() as dispatch):
+                    feed = build_market_feed_service(session, tick_dispatch=dispatch)
+                    require(feed.quiescent(datetime.now(UTC)), "MARKET_SOURCE_STAGED_FEED_NOT_QUIESCENT")
+                proof = warmup_formal_receipts()
+            elif args.service == "alert":
                 from app.alerts.composition import warmup_alert_runtime
 
                 proof = warmup_alert_runtime(

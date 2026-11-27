@@ -14,6 +14,7 @@ _BINDING = "live:market-foundation:binding"
 _SOURCE = "live:market-foundation:source"
 _TICK_POLICY = "rqdata-tick-v1"
 _FORMAL_BINDING = "live:market-foundation:formal-binding"
+_FORMAL_INITIAL_DAY = "live:market-foundation:initial-trading-day"
 _LEGACY_REFERENCE = "live:observations:registered:completed:reference"
 LIVE_FINALIZATION_DELAY = timedelta(seconds=2)
 
@@ -142,6 +143,7 @@ def _formal_baseline(fingerprint, day, subscriptions, alert_enabled):
     completed = ObservationStream(None, kind="completed")
     baseline = {
         _FORMAL_BINDING: (fingerprint, -1),
+        _FORMAL_INITIAL_DAY: (day.isoformat(), -1),
         _SOURCE: (_TICK_POLICY, -1),
         RedisLiveStore._subscription_key(day): (
             json.dumps(subscriptions, sort_keys=True, separators=(",", ":")), TTL_SECONDS,
@@ -153,6 +155,52 @@ def _formal_baseline(fingerprint, day, subscriptions, alert_enabled):
         baseline[completed.registration_key("alert")] = (day.isoformat(), -1)
         baseline[completed.cursor_key("alert", day)] = ("0-0", TTL_SECONDS)
     return baseline
+
+
+def formal_tick_initial_day(redis) -> date | None:
+    value = redis.get(_FORMAL_INITIAL_DAY)
+    if value is None:
+        return None
+    return date.fromisoformat(value.decode() if isinstance(value, bytes) else value)
+
+
+def verify_formal_tick_preopen(redis, fingerprint: str, *, day: date, prior_day: date,
+                               subscriptions: dict[str, str]) -> bool:
+    """Recheck the staged journal keys after owners have started writing heartbeats."""
+    from app.market_data.live_market import RedisLiveStore
+    from app.market_data.observation_stream import ObservationStream
+
+    source = ObservationStream(redis, kind="source")
+    completed = ObservationStream(redis, kind="completed")
+    baseline = _formal_baseline(fingerprint, day, subscriptions, alert_enabled=True)
+    alert_registration = completed.registration_key("alert")
+    alert_cursor = completed.cursor_key("alert", day)
+    optional = {key: baseline.pop(key) for key in (alert_registration, alert_cursor)}
+    # A staged target has no old-day subscription and no journal or index on
+    # either day. Heartbeats and unrelated reader keys may already exist.
+    absent = [
+        _BINDING, _LEGACY_REFERENCE, RedisLiveStore._subscription_key(prior_day),
+        source.cursor_key("live", prior_day), completed.cursor_key("alert", prior_day),
+    ]
+    for stream in (source, completed):
+        for trading_day in (prior_day, day):
+            absent.extend((stream.key(trading_day), stream.identity_key(trading_day)))
+    with redis.pipeline(transaction=True) as read:
+        read.mget(tuple(baseline))
+        read.mget(tuple(optional))
+        read.exists(*optional)
+        read.exists(*absent)
+        core, alert, alert_count, unexpected = read.execute()
+    return not unexpected and all(
+        value in (expected, expected.encode())
+        for value, (expected, _) in zip(core, baseline.values(), strict=True)
+    ) and (
+        alert_count == 0
+        or alert_count == len(optional) and all(
+            value in (expected, expected.encode())
+            for value, (expected, _) in zip(alert, optional.values(), strict=True)
+        )
+    )
 
 
 def stage_empty_formal_tick_namespace(

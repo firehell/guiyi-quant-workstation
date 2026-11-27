@@ -1,12 +1,13 @@
 """Cross-instance observation evidence for an already supervised Market stop."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from hashlib import file_digest, sha256
 import json
 import os
 from pathlib import Path
 import re
+import stat
 from typing import BinaryIO
 
 from app.market_data.market_foundation_scope import (
@@ -21,6 +22,7 @@ from app.runtime_cohort_errors import CohortError
 _MAX_DAYS = 8
 _PAGE_SIZE = 256
 _MAX_RETAINED_BYTES = 256 * 1024 * 1024
+_ORIGINALS_NAME = "old-observation-originals.jsonl"
 
 
 def _redis_run_id(redis) -> str:
@@ -44,7 +46,7 @@ def _consumers(stream):
 
 
 def _journal_snapshot(
-    stream, cutoff, consumers, *, original: BinaryIO | None, check_budget,
+    stream, cutoff, consumers, *, original: BinaryIO | None, check_budget, terminals=None,
 ) -> dict:
     if _consumers(stream) != consumers:
         raise CohortError("MARKET_SOURCE_CONSUMER_SCOPE_CHANGED")
@@ -56,6 +58,8 @@ def _journal_snapshot(
 
     result = {}
     for day in days:
+        expected = terminals if day == cutoff and terminals is not None else {}
+        last = {}
         tail = stream.tail(day)
         cursors = {consumer: stream.cursor(consumer, day) for consumer in consumers}
         if any(cursor != tail for cursor in cursors.values()):
@@ -80,6 +84,15 @@ def _journal_snapshot(
                 proof = json.loads(index)
                 if proof.get("id") != event.stream_id or proof.get("payload") != raw:
                     raise CohortError("MARKET_SOURCE_OLD_IDENTITY_UNPROVEN")
+                parts = event.channel.split(":")
+                if (len(parts) == 4 and parts[:2] == ["live", "bar"] and parts[3] == "1m"
+                        and parts[2] in expected and event.notification_eligible):
+                    end = datetime.fromisoformat(event.data["bar_end"])
+                    product = parts[2]
+                    if end.tzinfo is None or end > expected[product][1]:
+                        raise CohortError("MARKET_SOURCE_OLD_TERMINAL_UNPROVEN")
+                    if product not in last or end > last[product][1]:
+                        last[product] = (event.data["contract"], end)
                 record = _line([stream.kind, day.isoformat(), event.stream_id, event.observation_id, raw, _text(index)])
                 content.update(record)
                 if original is not None:
@@ -101,6 +114,8 @@ def _journal_snapshot(
                 or {name: stream.cursor(name, day) for name in consumers} != cursors
                 or (day == cutoff and tally == 0)):
             raise CohortError("MARKET_SOURCE_RETENTION_DRIFT")
+        if last != expected:
+            raise CohortError("MARKET_SOURCE_OLD_TERMINAL_UNPROVEN")
         result[day.isoformat()] = meta
     if stream.days() != days or _consumers(stream) != consumers:
         raise CohortError("MARKET_SOURCE_RETENTION_DRIFT")
@@ -108,17 +123,22 @@ def _journal_snapshot(
 
 
 def old_observation_snapshot(redis, cutoff: date, *, alert_enabled: bool, check_budget,
-                             original: BinaryIO | None = None) -> dict:
+                             original: BinaryIO | None = None, terminals=None) -> dict:
     require_bar_writer_namespace(redis)
     instance = redis_instance(redis)
+    if alert_enabled:
+        from app.alerts.composition import RedisAlertHeartbeatStore
+
+        if RedisAlertHeartbeatStore(redis).read_unresolved():
+            raise CohortError("MARKET_SOURCE_ALERT_RECOVERY_PENDING")
     result = {
         "instance": instance,
         "source": _journal_snapshot(ObservationStream(redis, kind="source"), cutoff, ("live",),
-                                    original=original, check_budget=check_budget),
+                                    original=original, check_budget=check_budget, terminals=terminals),
         "completed": _journal_snapshot(
             ObservationStream(redis, kind="completed"), cutoff,
             ("alert", "reference") if alert_enabled else ("reference",),
-            original=original, check_budget=check_budget,
+            original=original, check_budget=check_budget, terminals=terminals,
         ),
     }
     if redis_instance(redis) != instance:
@@ -127,13 +147,14 @@ def old_observation_snapshot(redis, cutoff: date, *, alert_enabled: bool, check_
 
 
 def preserve_stopped_observations(redis, cutoff: date, *, alert_enabled: bool, attempt: Path,
-                                  check_budget) -> dict:
+                                  check_budget, terminals=None) -> dict:
     """Persist the old exact envelopes and indices once under the existing attempt."""
-    marker = attempt / "old-observation-originals.jsonl"
+    marker = attempt / _ORIGINALS_NAME
     fd = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
     with os.fdopen(fd, "wb") as original:
         result = old_observation_snapshot(
             redis, cutoff, alert_enabled=alert_enabled, original=original, check_budget=check_budget,
+            terminals=terminals,
         )
         original.flush()
         os.fsync(original.fileno())
@@ -142,13 +163,29 @@ def preserve_stopped_observations(redis, cutoff: date, *, alert_enabled: bool, a
         os.fsync(directory)
     finally:
         os.close(directory)
-    if old_observation_snapshot(redis, cutoff, alert_enabled=alert_enabled, check_budget=check_budget) != result:
+    if old_observation_snapshot(redis, cutoff, alert_enabled=alert_enabled, check_budget=check_budget,
+                                terminals=terminals) != result:
         raise CohortError("MARKET_SOURCE_STOPPED_FRONTIER_DRIFT")
     check_budget()
     with marker.open("rb") as retained:
         archive_sha256 = file_digest(retained, "sha256").hexdigest()
     check_budget()
     return {**result, "archive_sha256": archive_sha256}
+
+
+def verify_preserved_observations(attempt: Path, expected: str, *, check_budget) -> None:
+    fd = os.open(attempt / _ORIGINALS_NAME, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(fd)
+        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1
+                or info.st_mode & 0o077 or not 0 < info.st_size <= _MAX_RETAINED_BYTES):
+            raise CohortError("MARKET_SOURCE_ORIGINALS_UNPROVEN")
+        content = sha256()
+        for page in iter(lambda: stream.read(1024 * 1024), b""):
+            check_budget()
+            content.update(page)
+        if content.hexdigest() != expected:
+            raise CohortError("MARKET_SOURCE_ORIGINALS_DRIFT")
 
 
 def stage_new_observations(redis, database, canonical, *, expected_instance, old_instance,

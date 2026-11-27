@@ -48,8 +48,9 @@ def test_closeout_postgresql_busy_and_partial_readonly(isolated_postgresql, tmp_
         assert_partial(manager, closeout_case)
 
 
+@pytest.mark.parametrize("formal_late", [False, True])
 def test_candidate_archive_reads_commits_in_fresh_postgresql_transaction_and_keeps_night_redis(
-    isolated_postgresql, isolated_redis, tmp_path,  # noqa: F811
+    isolated_postgresql, isolated_redis, tmp_path, monkeypatch, formal_late,  # noqa: F811
 ):
     from contextlib import contextmanager
     from decimal import Decimal
@@ -111,19 +112,58 @@ def test_candidate_archive_reads_commits_in_fresh_postgresql_transaction_and_kee
                 pytest.fail("incomplete history must not allow cleanup")
         assert live.subscriptions(day) == {"jm": "JM2509"}
 
-        result = manager.update(UpdateRequest(
-            ("jm",), None, day, apply=True, mode="daily",
-            require_source_ready=True, sync_current_day_metadata=False,
-        ))
-        assert result.status == "passed" and manager.publication_evidence
-        original_calls = len(manager.provider.calls)
-        publications = manager.publication_evidence
-        with verified_archive_readback(open_read, ("jm",), day, publications) as revisions:
-            assert set(revisions) == {"jm"}
-            with Session(isolated_postgresql) as other:
-                assert MarketCatalog(other, manager.store.root).acquire_maintenance_lock() is None
-            live.cleanup_trading_day(day)
-        assert len(manager.provider.calls) == original_calls
+        if formal_late:
+            from app.market_data.after_market import AfterMarketResult, AfterMarketUpdater
+            from app.market_data import late_provider_recovery as late
+            from app.market_data.market_archive import current_retained_receipt
+            from app.market_data.session_clock import SHANGHAI
+
+            now = datetime(2025, 3, 9, 19, 5, tzinfo=SHANGHAI)
+            schedule = tmp_path / "late-provider-recovery-status.json"
+            monkeypatch.setattr(late, "load_operational_products", lambda: ("jm",))
+            # Calendar, Session and rank1 are already seeded in the test Catalog.
+            monkeypatch.setattr(late, "_sync_archive_metadata", lambda *_: None)
+            late.schedule_failure(
+                schedule, AfterMarketResult("failed", day, 2, "RQDATA_NOT_READY"),
+                ("jm",), datetime(2025, 3, 7, 18, 5, tzinfo=SHANGHAI),
+                archive_scope=lambda: None,
+            )
+
+            @contextmanager
+            def inspect_archive(products, target_day, publications):
+                with verified_archive_readback(open_read, products, target_day, publications,
+                                               verify_rank1_day=True) as revisions:
+                    with Session(isolated_postgresql) as other:
+                        assert MarketCatalog(other, manager.store.root).acquire_maintenance_lock() is None
+                    yield revisions
+
+            root = tmp_path / "receipts"
+            updater = AfterMarketUpdater(
+                manager=manager, rqdata=None, live_store=live, now=lambda: now,
+                status_path=tmp_path / "after-market-status.json", archive_readback=inspect_archive,
+                archive_root=root, sleep=lambda _: pytest.fail("retry"), notification_transport=None,
+            )
+            result = late.run_scheduled(
+                manager, path=schedule, now=lambda: now, ready=lambda target: target == day,
+                invalidate=lambda: None, verify_identity=lambda: None, live_store=live, formal_archive=updater,
+            )
+            assert result["status"] == "passed", late._read(schedule)["runs"][day.isoformat()].get("recovery_error")
+            assert manager.publication_evidence
+            assert current_retained_receipt(root, now=now).trading_day == day
+            assert not updater.status_path.exists()
+        else:
+            result = manager.update(UpdateRequest(
+                ("jm",), None, day, apply=True, mode="daily",
+                require_source_ready=True, sync_current_day_metadata=False,
+            ))
+            assert result.status == "passed" and manager.publication_evidence
+            original_calls = len(manager.provider.calls)
+            with verified_archive_readback(open_read, ("jm",), day, manager.publication_evidence) as revisions:
+                assert set(revisions) == {"jm"}
+                with Session(isolated_postgresql) as other:
+                    assert MarketCatalog(other, manager.store.root).acquire_maintenance_lock() is None
+                live.cleanup_trading_day(day)
+            assert len(manager.provider.calls) == original_calls
         assert live.subscriptions(day) is None
         assert live.subscriptions(next_day) == {"jm": "JM2509"}
         assert live.cleanup_readback(day) == {"remaining_bar_keys": 0, "subscription_present": False}
@@ -131,6 +171,7 @@ def test_candidate_archive_reads_commits_in_fresh_postgresql_transaction_and_kee
         assert isolated_redis.xrange(journal.key(day)) == prior_immutable
         assert isolated_redis.xrange(journal.key(next_day)) == next_immutable
 
+        publications = manager.publication_evidence
         bad = [*publications[:-1], {**publications[-1], "file_name": "part." + "a" * 64 + ".parquet"}]
         with pytest.raises(ValueError, match="MARKET_ARCHIVE_POINTER_CHANGED"):
             with verified_archive_readback(open_read, ("jm",), day, bad):

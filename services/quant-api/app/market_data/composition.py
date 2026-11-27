@@ -323,10 +323,11 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
     tick = formal_tick_requested()
     durable = os.getenv('GUIYI_OBSERVATION_STREAM_ENABLED', '0') == '1'
     connection = get_redis_connection()
+    tick_binding = None
     if tick:
         if not durable or os.getenv('GUIYI_RUNTIME_HANDOVER_ENABLED') != '1':
             raise ValueError('MARKET_TICK_SUPERVISOR_REQUIRED')
-        require_formal_tick_binding(connection, session.get_bind().url, canonical_root())
+        tick_binding = require_formal_tick_binding(connection, session.get_bind().url, canonical_root())
     elif _feed or not durable:
         require_bar_writer_namespace(connection)
 
@@ -363,7 +364,7 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
         recovery_fetch_factory = RQDataLiveRecoveryAdapter
         recovery_sessions_source = coverage_sessions
         recovery_guard_factory = recovery_guard
-    rqdata = RQDataClient()
+    rqdata = None if tick else RQDataClient()
     from app.market_data.day_preparation import build_day_metadata_preparation
     products = load_operational_products()
     preparation = build_day_metadata_preparation(
@@ -406,25 +407,35 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
         from app.market_data.observation_stream import ObservationStream
         common_kwargs.update(store=FeedLiveStore(cast(RedisClient, connection)), recovery_fetch_factory=None,
                              recovery_sessions=None, recovery_guard_factory=None)
-        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
+        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(
+            common_kwargs['store'], products, formal_tick=tick,
+        )
         from app.market_data.live_recovery_guard import after_market_recovery_guard
         common_kwargs['shutdown_guard_factory'] = lambda: after_market_recovery_guard(wait=False)
         def bar_provider():
+            assert rqdata is not None
             return RQDataLiveProvider(rqdata.live_market_client())
 
         if tick:
             from app.market_data.tick_runtime import build_formal_tick_feed
 
-            return build_formal_tick_feed(connection, client=rqdata, dispatch=tick_dispatch, **common_kwargs)
+            return build_formal_tick_feed(
+                connection, client_factory=RQDataClient, dispatch=tick_dispatch,
+                formal_tick_binding=tick_binding, **common_kwargs,
+            )
         return MarketFeedService(provider_factory=bar_provider,
                                  source_stream=ObservationStream(connection, kind='source'), **common_kwargs)
     if durable:
         from app.market_data.market_feed import DurableLiveMarketService, StreamLiveProvider
         from app.market_data.observation_stream import ObservationStream
         common_kwargs['prepare_trading_day'] = None
-        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(common_kwargs['store'], products)
+        common_kwargs['closed_cleanup_evidence'] = build_closed_cleanup_evidence(
+            common_kwargs['store'], products, formal_tick=tick,
+        )
         return DurableLiveMarketService(source_provider=StreamLiveProvider(
-            ObservationStream(connection, kind='source'), require_tick=tick), **common_kwargs)
+            ObservationStream(connection, kind='source'), require_tick=tick),
+            formal_tick_binding=tick_binding, **common_kwargs)
+    assert rqdata is not None
     return LiveMarketService(provider_factory=lambda: RQDataLiveProvider(rqdata.live_market_client()),
                              **common_kwargs)
 
@@ -435,7 +446,7 @@ def build_market_feed_service(session: Session, *, tick_dispatch=None) -> LiveMa
     return build_live_market_service(session, _feed=True, tick_dispatch=tick_dispatch)
 
 
-def build_closed_cleanup_evidence(store, products):
+def build_closed_cleanup_evidence(store, products, *, formal_tick=False):
     """Bind existing terminal cleanup evidence; this never runs maintenance."""
     from app.market_data.after_market import public_after_market_status
     from app.market_data.after_market_history import NAME, _bytes, read_history
@@ -448,6 +459,16 @@ def build_closed_cleanup_evidence(store, products):
             binding = resolve_service_binding('after-market')
             if binding is None or not binding.enabled:
                 return None
+            if formal_tick:
+                from app.market_data.market_archive import formal_archive_root, verified_retained_cleanup
+
+                evidence = verified_retained_cleanup(store, formal_archive_root(), day=day, products=products, now=now)
+                if evidence is None or evidence["code_commit"] is None or resolve_service_binding('after-market') != binding:
+                    return None
+                return dict(trading_day=day.isoformat(), cleanup_verified=True,
+                            cleanup_checked_at=evidence['cleanup_checked_at'], source_commit=evidence['code_commit'],
+                            evidence_kind='retained', after_market_generation=binding.generation,
+                            remaining_bar_keys=0, subscription_present=False)
             path = Path(binding.root) / '.run/after-market-status.json'
             current = os.path.lexists(path)
             if current:

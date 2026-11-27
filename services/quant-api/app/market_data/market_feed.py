@@ -22,6 +22,7 @@ from app.market_data.live_market import (
 from app.market_data.completed_worker_policy import due_observations
 from app.market_data.live_recovery_scripts import COMMIT_OBSERVATIONS
 from app.market_data.market_phase import MarketPhase
+from app.market_data.market_foundation_scope import formal_tick_initial_day, verify_formal_tick_preopen
 from app.market_data.observation_stream import (
     DAILY_LIMIT, TTL_SECONDS, ObservationEnvelope, ObservationStream,
 )
@@ -119,6 +120,85 @@ def _reject_closed_cleanup(service, now, phases):
     return service._reject('OBSERVATION_CLEANUP_UNPROVEN')
 
 
+def _formal_rank1_conflict(service, day, subscriptions) -> str | None:
+    try:
+        for symbol, contract in subscriptions.items():
+            normalized = normalize_contract_for_symbol(symbol, contract)
+            if normalized is None or normalized != contract:
+                return 'LIVE_RANK1_CONTRACT_INVALID'
+            if service._dominant_source.dominant_for_day(symbol, day) != contract:
+                return 'LIVE_RANK1_CATALOG_CONFLICT'
+    except Exception:
+        return 'LIVE_RANK1_CATALOG_UNAVAILABLE'
+    return None
+
+
+def _formal_preopen_snapshot(service, stream, now, phases=None):
+    """Prove the initial day before any Session on that day has started."""
+    if service._formal_tick_binding is None:
+        return None
+    day = formal_tick_initial_day(stream.redis)
+    if day is None:
+        raise ValueError('OBSERVATION_DAY_BASELINE_UNPROVEN')
+    registered = stream.registered_day('live')
+    if registered > day:
+        return None
+    phases = service._phases(now) if phases is None else phases
+    if any(phase.phase in (MarketPhase.TRADING, MarketPhase.BREAK) for phase in phases.values()):
+        return None
+    if registered != day or set(phases) != set(service._products) or not phases:
+        raise ValueError('OBSERVATION_DAY_BASELINE_UNPROVEN')
+    if any(phase.phase is not MarketPhase.CLOSED for phase in phases.values()):
+        raise ValueError('OBSERVATION_DAY_MISSING')
+    prior_days = {
+        service._phase_resolver.completed_observation_trading_day(symbol, now)
+        for symbol in phases
+    }
+    if any(prior is not None and prior >= day for prior in prior_days):
+        # At least one target Session has already started. Continue the ordinary
+        # completed-journal lifecycle, which can include a real overnight tail.
+        return None
+    if (len(prior_days) != 1 or None in prior_days
+            or service._trading_day not in (None, day)
+            or service._provider is not None or service._pending or service._channels):
+        raise ValueError('OBSERVATION_DAY_BASELINE_UNPROVEN')
+    for symbol, phase in phases.items():
+        start = phase.next_session_start
+        if start is None or start <= now:
+            raise ValueError('OBSERVATION_DAY_MISSING')
+        upcoming = service._phase_resolver.resolve(symbol, start)
+        if (upcoming.phase is not MarketPhase.TRADING or upcoming.trading_day != day
+                or upcoming.current_session is None or upcoming.current_session.start != start):
+            raise ValueError('OBSERVATION_DAY_MISSING')
+    subscriptions = service._store.subscriptions(day)
+    if subscriptions is None or set(subscriptions) != set(service._products):
+        raise ValueError('OBSERVATION_SUBSCRIPTION_MISSING')
+    if service._trading_day == day and subscriptions != service._contracts:
+        raise ValueError('OBSERVATION_SUBSCRIPTION_CONFLICT')
+    if failure := _formal_rank1_conflict(service, day, subscriptions):
+        raise ValueError(failure)
+    if not verify_formal_tick_preopen(
+        stream.redis, service._formal_tick_binding, day=day,
+        prior_day=next(iter(prior_days)), subscriptions=subscriptions,
+    ):
+        raise ValueError('OBSERVATION_DAY_BASELINE_UNPROVEN')
+    return day, subscriptions
+
+
+def _activate_formal_preopen(service, stream) -> str | None:
+    """Recheck rank1 at the first subsequent active/started poll."""
+    day = service._formal_preopen_day
+    if day is None:
+        return None
+    if (stream.registered_day('live') != day
+            or service._store.subscriptions(day) != service._contracts):
+        return 'OBSERVATION_SUBSCRIPTION_CONFLICT'
+    failure = _formal_rank1_conflict(service, day, service._contracts)
+    if failure is None:
+        service._formal_preopen_day = None
+    return failure
+
+
 def _equivalent_bar_payload(left: dict, right: dict) -> bool:
     """Compare exact identity and finite Decimal facts without a binary-float conversion."""
     if type(left) is not dict or type(right) is not dict or left.keys() != right.keys():
@@ -158,11 +238,14 @@ class MarketFeedService(LiveMarketService):
     _channels: set[str]
 
     def __init__(self, *, source_stream: ObservationStream, closed_cleanup_evidence=None,
-                 shutdown_guard_factory=None, tick_source: bool = False, **kwargs: Any) -> None:
+                 shutdown_guard_factory=None, tick_source: bool = False,
+                 formal_tick_binding: str | None = None, **kwargs: Any) -> None:
         super().__init__(**kwargs)
         self.source_stream = source_stream
         self._shutdown_guard_factory = shutdown_guard_factory
         self._tick_source = tick_source
+        self._formal_tick_binding = formal_tick_binding
+        self._formal_preopen_day: date | None = None
         self._input_failure: str | None = None
         self._last_input_received_at: datetime | None = None
         self._input_progress: dict[str, tuple[date, str, datetime, datetime]] = {}
@@ -394,6 +477,25 @@ class MarketFeedService(LiveMarketService):
         self._feed_metadata_cache = {}
         failed = False
         try:
+            if self._formal_tick_binding is not None and self._input_failure is None:
+                try:
+                    snapshot = _formal_preopen_snapshot(self, self.source_stream, now)
+                except ValueError as exc:
+                    self._available = False
+                    return self._reject(str(exc))
+                if snapshot is not None:
+                    if self._cleanup_isolation is not None:
+                        self._available = False
+                        return self._reject('OBSERVATION_DAY_BASELINE_UNPROVEN')
+                    if hasattr(self, 'assert_owned'):
+                        self.assert_owned()
+                    self._trading_day, self._contracts = snapshot
+                    self._formal_preopen_day = self._trading_day
+                    self._available = True
+                    return None
+                if failure := _activate_formal_preopen(self, self.source_stream):
+                    self._available = False
+                    return self._reject(failure)
             failure = self._prepare_metadata(now)
             if failure is not None:
                 return self._input_failure or failure
@@ -642,8 +744,8 @@ class StreamLiveProvider:
 
     def select_day(self, day: date) -> None:
         if self.day != day:
-            self.day = day
-            self.after = self.stream.cursor(self.consumer, day)
+            cursor = self.stream.cursor(self.consumer, day)
+            self.day, self.after = day, cursor
             self.events.clear()
             self.records.clear()
 
@@ -678,15 +780,22 @@ class StreamLiveProvider:
 
 
 class DurableLiveMarketService(LiveMarketService):
-    def __init__(self, *, source_provider: StreamLiveProvider, closed_cleanup_evidence=None, **kwargs: Any) -> None:
+    def __init__(self, *, source_provider: StreamLiveProvider, closed_cleanup_evidence=None,
+                 formal_tick_binding: str | None = None, **kwargs: Any) -> None:
         super().__init__(provider_factory=lambda: source_provider, **kwargs)
         self.source_provider = source_provider
+        self._formal_tick_binding = formal_tick_binding
+        self._formal_preopen_day: date | None = None
+        self._journal_started = False
         self.completed_stream = ObservationStream(self._store._redis, kind='completed')
         self._halted: str | None = None
         self._durable_session_day: date | None = None
         self.closed_cleanup_evidence = closed_cleanup_evidence
         self.closed_cleaned_proof = None
         self._closed_cleaned_day = None
+
+    def _can_start_history_preparation(self) -> bool:
+        return self._formal_tick_binding is None or self._journal_started
 
     def _retire_closed_provider(self) -> bool:
         source = self.source_provider
@@ -760,6 +869,7 @@ class DurableLiveMarketService(LiveMarketService):
                     self.assert_owned()
                 day = _accept_closed_cleaned(self, proof, now, phases)
                 self.source_provider.select_day(day)
+                self._journal_started = True
                 return None
         if _closed_cleanup_requires_proof(self, self.source_provider.stream, phases):
             source = self.source_provider
@@ -775,12 +885,40 @@ class DurableLiveMarketService(LiveMarketService):
                 self._halted = 'OBSERVATION_CLEANUP_UNPROVEN'
             return _reject_closed_cleanup(self, now, phases)
         self.closed_cleaned_proof = None
-        failure = self._prepare_metadata(now)
-        if failure:
-            return failure
         try:
-            phases = self._phases(now)
             source = self.source_provider
+            try:
+                snapshot = _formal_preopen_snapshot(self, source.stream, now, phases)
+            except ValueError as exc:
+                self._available = False
+                self._publish_heartbeat(now, phases)
+                return self._reject(str(exc))
+            if snapshot is not None:
+                preopen_day, subscriptions = snapshot
+                if source.day not in (None, preopen_day) or source.records or source.events:
+                    raise ValueError('OBSERVATION_DAY_BASELINE_UNPROVEN')
+                if hasattr(self, 'assert_owned'):
+                    self.assert_owned()
+                source.select_day(preopen_day)
+                if source.after != '0-0':
+                    raise ValueError('OBSERVATION_DAY_BASELINE_UNPROVEN')
+                if self._trading_day != preopen_day:
+                    self._coverage_cache_minute = None
+                self._trading_day, self._contracts = preopen_day, subscriptions
+                self._formal_preopen_day = preopen_day
+                self._available = True
+                self._publish_heartbeat(now, {
+                    symbol: replace(phase, trading_day=preopen_day) for symbol, phase in phases.items()
+                })
+                return None
+            if failure := _activate_formal_preopen(self, source.stream):
+                self._available = False
+                self._publish_heartbeat(now, phases)
+                return self._reject(failure)
+            failure = self._prepare_metadata(now)
+            if failure:
+                return failure
+            phases = self._phases(now)
             registered_day = source.stream.registered_day(source.consumer)
             persisted = source.stream.cursor(source.consumer, registered_day)
             backlog = source.stream.tail(registered_day) != persisted
@@ -855,6 +993,8 @@ class DurableLiveMarketService(LiveMarketService):
             self._commit((), completed_keys=set(), confirmed_at=now)
             failure = self._schedule_recovery_safely(now, phases)
             self._publish_heartbeat(now, phases)
+            if failure is None:
+                self._journal_started = True
             return failure
         except Exception as exc:  # noqa: BLE001 - explicit journal failure boundary
             self._available = False

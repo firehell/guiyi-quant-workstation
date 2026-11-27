@@ -124,6 +124,45 @@ def test_actual_runtime_launch_module_imports_no_offline_research() -> None:
     assert result.stdout.strip() == "0"
 
 
+def test_formal_market_feed_entry_passes_owned_tick_dispatch(monkeypatch):
+    from contextlib import nullcontext
+    from types import SimpleNamespace
+
+    from app import runtime_entry
+    from app.market_data import composition, tick_runtime
+
+    session, dispatch = object(), object()
+    milestones = []
+
+    class Feed:
+        def poll(self, _now):
+            milestones.append("poll")
+
+        def run_forever(self, *, should_stop):
+            assert not should_stop()
+            assert self.poll(None) is None
+
+    def build(bound_session, *, tick_dispatch):
+        assert bound_session is session and tick_dispatch is dispatch
+        milestones.append("build")
+        return Feed()
+
+    owner = SimpleNamespace(
+        assert_owned=lambda: None,
+        mark_not_ready=lambda: None,
+        mark_ready=lambda _: milestones.append("ready"),
+    )
+    monkeypatch.setenv("GUIYI_MARKET_SOURCE", "rqdata_tick")
+    monkeypatch.setenv("GUIYI_RUNTIME_HANDOVER_ENABLED", "1")
+    monkeypatch.setattr(tick_runtime, "open_formal_tick_dispatch", lambda: nullcontext(dispatch))
+    monkeypatch.setattr(composition, "build_market_feed_service", build)
+    monkeypatch.setattr(runtime_entry, "_owned_runner", lambda service, run: run(owner, lambda: False))
+
+    assert runtime_entry.main(["market-feed"], session_factory=lambda: nullcontext(session),
+                              stdout=io.StringIO(), stderr=io.StringIO()) == 0
+    assert milestones == ["build", "poll", "ready"]
+
+
 def _run_owned_live_poll_results(monkeypatch, results):
     from contextlib import nullcontext
     from app import runtime_entry

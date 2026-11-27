@@ -118,16 +118,10 @@ class IsolatedTickMarket:
 
 def _isolated_cleanup_evidence(store, sandbox: Path, products):
     def read(day, now):
-        from app.market_data.market_archive import retained_cleanup_receipt
+        from app.market_data.market_archive import verified_retained_cleanup
 
         try:
-            retained = retained_cleanup_receipt(sandbox, day=day, now=now, products=products)
-            if retained is None:
-                return None
-            actual = store.cleanup_readback(day)
-            if actual != {"remaining_bar_keys": 0, "subscription_present": False}:
-                return None
-            return {**retained, "trading_day": day.isoformat(), "cleanup_verified": True, **actual}
+            return verified_retained_cleanup(store, sandbox, day=day, products=products, now=now)
         except (OSError, ValueError, TypeError, KeyError):
             return None
     return read
@@ -281,13 +275,14 @@ def build_isolated_tick_display(
 
 
 
-def build_formal_tick_feed(redis, *, client, dispatch, **kwargs) -> MarketFeedService:
+def build_formal_tick_feed(redis, *, client_factory, dispatch, **kwargs) -> MarketFeedService:
     """Use the supervised Feed role and its existing durable publication guard."""
     from app.market_data.tick_preview_redis import RedisTickPreviewPublisher
     from app.market_data.tick_rqdata_client import create_tick_client
 
     if dispatch is None:
         raise ValueError("MARKET_TICK_DISPATCH_REQUIRED")
+    client = None
 
     def assert_owned():
         check = getattr(feed, "assert_owned", None)
@@ -296,10 +291,13 @@ def build_formal_tick_feed(redis, *, client, dispatch, **kwargs) -> MarketFeedSe
         check()
 
     def provider():
+        nonlocal client
         preview = RedisTickPreviewPublisher(redis, assert_owned=assert_owned)
         # Invalidate any previous process generation before opening this reader.
         preview.clear_activity(None)
         preview.flush()
+        if client is None:
+            client = client_factory()
         tick_client = create_tick_client(client)
         return TickMarketDataProvider(
             tick_client, connection_identity=lambda: tick_client._client,
