@@ -474,13 +474,26 @@ def build_closed_cleanup_evidence(store, products, *, formal_tick=False):
             if formal_tick:
                 from app.market_data.market_archive import formal_archive_root, verified_retained_cleanup
 
-                evidence = verified_retained_cleanup(store, formal_archive_root(), day=day, products=products, now=now)
+                archive_root = formal_archive_root()
+                evidence = verified_retained_cleanup(store, archive_root, day=day, products=products, now=now)
+                alert = resolve_service_binding("alert")
+                reference = resolve_service_binding("reference-worker")
+                receipt_only = (alert is not None and not alert.enabled and reference is not None and reference.enabled
+                                and all((item.root, item.commit, item.generation)
+                                        == (binding.root, binding.commit, binding.generation)
+                                        for item in (alert, reference)))
+                if evidence is None and receipt_only:
+                    from app.market_data.product_retirement import RS_RETIREMENT_SCOPE_DELTA
+
+                    previous = tuple(sorted(set(products) | RS_RETIREMENT_SCOPE_DELTA))
+                    if set(previous) - set(products) == RS_RETIREMENT_SCOPE_DELTA:
+                        evidence = verified_retained_cleanup(store, archive_root, day=day, products=previous, now=now)
                 if evidence is None or evidence["code_commit"] is None or resolve_service_binding('after-market') != binding:
                     return None
                 return dict(trading_day=day.isoformat(), cleanup_verified=True,
                             cleanup_checked_at=evidence['cleanup_checked_at'], source_commit=evidence['code_commit'],
                             evidence_kind='retained', after_market_generation=binding.generation,
-                            remaining_bar_keys=0, subscription_present=False)
+                            completed_receipt_only=receipt_only, remaining_bar_keys=0, subscription_present=False)
             path = Path(binding.root) / '.run/after-market-status.json'
             current = os.path.lexists(path)
             if current:

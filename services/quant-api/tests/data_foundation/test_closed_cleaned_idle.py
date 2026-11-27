@@ -89,3 +89,23 @@ def test_cleanup_callback_binds_current_or_verified_retained_source(tmp_path, mo
         assert result['source_commit'] == source_commit
     else:
         assert result is None
+
+
+@pytest.mark.parametrize("receipt_only", [False, True])
+def test_closed_cleaned_empty_completed_consumers_requires_receipt_only(monkeypatch, receipt_only):
+    day = date(2026, 11, 30)
+    now = datetime(2026, 11, 30, 10, 15, tzinfo=UTC)
+    redis = SimpleNamespace(scan_iter=lambda *, match:
+                            ["live:observations:registered:source:live"] if ":source:" in match else [])
+
+    def stream(client, *, kind):
+        return SimpleNamespace(redis=client, kind=kind, registered_day=lambda _: day,
+                               cursor=lambda *_: "1-0", tail=lambda _: "1-0")
+
+    monkeypatch.setattr(feed, "ObservationStream", stream)
+    service = SimpleNamespace(_products=("rb",), _pending={}, _provider=None,
+        closed_cleanup_evidence=lambda *_: {"trading_day": day.isoformat(), "cleanup_verified": True,
+                                             "completed_receipt_only": receipt_only})
+    phases = {"rb": ProductMarketPhase("rb", MarketPhase.CLOSED, day, None, now + timedelta(hours=2))}
+    proof = feed._closed_cleaned_idle_proof(service, stream(redis, kind="source"), now, phases)
+    assert (proof is not None) == receipt_only

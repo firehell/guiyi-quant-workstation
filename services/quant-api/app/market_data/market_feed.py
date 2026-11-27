@@ -81,7 +81,9 @@ def _closed_cleaned_idle_proof(service, source_stream, now, phases):
                         or stream.cursor(consumer, day) != stream.tail(day)):
                     return None
                 consumers.add(consumer)
-            if not consumers or stream.kind == 'source' and 'live' not in consumers:
+            if stream.kind == 'source' and 'live' not in consumers:
+                return None
+            if stream.kind == 'completed' and not consumers and evidence.get('completed_receipt_only') is not True:
                 return None
             count += len(consumers)
     except Exception:

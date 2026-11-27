@@ -98,7 +98,7 @@ def freeze_market_direct_start(host, *, root, tag, commit, day, active_session=F
     contracts, component = host.release(root, tag, commit, previous)
     settings, config_hash = host.settings()
     authority = _read_authority(host, settings, root, day, active_session=active_session)
-    target_instance = host.empty_target(settings)
+    target_instance = host.target_instance(settings, authority)
     new = _target_bindings(previous, root, tag, commit, contracts)
     plan = {
         "kind": _KIND, "registry_sha256": preimage,
@@ -170,6 +170,10 @@ def apply_market_direct_start(host, plan, *, resume=False):
             _write(pointer, {"schema_version": 1, "kind": _KIND, "plan_sha256": plan["plan_sha256"], "phase": value})
 
         if not bound:
+            if "retained_tick" in authority:
+                if phase in (None, "parking"):
+                    persist("parking")
+                host.prepare_retained_scope(old, plan, settings, attempt)
             with host.guards_for_direct_start(new, settings):
                 if active_session:
                     require(host.active_authority(settings, root, day) == authority,
@@ -319,6 +323,9 @@ class MarketDirectStartHost(MarketCohortHost):
                 require(not client.exists(*keys), "MARKET_DIRECT_START_ACTIVE_ORIGINALS_PRESENT")
         return {"subscriptions": subscriptions, "sessions_sha256": digest(windows), "phases": phases,
                 "mode": _ACTIVE_SESSION, "window_end": min(future_edges).isoformat()}
+
+    def target_instance(self, settings, authority):
+        return self.empty_target(settings)
 
     def empty_target(self, settings):
         database, canonical = self._storage(settings)
@@ -503,11 +510,14 @@ class MarketDirectStartHost(MarketCohortHost):
                 and _read_authority(self, settings, root, date.fromisoformat(plan["day"]),
                                     active_session=authority.get("mode") == _ACTIVE_SESSION) == authority,
                 "MARKET_DIRECT_START_AUTHORITY_DRIFT")
-        with _redis(settings["REDIS_URL"]) as client:
-            read_staged_observations(client, **self._target_arguments(plan, settings))
+        self.verify_staged(plan, settings)
         for name in CALENDARS:
             if new.services[name].enabled:
                 BootstrapBackend()._assert_recovery_calendar_safe(plistlib.loads(self._plist(new.services[name])))
+
+    def verify_staged(self, plan, settings):
+        with _redis(settings["REDIS_URL"]) as client:
+            read_staged_observations(client, **self._target_arguments(plan, settings))
 
     def start_new(self, plan, *, verify_running_only):
         new = registry(plan["new"])
@@ -671,7 +681,9 @@ def main(argv=None):
     plan_parser.add_argument("--tag", required=True)
     plan_parser.add_argument("--commit", required=True)
     plan_parser.add_argument("--trading-day", required=True, type=date.fromisoformat)
-    plan_parser.add_argument("--active-session", action="store_true")
+    mode = plan_parser.add_mutually_exclusive_group()
+    mode.add_argument("--active-session", action="store_true")
+    mode.add_argument("--preserve-tick-journal", action="store_true")
     apply_parser = sub.add_parser("apply")
     apply_parser.add_argument("--plan", required=True, type=Path)
     apply_parser.add_argument("--resume", action="store_true")
@@ -684,20 +696,31 @@ def main(argv=None):
         require(sys.platform == "darwin", "MARKET_DIRECT_START_MACOS_REQUIRED")
         host = MarketDirectStartHost()
         if args.mode == "plan":
+            if args.preserve_tick_journal:
+                from app.runtime_market_scope_cutover import JournalPreservingMarketStartHost
+
+                host = JournalPreservingMarketStartHost()
             result = freeze_market_direct_start(host, root=args.candidate_root, tag=args.tag,
                                                 commit=args.commit, day=args.trading_day, active_session=args.active_session)
-        elif args.mode == "read":
-            _, plan = _resolution_source(args.plan)
-            result = read_market_direct_start(host, plan)
-        elif args.mode == "cancel-uncommitted":
-            _, plan = _resolution_source(args.plan)
-            result = cancel_uncommitted_market_direct_start(host, plan)
         else:
             _, plan = _resolution_source(args.plan)
-            require(not Path(_candidate(plan).root).is_relative_to("/Volumes")
-                    or os.environ.get("GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD") == "1",
-                    "MARKET_DIRECT_START_EXTERNAL_VOLUME_REQUIRED")
-            result = apply_market_direct_start(host, plan, resume=args.resume)
+            _validate_plan(plan)
+            retained = plan["authority"].get("retained_tick")
+            if retained is not None:
+                from app.runtime_market_scope_cutover import JournalPreservingMarketStartHost
+
+                host = JournalPreservingMarketStartHost(retained)
+            if args.mode == "read":
+                result = read_market_direct_start(host, plan)
+                if retained is not None and result["phase"] == "switched":
+                    result.update(host.verify_scope_api(plan))
+            elif args.mode == "cancel-uncommitted":
+                result = cancel_uncommitted_market_direct_start(host, plan)
+            else:
+                require(not Path(_candidate(plan).root).is_relative_to("/Volumes")
+                        or os.environ.get("GUIYI_ALLOW_EXTERNAL_VOLUME_LAUNCHD") == "1",
+                        "MARKET_DIRECT_START_EXTERNAL_VOLUME_REQUIRED")
+                result = apply_market_direct_start(host, plan, resume=args.resume)
     except Exception as exc:
         code = str(exc) if isinstance(exc, CohortError) else "MARKET_DIRECT_START_UNAVAILABLE"
         result = {"status": "blocked", "code": code if re.fullmatch(r"[A-Z][A-Z0-9_]{0,127}", code)
