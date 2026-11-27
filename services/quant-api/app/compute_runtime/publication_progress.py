@@ -34,7 +34,9 @@ class PublicationProgress:
                         scope.frequency, window.since.isoformat(), window.through.isoformat(), requests])
         self._fingerprint = _digest(key)
         self._root = root
-        self._path = root / "canonical-compute-progress.json"
+        # Retired windows belonged to a different ordered scope. Preserve its
+        # progress file and keep the 58-product scope independently resumable.
+        self._path = root / "canonical-compute-progress-v2.json"
 
     def guard(self):
         return _file_guard("canonical-compute.lock", root=self._root / "live-recovery-guards",

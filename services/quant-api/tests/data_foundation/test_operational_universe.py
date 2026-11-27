@@ -20,8 +20,8 @@ def _write_universe(tmp_path, values: tuple[str, ...]):
 def test_loads_exact_active_products_from_the_canonical_file() -> None:
     products = load_active_products()
 
-    assert len(products) == 60
-    assert len(set(products)) == 60
+    assert len(products) == 58
+    assert len(set(products)) == 58
     assert products[0] == "a"
     assert products[-1] == "zn"
 
@@ -47,7 +47,7 @@ def test_rejects_retired_products_in_the_active_universe(tmp_path) -> None:
 def test_operational_products_are_the_complete_active_universe() -> None:
     active = load_active_products()
 
-    assert len(active) == 60
+    assert len(active) == 58
     assert load_operational_products() == active
 
 

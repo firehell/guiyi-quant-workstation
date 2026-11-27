@@ -237,6 +237,9 @@ def compute_period(session, product, frequency, now):
 
 
 def build_home_projection(*, output_path=None, now=None):
+    from app.market_data.market_foundation_scope import formal_tick_requested
+    from app.services.newow_reference_mode import market_foundation_isolated
+
     products = load_operational_products()
     path = Path(output_path) if output_path is not None else Path(os.environ.get('GUIYI_HOME_PROJECTION_PATH', projection_path(canonical_root())))
     instant = now or (lambda: datetime.now(UTC))
@@ -249,7 +252,10 @@ def build_home_projection(*, output_path=None, now=None):
         from app.market_data.market_home_projection import market_home_response
         with SessionLocal() as session, readonly_transaction(session, timeout_seconds=120):
             return market_home_response(build_market_home_overview_service(session).snapshot()).model_dump(mode='json')
-    projection = HomeProjection(ProjectionStore(path), products, lambda: current_versions(products), compute, now=instant, overview=overview)
+    projection = HomeProjection(
+        ProjectionStore(path), products, lambda: current_versions(products), compute, now=instant, overview=overview,
+        enforce_overview_scope=formal_tick_requested() or market_foundation_isolated(),
+    )
     projection.source_scope = lambda: home_source_scope(instant())
     from .home_recovery import configure_delivery
     return configure_delivery(projection)

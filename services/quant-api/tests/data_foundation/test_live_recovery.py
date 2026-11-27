@@ -204,12 +204,12 @@ def test_worker_no_gap_does_not_instantiate_provider():
     worker._executor.shutdown(wait=True)
 
 
-def test_all_60_products_recover_afternoon_first_minute_and_all_derived_buckets():
+def test_operational_products_recover_afternoon_first_minute_and_all_derived_buckets():
     from app.market_data.live_recovery import LiveRecoveryRequest, recover_product
     from app.market_data.operational_universe import load_operational_products
 
     products = load_operational_products()
-    assert len(products) == 60
+    assert len(products) == 58
     redis = FakeRedis()
     store = RedisLiveStore(redis)
     day = date(2026, 9, 7)
@@ -245,7 +245,7 @@ def test_all_60_products_recover_afternoon_first_minute_and_all_derived_buckets(
     assert redis.published == []
 
 
-def test_monday_open_freezes_60_contracts_and_schedules_45_night_prefixes():
+def test_monday_open_freezes_operational_contracts_and_schedules_45_night_prefixes():
     """The normal foreground snapshot owns Monday recovery identity and sessions."""
     from app.market_data.live_market import LiveMarketService, RQDataLiveProvider
     from app.market_data.operational_universe import load_operational_products
@@ -273,7 +273,7 @@ def test_monday_open_freezes_60_contracts_and_schedules_45_night_prefixes():
             "zn",
         )
     )
-    assert len(products) == 60
+    assert len(products) == 58
     assert len(night_products) == 45
     assert night_products < set(products)
     contracts = {symbol: f"{symbol.upper()}2701" for symbol in products}
@@ -312,7 +312,7 @@ def test_monday_open_freezes_60_contracts_and_schedules_45_night_prefixes():
 
     snapshot = RedisLiveStore(fake_redis).subscriptions(trading_day)
     assert snapshot == contracts
-    assert len(worker.requests) == 60
+    assert len(worker.requests) == len(products)
     for request in worker.requests:
         assert dict(request.snapshot) == contracts
         assert request.contract == contracts[request.symbol]
@@ -326,7 +326,7 @@ def test_monday_open_freezes_60_contracts_and_schedules_45_night_prefixes():
 
 
 def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
-    """Catches replacing the 60/45 recovery chain with a schedule-only double."""
+    """Catches replacing the full operational recovery chain with a schedule-only double."""
     from app.market_data.live_market import LiveMarketService, RQDataLiveProvider
     from app.market_data.live_recovery import recover_product
     from app.market_data.operational_universe import load_operational_products
@@ -343,7 +343,7 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
             "zn",
         )
     )
-    assert len(products) == 60
+    assert len(products) == 58
     assert len(night_products) == 45
     trading_day = date(2026, 9, 14)
     prior_trading_day = date(2026, 9, 11)
@@ -529,7 +529,7 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
         assert service.poll(monday_open) is None
         snapshot = store.subscriptions(trading_day)
         assert snapshot == contracts
-        assert len(worker.batches[0]) == 60
+        assert len(worker.batches[0]) == len(products)
         open_night_targets = {
             request.symbol
             for request in worker.batches[0]
@@ -544,8 +544,8 @@ def test_monday_snapshot_recovers_through_real_session_adapter_store_and_read():
 
         later_cutoff = datetime(2026, 9, 14, 9, 15, 3, tzinfo=SHANGHAI)
         assert service.poll(later_cutoff) is None
-        assert len(worker.batches[1]) == 60
-        assert len(client.calls) == 105
+        assert len(worker.batches[1]) == len(products)
+        assert len(client.calls) == len(night_products) + len(products)
         assert all(
             start == end == trading_day and frequency == "1m"
             for _contract, start, end, frequency in client.calls

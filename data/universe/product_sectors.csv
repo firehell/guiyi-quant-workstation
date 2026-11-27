@@ -31,7 +31,6 @@ ni,镍,nonferrous
 oi,菜籽油,agriculture
 p,棕榈油,agriculture
 pb,铅,nonferrous
-pd,钯金,precious
 pf,短纤,chemical
 pg,液化石油气,energy
 pk,花生,agriculture
@@ -39,7 +38,6 @@ pl,丙烯,chemical
 pp,聚丙烯,chemical
 pr,瓶片,chemical
 ps,多晶硅,new_energy
-pt,铂金,precious
 px,对二甲苯,chemical
 rb,螺纹钢,steel
 rm,菜粕,agriculture

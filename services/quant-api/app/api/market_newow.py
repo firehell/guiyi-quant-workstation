@@ -284,6 +284,8 @@ def _enforce_product_frequency(request: Request, product: str, frequency: str) -
 )
 def newow_product_capabilities(request: Request) -> NewowProductCapabilitiesResponse | JSONResponse:
     """Return the single public scope used by clients for this staged release."""
+    if getattr(request.app.state, "market_foundation_reference_sessions", None) is not None:
+        return JSONResponse({"detail": {"code": "NEWOW_AFTER_MARKET_ONLY"}}, status_code=409)
     if getattr(request.state, "intraday_preview_products", None) is not None:
         batch = getattr(request.state, "intraday_preview_batch", False)
         single = batch and not request.state.intraday_preview_products <= INTRADAY_BATCH_PREVIEW_SYMBOLS

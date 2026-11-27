@@ -29,6 +29,25 @@ def test_get_never_computes_missing_or_restarts(tmp_path):
     assert restarted.read()['items'][0]['projection_status'] == 'ready'
 
 
+@pytest.mark.parametrize('active_count', [1, 3])
+def test_public_home_hides_prior_scope_without_rewriting_it(tmp_path, active_count):
+    service, versions, _ = fixture(tmp_path)
+    service.build()
+    old = service.store.load()
+    old['overview'] = {
+        'active_count': active_count, 'participant_count': 1, 'items': [{'symbol': 'pd'}],
+    }
+    service.store.save(old)
+    before = service.store.path.read_bytes()
+    result = HomeProjection(
+        service.store, ('rb',), lambda: dict(versions), enforce_overview_scope=True,
+    ).read()
+    assert result['overview'] is None
+    assert result['overview_status'] == 'missing'
+    assert result['items'][0]['product'] == 'rb'
+    assert service.store.path.read_bytes() == before
+
+
 def test_changed_period_only_and_same_version_is_noop(tmp_path):
     service, versions, calls = fixture(tmp_path)
     service.build()

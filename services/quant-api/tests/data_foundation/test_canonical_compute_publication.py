@@ -187,6 +187,8 @@ def test_committed_archive_drives_only_changed_scopes(
     # the accepted result/cursor outside the Market and application trees.
     archive = tmp_path / "formal-archive"
     archive.mkdir(mode=0o700)
+    previous = archive / "canonical-compute-progress.json"
+    previous.write_bytes(b'{"schema":1,"scope":"former ordered scope with PD/PT","rows":{}}')
     (archive / "canonical-compute-windows.json").write_text(json.dumps([
         {"product": "jm", "contract": row.scope.physical_contract, "frequency": "1d",
          "features": ["ema10"], "since": row.since.isoformat(), "through": row.through.isoformat()}
@@ -211,6 +213,7 @@ def test_committed_archive_drives_only_changed_scopes(
         assert service.poll(archive, None) == "waiting_archive"
         first_path = formal_receipt(DAY)
         assert service.poll(archive, current()) == "current"
+    assert previous.read_bytes() == b'{"schema":1,"scope":"former ordered scope with PD/PT","rows":{}}'
 
     with CanonicalPublicationCompute(engine, root, (old, other), now=lambda: clock[0], archive_root=archive) as restarted:
         prior = restarted.latest_result(old)
@@ -243,3 +246,16 @@ def test_committed_archive_drives_only_changed_scopes(
         assert recovered.latest_result(old) == (revised,)
         assert recovered.latest_result(other) == other_prior
         assert recovered.accept(latest, DAY) == ()
+
+
+def test_formal_compute_ignores_retired_subscriptions_without_suppressing_active_ones(tmp_path):
+    rows = [
+        {"product": product, "contract": contract, "frequency": "1m", "features": ["ema"],
+         "since": "2026-11-25", "through": "2026-11-27"}
+        for product, contract in (("rb", "RB2701"), (" PD ", "PD2701"), ("pt", "PT2701"))
+    ]
+    path = tmp_path / "canonical-compute-windows.json"
+    path.write_text(json.dumps(rows), encoding="utf-8")
+    assert [window.scope.product for window in configured_windows(tmp_path)] == ["rb"]
+    path.write_text(json.dumps(rows[1:]), encoding="utf-8")
+    assert configured_windows(tmp_path) == ()

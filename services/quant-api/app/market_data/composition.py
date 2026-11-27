@@ -367,8 +367,11 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
     rqdata = None if tick else RQDataClient()
     from app.market_data.day_preparation import build_day_metadata_preparation
     products = load_operational_products()
+    previous_path = Path.home() / "Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json"
     preparation = build_day_metadata_preparation(
-        SessionLocal, state_path=Path.home() / "Library/Application Support/GuiyiQuant/market-day-metadata-preparation.json",
+        SessionLocal,
+        state_path=previous_path.with_name("market-day-metadata-preparation-tick.json") if tick else previous_path,
+        previous_state_path=previous_path if tick else None,
         products=products, canonical_root=canonical_root(),
     )
     market_data = build_market_data_service(session)
@@ -388,7 +391,7 @@ def build_live_market_service(session: Session, *, _feed: bool = False, tick_dis
     # The Market computation process owns history preparation; the dedicated
     # quote-feed process never downloads or publishes historical partitions.
     history_preparation = None if _feed else ContractPreparationWorker(build_contract_preparation(
-        SessionLocal, canonical_root=canonical_root(), products=products,
+        SessionLocal, canonical_root=canonical_root(), products=products, formal_tick=tick,
     ))
     common_kwargs: dict[str, Any] = dict(
         history_preparation=history_preparation,

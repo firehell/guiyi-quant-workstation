@@ -483,6 +483,10 @@ class CohortHost(FaultRecoveryHost):
         ):
             if service not in old.services or not old.services[service].enabled:
                 continue
+            if service == "reference-worker" and "market_source_handover" in plan:
+                # The target receipt-only role is checked on the staged Tick
+                # source before CAS. The old Redis serves the forward role.
+                continue
             env = dict(os.environ)
             b = new.services[service]
             previous_payload = plistlib.loads(
@@ -759,7 +763,12 @@ class CohortHost(FaultRecoveryHost):
             os.close(fd)
 
     def preserve(self, plan, attempt):
+        from app.market_data.after_market_limits import MAX_HISTORY_BYTES
+
         old, new = registry(plan["old"]), registry(plan["new"])
+        market_source = "market_source_handover" in plan
+        source = Path(old.services["after-market"].root) / ".run/after-market-status.json"
+        history_path = source.with_name("after-market-history.json")
         require(self.protected(old) == plan["protected"], "COHORT_PROTECTED_FACT_DRIFT")
         evidence = attempt / "originals"
         evidence.mkdir(mode=0o700)
@@ -773,6 +782,8 @@ class CohortHost(FaultRecoveryHost):
         )
         sources = {Path(name) for name in plan["protected"]["files"]}
         sources.update(stable)
+        if market_source:
+            sources.update((source, history_path))
         for service, name in (
             ("weekly-audit", "weekly-audit-status.json"),
             ("after-market", "late-provider-recovery-status.json"),
@@ -788,7 +799,7 @@ class CohortHost(FaultRecoveryHost):
             for path in sorted(sources):
                 row = {"source": str(path), "present": os.path.lexists(path)}
                 if row["present"]:
-                    raw = self.bytes(path)
+                    raw = self.bytes(path, limit=MAX_HISTORY_BYTES) if path == history_path else self.bytes(path)
                     digest = sha256(raw).hexdigest()
                     expected = plan["protected"]["files"].get(str(path))
                     require(
@@ -823,17 +834,16 @@ class CohortHost(FaultRecoveryHost):
         )
         from app.market_data.operational_universe import load_operational_products
 
-        products = load_operational_products()
-        source = (
-            Path(old.services["after-market"].root) / ".run/after-market-status.json"
-        )
+        products = self._source_products if market_source else load_operational_products()
         history = read_history(
-            source.with_name("after-market-history.json"),
+            history_path,
             products=products,
             now=self.now(),
         )
         if source.exists():
             raw = self.bytes(source)
+            if market_source:
+                require(raw == captured.get(source), "COHORT_ORIGINAL_DRIFT")
             public = public_after_market_status(json.loads(raw))
             require(
                 public and public.get("current_run") is None,
@@ -872,9 +882,14 @@ class CohortHost(FaultRecoveryHost):
             not (target_root / ".run/after-market-status.json").exists(),
             "COHORT_TARGET_STATUS_PRESENT",
         )
-        if history and (target_root / ".run/after-market-history.json").exists():
+        target_history = target_root / ".run/after-market-history.json"
+        if market_source:
+            require(not os.path.lexists(target_history), "COHORT_TARGET_HISTORY_CONFLICT")
+            # The old archive covers the predecessor universe. Its status and
+            # receipt are retained in originals, outside successor authority.
+        elif history and target_history.exists():
             existing = read_history(
-                target_root / ".run/after-market-history.json",
+                target_history,
                 products=products,
                 now=self.now(),
             )
@@ -887,7 +902,7 @@ class CohortHost(FaultRecoveryHost):
                 "COHORT_TARGET_HISTORY_CONFLICT",
             )
         elif history:
-            publish_history(target_root / ".run/after-market-history.json", history)
+            publish_history(target_history, history)
         # Weekly status is natural evidence bound to its original release.
         # It is retained only in originals, never promoted into current status.
         require(
@@ -897,7 +912,7 @@ class CohortHost(FaultRecoveryHost):
         # Late-provider runs are separate one-shot control state (schema/runs),
         # not new-version natural acceptance. Preserve consumed and pending runs
         # byte-for-byte after the existing reader proves cross-root compatibility.
-        from app.market_data.late_provider_recovery import _read as read_late_state
+        from app.market_data.late_provider_recovery import _read as read_late_state, _unresolved_archive_commit
 
         late_source = (
             Path(old.services["after-market"].root)
@@ -907,12 +922,18 @@ class CohortHost(FaultRecoveryHost):
         require(not os.path.lexists(late_target), "COHORT_TARGET_LATE_STATE_PRESENT")
         if late_source in captured:
             raw = captured[late_source]
+            late_state = read_late_state(late_source)
             require(
-                read_late_state(late_source) == json.loads(raw),
+                late_state == json.loads(raw),
                 "COHORT_LATE_STATE_DRIFT",
             )
-            self._private_original(late_target, raw)
-            self._sync_directory(late_target.parent)
+            if market_source:
+                require(not _unresolved_archive_commit(late_state)
+                        and all(row["state"] != "claimed" for row in late_state["runs"].values()),
+                        "COHORT_LATE_STATE_READBACK_REQUIRED")
+            else:
+                self._private_original(late_target, raw)
+                self._sync_directory(late_target.parent)
         self._sync_directory(attempt)
         return {
             "original_files": sum(row["present"] for row in index),

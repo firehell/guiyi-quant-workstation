@@ -8,6 +8,8 @@ from guiyi_quant.compute import FeatureRequest
 
 from app.market_data.after_market_history import _bytes
 from app.market_data.market_archive import RECEIPT_DIRECTORY
+from app.market_data.operational_universe import load_operational_products
+from app.market_data.product_retirement import is_retired, load_retired_products
 
 from .artifact import require_locked_core
 from .canonical_publications import CanonicalPublicationCompute, CanonicalResearchWindow
@@ -22,20 +24,30 @@ def configured_windows(root):
     if not isinstance(rows, list) or not 1 <= len(rows) <= 32:
         raise ValueError("COMPUTE_CANONICAL_SUBSCRIPTION_INVALID")
     windows = []
+    operational = frozenset(load_operational_products())
+    retired = load_retired_products()
     try:
         for row in rows:
-            if set(row) != {"product", "contract", "frequency", "features", "since", "through"}:
+            if not isinstance(row, dict) or set(row) != {"product", "contract", "frequency", "features", "since", "through"}:
+                raise ValueError
+            product = row["product"]
+            if not isinstance(product, str):
+                raise ValueError
+            if is_retired(product, retired=retired):
+                continue
+            if product not in operational:
                 raise ValueError
             contract = row["contract"]
             features = row["features"]
             if (not isinstance(features, list) or not 1 <= len(features) <= 16
                     or any(not isinstance(name, str) or not name for name in features)):
                 raise ValueError
-            windows.append(CanonicalResearchWindow(
-                ComputeScope("canonical_research", row["product"], contract, f"contract:{contract}",
+            window = CanonicalResearchWindow(
+                ComputeScope("canonical_research", product, contract, f"contract:{contract}",
                              row["frequency"], tuple(FeatureRequest(name) for name in features)),
                 date.fromisoformat(row["since"]), date.fromisoformat(row["through"]),
-            ))
+            )
+            windows.append(window)
     except (KeyError, TypeError, ValueError):
         raise ValueError("COMPUTE_CANONICAL_SUBSCRIPTION_INVALID") from None
     return tuple(windows)

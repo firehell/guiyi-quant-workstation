@@ -409,7 +409,7 @@ onUnmounted(() => chartSession.dispose())
           :options="productOptions"
           :selected-symbol="explicitIdentity?.symbol ?? null"
           :status="productSelectorStatus"
-          label="搜索60品种"
+          :label="marketFoundation ? '搜索品种' : '搜索60品种'"
           @select="selectProduct"
         />
       </template>

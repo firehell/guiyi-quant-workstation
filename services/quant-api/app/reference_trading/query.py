@@ -91,9 +91,16 @@ def _instant(value: object) -> datetime | None:
 
 
 class HistoricalReferenceQuery:
-    def __init__(self, session_factory) -> None:
+    def __init__(self, session_factory, *, market_scope: bool = False) -> None:
         self._factory = session_factory
         self._repository = ReferenceRepository(session_factory)
+        self._market_scope = market_scope
+
+    def _require_market_product(self, product: str) -> None:
+        if self._market_scope:
+            from app.market_data.product_retirement import assert_not_retired
+
+            assert_not_retired(product)
 
     @staticmethod
     def capabilities() -> dict[str, object]:
@@ -141,6 +148,7 @@ class HistoricalReferenceQuery:
         self, *, strategy: str, product: str, frequency: str,
         mode: str = "historical_replay",
     ) -> list[dict[str, object]]:
+        self._require_market_product(product)
         if mode not in {"historical_replay", "forward_observation"}:
             raise QueryConflict("MODE_NOT_AVAILABLE")
         if (
@@ -177,6 +185,7 @@ class HistoricalReferenceQuery:
 
     def stream_for(self, identity: StreamIdentity) -> dict[str, object] | None:
         """Look up the exact registered identity without enumerating sibling versions."""
+        self._require_market_product(identity.product)
         with self._factory() as session, readonly_transaction(session, timeout_seconds=30):
             row = session.get(ReferenceStream, identity.stream_id)
             if row is None:
@@ -214,6 +223,7 @@ class HistoricalReferenceQuery:
         row = session.get(ReferenceStream, stream_id)
         if row is None:
             raise QueryConflict("STREAM_NOT_FOUND")
+        self._require_market_product(row.product)
         if not self._registered(row):
             from app.reference_trading.formula_transition import retired_proof
             if retired_proof(session, row) is None:

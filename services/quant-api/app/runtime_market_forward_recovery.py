@@ -24,7 +24,7 @@ from app.runtime_cohort import (
 from app.runtime_cohort_errors import CohortError
 from app.runtime_deployment import assert_no_unknown_deployment, owner_process_matches
 from app.runtime_handover import HandoverError, _read, _write, cancel_drain, deployment_lock, read_service_state
-from app.runtime_market_cohort_host import _ACCOUNTS, _account_lock, _private, _redis
+from app.runtime_market_cohort_host import _ACCOUNTS, _account_lock, _bound_operational_products, _private, _redis
 from app.runtime_market_source_handover import old_observation_snapshot, redis_instance, verify_preserved_observations
 
 
@@ -143,11 +143,12 @@ def _verify_original(host, plan, state, new):
     require(digest({"old_config": sha256(raw).hexdigest(), "target_config": host._target_config_sha,
                     "journals": journals}) == intent.get("host_sha256"),
             "MARKET_SOURCE_FORWARD_PREIMAGE_UNPROVEN")
+    host._source_products = _bound_operational_products(registry(plan["old"]))
     settings = host._active_target(plan)
     args = host._target_arguments(plan, settings)
     old_day = date.fromisoformat(intent["old_day"])
-    _, _, _, windows, _, _ = host._authority(host._old_settings, old_day)
-    terminals = host._terminals(windows, args["subscriptions"], "1m")
+    _, _, _, windows, _, _ = host._authority(host._old_settings, old_day, host._source_products)
+    terminals = host._terminals(windows, host._source_products, "1m")
     for binding in new.services.values():
         host.verify_release(Path(binding.root), binding.tag, binding.commit)
     host.check_schema_compatibility(plan)

@@ -474,9 +474,14 @@ class MarketDataService:
         trading_day: date,
     ) -> tuple[SessionWindow, ...]:
         """Read the authoritative Catalog TradingSession windows for one day."""
-
         try:
             assert_not_retired(symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
+        return self._catalog_session_windows(symbol, trading_day)
+
+    def _catalog_session_windows(self, symbol: str, trading_day: date) -> tuple[SessionWindow, ...]:
+        try:
             exchange = self.catalog.exchange_for_symbol(symbol)
             windows = session_windows_for_trading_day(
                 self.catalog.session,
@@ -484,8 +489,6 @@ class MarketDataService:
                 symbol=symbol,
                 trading_day=trading_day,
             )
-        except ProductRetiredError as exc:
-            raise MarketDataError("PRODUCT_RETIRED") from exc
         except (CatalogError, SessionClockError) as exc:
             raise MarketDataError(exc.code) from exc
         if not windows:
@@ -2719,6 +2722,10 @@ class MarketDataService:
 
     def latest_dominant_segment(self, symbol: str) -> DominantContractSegmentSummary:
         """返回最新连续 rank-1 合约区段；日历或映射缺口时整体失败。"""
+        try:
+            assert_not_retired(symbol)
+        except ProductRetiredError as exc:
+            raise MarketDataError("PRODUCT_RETIRED") from exc
         mappings = self.catalog.main_map_before(symbol, None)
         if not mappings:
             raise MarketDataError("DOMINANT_CONTEXT_MISSING")
@@ -2786,6 +2793,11 @@ class MarketDataService:
             assert_not_retired(normalized_symbol)
         except ProductRetiredError as exc:
             raise MarketDataError("PRODUCT_RETIRED") from exc
+        return self._catalog_dominant_segment_for_day(normalized_symbol, trading_day)
+
+    def _catalog_dominant_segment_for_day(
+        self, normalized_symbol: str, trading_day: date,
+    ) -> DominantContractSegmentSummary:
         segments = self._authoritative_rank1_segments(
             normalized_symbol,
             trading_day,

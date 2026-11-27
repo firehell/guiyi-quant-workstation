@@ -641,8 +641,10 @@ def build_historical_refresh(session_factory, *, state_path, publication_product
     from app.reference_trading.composition import open_historical_reference_components
     from app.market_data.operational_universe import load_operational_products, load_active_products
     from app.reference_trading.newow_bootstrap import validate_product_scope
-    products = validate_product_scope(load_operational_products(), load_active_products())
-    if publication_products is not None:
+    if publication_products is None:
+        products = validate_product_scope(load_operational_products(), load_active_products())
+    else:
+        products = load_operational_products()
         selected = frozenset(publication_products)
         if not selected or not selected <= set(products):
             raise ValueError("MARKET_ARCHIVE_SCOPE_INVALID")

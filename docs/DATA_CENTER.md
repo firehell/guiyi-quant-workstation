@@ -214,16 +214,15 @@ provider 分钟线 `1m`。每完成一个 1m dataset-month，立即生成四个�
 
 `product_window_starts.csv` 中的 `exchange_listing_start` 表示独立核实的挂牌日。跨挂牌日的严格
 `actual_dominant` 周线区间保留原时间窗，以此日期约束 Session 的交易日身份，再按 Catalog 验证挂牌后的覆盖。
-PD、PT 的挂牌日为 2025-11-27，Catalog 首批物理合约上市日与挂牌公告一致。[挂牌公告](https://www.gzns.gov.cn/gznsjr/gkmlpt/content/10/10570/post_10570927.html)
 
-18:05 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational 60)` 判断当天是否为交易日。
+18:05 Runtime 先以只依赖 Calendar 的 `latest_metadata_day(operational products)` 判断当天是否为交易日。
 该判断要求每个相关交易所存在当天精确的 `provider=rqdata` Calendar 行；缺行或非权威行返回
 `TRADING_CALENDAR_MISSING`，以 `attempts=0` 终止并保留失败事实，不能回退到昨天后伪装成
 `NON_TRADING_DAY`。相关交易所解析出的维护日期不一致时返回 `TRADING_CALENDAR_CONFLICT`，不能用
 最早日期跳过仍开市的交易所。只有所有相关交易所的权威结果一致且当天明确为非交易日时才允许跳过。
 交易日再由持 maintenance lock 的
 `HistoricalDataManager.update` 同步 metadata 后规划 coverage；不得先用可能尚未同步的当天
-TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备 operational 60 品种：
+TradingSession 判定 `NON_TRADING_DAY`。受限 metadata 同步准备运行名单中的品种：
 Calendar 覆盖当天至 ISO 周日或下一交易日（取较晚者），TradingSession 精确替换当天与下一交易日，
 MainContractMap 仍只发布当天 rank1。
 共享 Calendar 的夜盘字段只用同交易所、同交易日的 Session 正证据；不得把某日夜盘扩散到整个
@@ -413,7 +412,7 @@ Lua 隔离不是错误回滚保证；结果未知后仅只读核对五根及水�
 具体命令和隔离测试入口只见 `TESTING.md`。
 
 Newow 默认日线由独立只读解析取得最近完整收盘快照，并显式区分目标交易日与实际可用交易日。
-18:05 盘后任务继续负责既有 operational 60 增量与当日映射发布；
+18:05 盘后任务继续负责运行名单的增量与当日映射发布；
 `canonical_updated` 和盘后任务 passed 只说明各自原有阶段，不直接证明牛哇三策略全部可读。
 若当日映射尚未发布，Newow 仅允许验证并显示前一完成日，标记当日待更新；
 其他输入质量或身份冲突继续失败关闭。此机制不引入盘中 RQData 抓取或额外重试。
@@ -841,8 +840,8 @@ absent，其他退出码或输出均为 unknown。部分安装失败先逆序停
 不得回滚已启用 Runtime，也不得返回可被误读为“安装未发生”的普通失败；安装器成功退出并报告
 `cleanup=unknown retry_safe=false` 与 `do not retry`，后续只能只读核实清理状态。
 
-active universe 为 `data/universe/active_products.txt` 的 60 品种；退役精确名单为
-`data/universe/retired_products.txt`，与 active 互斥。
+V2 研究和运行名单各有 58 个品种，分别使用 `active_products.txt` 与 `operational_products.txt`。PD（钯金）和
+PT（铂金）登记在 `retired_products.txt`，与 active 互斥。历史 Canonical、Catalog 和原归档结果保留。
 
 ## 批量 Session 读取的可信边界
 
@@ -890,7 +889,7 @@ Market Live 的既有前台 poll（包括 CLOSED tick）在开始新交易日订
 唯一 trading_day，夜盘使用 Session 所属交易日，不使用本机自然日期推断主力。
 独立Feed在旧reader已验证退役后，必须先运行该准备hook，再进入CLOSED_CLEANED或旧日清理fence；
 这不重建旧订阅、不接收旧buffer。退役结果未知仍先阻断，metadata失败不得标记Feed ready。
-范围固定为 operational 60；已经完整的 Catalog rank1、物理合约身份和 Session 不开启 provider。
+范围固定为运行名单；已经完整的 Catalog rank1、物理合约身份和 Session 不开启 provider。
 缺失时，在全局 maintenance lease 内先持久化单次 capture 意图，再调用
 MetadataSynchronizer.capture_current_day，冻结 snapshot 和经过共享 exact-diff 校验的 plan，
 随后复核 plan 并使用 preserve_equal 的共享 writer 提交。只允许 equal/insert，冲突 fail-closed；
@@ -908,7 +907,7 @@ fsync 后才替换 index。当前选中日验证 archive hash、大小、Catalog
 不会因为重启、换 release、已有 Catalog 行或再次 tick 自动重试。维护 lease 忙且尚未捕获 source
 不消耗 attempt。缓存已验证 ready 的全部相关事实 fingerprint；任何 owner、Calendar、Session 或
 合约身份变化触发重新验证。新日 Redis 订阅只能使用已发布 Catalog rank1，并核对已有 Redis 冻结映射，
-冲突禁止订阅。metadata 的 60 品种范围不扩大实际 TRADING phase 的 quote channels。
+冲突禁止订阅。metadata 的运行名单范围不扩大实际 TRADING phase 的 quote channels。
 
 `build_day_metadata_preparation` 也提供正常单次调用：`tick(now, phase="plan")` 只捕获并冻结计划；
 `tick(now, phase="apply", expected_snapshot_sha256=..., expected_plan_sha256=...)` 必须匹配该 durable

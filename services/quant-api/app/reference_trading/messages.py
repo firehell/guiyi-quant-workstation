@@ -27,6 +27,7 @@ def read_messages(
     frequency: str | None = None,
     limit: int = 500,
     observed_before: datetime | None = None,
+    market_products: tuple[str, ...] | None = None,
 ):
     if (
         since > through
@@ -104,6 +105,10 @@ def read_messages(
         )
     if frequency:
         scope_statement = scope_statement.where(ReferenceStream.frequency == frequency)
+    if market_products is not None:
+        allowed_products = ReferenceStream.product.in_(market_products)
+        statement = statement.where(allowed_products)
+        scope_statement = scope_statement.where(allowed_products)
     items = []
     point_count = 0
     with factory() as session, readonly_transaction(session, timeout_seconds=20):

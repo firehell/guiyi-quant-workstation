@@ -2796,7 +2796,7 @@ def _listing_market(session, tmp_path, symbol, *, night=False):
     return MarketDataService(MarketCatalog(session, tmp_path), CanonicalMonthlyStore(tmp_path))
 
 
-@pytest.mark.parametrize("symbol", ["pd", "pt"])
+@pytest.mark.parametrize("symbol", ["ps", "lc"])
 def test_reference_listing_lower_bound_does_not_require_prelisting_session(session, tmp_path, symbol):
     from types import SimpleNamespace
     from app.market_data.subing_reference import SubingReferenceQuery, SubingReferenceService
@@ -2811,7 +2811,7 @@ def test_reference_listing_lower_bound_does_not_require_prelisting_session(sessi
     ) == (date(2025, 11, 27), date(2025, 11, 27), datetime(2025, 11, 27, 7, tzinfo=UTC))
 
 
-@pytest.mark.parametrize("symbol", ["pd", "pt"])
+@pytest.mark.parametrize("symbol", ["ps", "lc"])
 @pytest.mark.parametrize("fault,code", [
     (None, None),
     ("next_week_unopened", None),
@@ -2823,11 +2823,16 @@ def test_reference_listing_lower_bound_does_not_require_prelisting_session(sessi
     ("prelisting_map", "MAIN_CONTRACT_MAP_CONFLICT"),
     ("week", "MAPPED_CONTRACT_DATASET_MISSING"),
 ])
-def test_weekly_actual_range_uses_verified_listing_boundary(session, tmp_path, symbol, fault, code):
+def test_weekly_actual_range_uses_verified_listing_boundary(session, tmp_path, monkeypatch, symbol, fault, code):
     from sqlalchemy import delete
+    from app.market_data import market_data_service
 
     market = _listing_market(session, tmp_path, symbol)
     listing = date(2025, 11, 27)
+    config = tmp_path / "data/universe/product_window_starts.csv"
+    config.parent.mkdir(parents=True)
+    config.write_text(f"product,window_start,note\n{symbol},{listing},exchange_listing_start\n")
+    monkeypatch.setattr(market_data_service, "PROJECT_ROOT", tmp_path)
     week_end = date(2025, 11, 28)
     contract = f"{symbol.upper()}2606"
     session.add(Contract(
@@ -2881,16 +2886,16 @@ def test_weekly_actual_range_uses_verified_listing_boundary(session, tmp_path, s
 
 
 def test_session_lower_bound_keeps_first_trading_days_prior_natural_night(session, tmp_path):
-    market = _listing_market(session, tmp_path, "pd", night=True)
+    market = _listing_market(session, tmp_path, "ps", night=True)
     listing = date(2025, 11, 27)
     windows = market.catalog.session_windows_overlapping_window(
-        "pd", datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
+        "ps", datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
         datetime(2025, 11, 26, 14, tzinfo=UTC), earliest=listing, latest=listing,
     )
     assert len(windows) == 1 and windows[0][0] == listing
     assert windows[0][1][0].start == datetime(2025, 11, 26, 13, tzinfo=UTC)
     assert market.completed_trading_days(
-        symbol="pd", start=datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
+        symbol="ps", start=datetime(2025, 11, 26, 13, 30, tzinfo=UTC),
         as_of=datetime(2025, 11, 26, 14, tzinfo=UTC), latest=listing, calendar_since=listing,
     ) == ()  # The first trading day has not closed yet.
 
@@ -2903,10 +2908,10 @@ def test_session_lower_bound_keeps_first_trading_days_prior_natural_night(sessio
 def test_listing_lower_bound_still_rejects_required_missing_facts(session, tmp_path, fault, code):
     from sqlalchemy import delete
 
-    market = _listing_market(session, tmp_path, "pt", night=fault == "night_anchor")
+    market = _listing_market(session, tmp_path, "lc", night=fault == "night_anchor")
     if fault == "session":
         session.execute(update(TradingSession).where(
-            TradingSession.instrument_symbol == "pt").values(is_active=False))
+            TradingSession.instrument_symbol == "lc").values(is_active=False))
     else:
         day = date(2025, 11, 26 if fault == "night_anchor" else 27)
         session.execute(delete(TradingCalendar).where(
@@ -2914,7 +2919,7 @@ def test_listing_lower_bound_still_rejects_required_missing_facts(session, tmp_p
     session.commit()
     with pytest.raises(MarketDataError, match=code):
         market.completed_trading_days(
-            symbol="pt", start=datetime(2025, 11, 26, 0, tzinfo=UTC),
+            symbol="lc", start=datetime(2025, 11, 26, 0, tzinfo=UTC),
             as_of=datetime(2025, 11, 28, 2, tzinfo=UTC), latest=date(2025, 11, 28),
             calendar_since=date(2025, 11, 27),
         )
@@ -3218,15 +3223,15 @@ def test_daily_snapshot_cache_keeps_quality_union_and_window_distinct(monkeypatc
 
 
 def test_market_session_batch_matches_day_authority_and_does_not_survive_updates(session, tmp_path):
-    market = _listing_market(session, tmp_path, 'pd')
+    market = _listing_market(session, tmp_path, 'ps')
     start = datetime(2025, 11, 27, 1, tzinfo=UTC)
     end = datetime(2025, 11, 28, 7, tzinfo=UTC)
-    values = market.session_windows_overlapping_window(symbol='pd', start=start, end=end)
-    assert tuple(day for day, _ in values) == market.trading_days_overlapping_window(symbol='pd', start=start, end=end)
-    assert all(windows == market.session_windows(symbol='pd', trading_day=day) for day, windows in values)
-    session.execute(update(TradingSession).where(TradingSession.instrument_symbol == 'pd').values(end_time=time(14)))
+    values = market.session_windows_overlapping_window(symbol='ps', start=start, end=end)
+    assert tuple(day for day, _ in values) == market.trading_days_overlapping_window(symbol='ps', start=start, end=end)
+    assert all(windows == market.session_windows(symbol='ps', trading_day=day) for day, windows in values)
+    session.execute(update(TradingSession).where(TradingSession.instrument_symbol == 'ps').values(end_time=time(14)))
     session.commit()
-    changed = market.session_windows_overlapping_window(symbol='pd', start=start, end=end)
+    changed = market.session_windows_overlapping_window(symbol='ps', start=start, end=end)
     assert changed != values
     assert all(windows[-1].end.hour == 6 for _, windows in changed)
 

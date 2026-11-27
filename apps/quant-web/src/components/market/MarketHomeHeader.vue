@@ -7,6 +7,7 @@ import type { ProductOption } from '@/utils/productSearch'
 type HomeView = 'newow' | 'htdy' | 'subing' | 'free'
 defineProps<{ options: ProductOption[]; directoryStatus: 'ready' | 'loading' | 'error'; loading: boolean; activeTab: 'market' | 'messages' | 'simulation' }>()
 const emit = defineEmits<{ openView: [view: HomeView, symbol: string]; refresh: [] }>()
+const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
 
 function openProduct(option: ProductOption) {
   emit('openView', 'newow', option.symbol)
@@ -19,7 +20,7 @@ function openProduct(option: ProductOption) {
       <ProductSelector
         :options="options"
         :status="options.length > 0 ? 'ready' : directoryStatus"
-        label="搜索60品种"
+        :label="marketFoundation ? '搜索品种' : '搜索60品种'"
         @select="openProduct"
       />
       <span v-if="directoryStatus === 'error' && options.length" role="alert">目录刷新失败，已保留上次选项。</span>

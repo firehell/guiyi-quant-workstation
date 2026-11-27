@@ -26,6 +26,7 @@ from app.db.readonly import readonly_transaction
 from app.db.url import normalize_database_url
 from app.market_data.aggregation import expected_intraday_ends
 from app.market_data.catalog import MarketCatalog
+from app.market_data.day_preparation import DayMetadataPreparation, metadata_preparation_binding
 from app.market_data.market_archive import current_retained_receipt, reference_catalog_revision
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_foundation_scope import (
@@ -33,7 +34,8 @@ from app.market_data.market_foundation_scope import (
 )
 from app.market_data.market_phase import MarketPhase, MarketPhaseResolver
 from app.market_data.observation_stream import ObservationStream
-from app.market_data.operational_universe import load_operational_products
+from app.market_data.operational_universe import load_active_products, load_operational_products
+from app.market_data.product_retirement import MARKET_FOUNDATION_RETIRED_PRODUCTS
 from app.market_data.storage import CanonicalMonthlyStore
 from app.private_settings import private_dependency_settings, read_only_dependency_environment
 from app.reference_trading.recovery_campaign import digest
@@ -62,6 +64,25 @@ _REDIS_SETTING = re.compile(rb"^\s*(?:export )?REDIS_URL=")
 _TICK_MARKER = b"# guiyi-market-source: rqdata_tick"
 _ACCOUNTS = {"tqkq": (_TQ_LABEL, "tqkq-simulation"), "subing": (SUBING_PAPER_LABEL, "subing-paper")}
 _COMPONENT_TAG = "market-foundation/v0.1.0"
+
+
+def _bound_operational_products(bindings):
+    scopes = []
+    for name in ("market-feed", "live"):
+        binding = bindings.services[name]
+        require(re.fullmatch(r"[a-f0-9]{40}", binding.commit) is not None, "COHORT_SCOPE_INVALID")
+        raw = read_command(
+            ["/usr/bin/git", "-c", "core.fsmonitor=false", "show",
+             f"{binding.commit}:data/universe/operational_products.txt"],
+            root=Path(binding.root),
+        )
+        products = tuple(raw.splitlines())
+        require(products and len(set(products)) == len(products)
+                and all(re.fullmatch(r"[a-z]{1,8}", product) for product in products),
+                "COHORT_SCOPE_INVALID")
+        scopes.append(products)
+    require(scopes[0] == scopes[1], "COHORT_SCOPE_INVALID")
+    return scopes[0]
 
 
 @contextmanager
@@ -202,42 +223,64 @@ class MarketCohortHost(CohortHost):
         finally:
             engine.dispose()
 
-    def _authority(self, settings, old_day):
+    def _authority(self, settings, old_day, source_products):
         now = self.now()
+        products = load_operational_products()
+        require(products == load_active_products()
+                and len(source_products) == len(set(source_products))
+                and set(source_products) == set(products) | MARKET_FOUNDATION_RETIRED_PRODUCTS
+                and tuple(product for product in source_products if product not in MARKET_FOUNDATION_RETIRED_PRODUCTS)
+                == products, "COHORT_SCOPE_INVALID")
+        targets = frozenset(products)
         with self._catalog_session(settings) as (session, canonical):
-            products = load_operational_products()
-            require(len(products) == 60, "COHORT_SCOPE_INVALID")
             resolver = MarketPhaseResolver(session)
             market = MarketDataService(MarketCatalog(session, canonical), CanonicalMonthlyStore(canonical))
             phases, days, subscriptions, windows = {}, set(), {}, {}
-            for product in products:
+            for product in source_products:
+                # The old journal and old Feed must still prove the retired cutoff.
+                # A retired product has no authority for a successor subscription.
+                if product not in targets:
+                    last = market._catalog_session_windows(product, old_day)
+                    old_owner = market._catalog_dominant_segment_for_day(product, old_day)
+                    require(max(w.end for w in last) + timedelta(minutes=2) <= now,
+                            "MARKET_SOURCE_SESSION_BOUNDARY_UNPROVEN")
+                    phases[product] = {"phase": MarketPhase.CLOSED.value, "trading_day": old_day.isoformat(),
+                                       "next_session_start": None}
+                    windows[product] = (old_owner.contract, last, None, ())
+                    continue
                 phase = resolver.resolve(product, now)
                 require(phase.phase is MarketPhase.CLOSED and phase.current_session is None
                         and phase.next_session_start is not None
                         and phase.next_session_start > now + timedelta(seconds=660),
                         "MARKET_SOURCE_FULL_CLOSE_REQUIRED")
+                require(resolver.completed_observation_trading_day(product, now) == old_day,
+                        "MARKET_SOURCE_NEXT_DAY_UNPROVEN")
+                phases[product] = {"phase": phase.phase.value,
+                                   "trading_day": phase.trading_day.isoformat() if phase.trading_day else None,
+                                   "next_session_start": phase.next_session_start.isoformat()}
+                last = market.session_windows(symbol=product, trading_day=old_day)
+                old_owner = market.dominant_segment_for_day(product, old_day)
                 upcoming = resolver.resolve(product, phase.next_session_start)
                 target_day = upcoming.trading_day
                 require(upcoming.phase is MarketPhase.TRADING and target_day is not None
                         and target_day > old_day and upcoming.current_session is not None
-                        and upcoming.current_session.start == phase.next_session_start
-                        and resolver.completed_observation_trading_day(product, now) == old_day,
+                        and upcoming.current_session.start == phase.next_session_start,
                         "MARKET_SOURCE_NEXT_DAY_UNPROVEN")
-                last = market.session_windows(symbol=product, trading_day=old_day)
                 future = market.session_windows(symbol=product, trading_day=target_day)
                 require(last and future and max(w.end for w in last) + timedelta(minutes=2) <= now
                         and min(w.start for w in future) == phase.next_session_start,
                         "MARKET_SOURCE_SESSION_BOUNDARY_UNPROVEN")
-                old_owner = market.dominant_segment_for_day(product, old_day)
                 new_owner = market.dominant_segment_for_day(product, target_day)
                 subscriptions[product] = new_owner.contract
                 windows[product] = (old_owner.contract, last, new_owner.contract, future)
                 days.add(target_day)
-                phases[product] = {"phase": phase.phase.value,
-                                   "trading_day": phase.trading_day.isoformat() if phase.trading_day else None,
-                                   "next_session_start": phase.next_session_start.isoformat()}
             require(len(days) == 1, "MARKET_SOURCE_NEXT_DAY_UNPROVEN")
             day = days.pop()
+            preparation_path = self.directory / "market-day-metadata-preparation.json"
+            preparation_binding = metadata_preparation_binding(session, canonical, source_products)
+            require(all(DayMetadataPreparation.previous_day_status(
+                preparation_path, preparation_binding, checked_day,
+            ) in {None, "passed"} for checked_day in (old_day, day)), "METADATA_PREPARATION_READBACK_REQUIRED")
             receipt = current_retained_receipt(self.directory / "market-foundation", now=now)
             if receipt is not None:
                 require(receipt.trading_day <= old_day and set(receipt.revisions) == set(products)
@@ -251,7 +294,7 @@ class MarketCohortHost(CohortHost):
                 "receipt": receipt.identity if receipt else None,
             })
         window = {"mode": "closed_idle", "registered_trading_day": old_day.isoformat(),
-                  "products": len(products), "phases": phases}
+                  "products": len(source_products), "phases": phases}
         return window, day, subscriptions, windows, catalog_sha, receipt.identity if receipt else None
 
     def session_proof(self):
@@ -263,7 +306,10 @@ class MarketCohortHost(CohortHost):
         with _redis(settings["REDIS_URL"]) as old:
             old_day = ObservationStream(old, kind="source").registered_day("live")
         require(isinstance(old_day, date), "MARKET_SOURCE_CUTOFF_UNPROVEN")
-        return self._authority(settings, old_day)[0]
+        source_products = getattr(self, "_source_products", None)
+        if source_products is None:
+            source_products = _bound_operational_products(self.bindings())
+        return self._authority(settings, old_day, source_products)[0]
 
     @staticmethod
     def _terminals(windows, products, frequency):
@@ -314,6 +360,9 @@ class MarketCohortHost(CohortHost):
         old_config, old_settings, target_config, target_settings = self._configs()
         self.check_controller_catalog(old_settings)
         candidate = Path(new_registry.services["api"].root)
+        source_products = _bound_operational_products(old_registry)
+        require(_bound_operational_products(new_registry) == load_operational_products(),
+                "COHORT_SCOPE_INVALID")
         git = ["/usr/bin/git", "-c", "core.fsmonitor=false"]
         require(read_command([*git, "cat-file", "-t", "refs/tags/" + _COMPONENT_TAG], root=candidate) == "tag",
                 "MARKET_SOURCE_COMPONENT_TAG_UNPROVEN")
@@ -330,7 +379,9 @@ class MarketCohortHost(CohortHost):
             require(not target.info("keyspace") and len(target.client_list()) == 1,
                     "MARKET_SOURCE_TARGET_NOT_EMPTY")
             old_day = date.fromisoformat(window["registered_trading_day"])
-            current, target_day, _, windows, catalog_sha, _receipt = self._authority(old_settings, old_day)
+            current, target_day, _, windows, catalog_sha, _receipt = self._authority(
+                old_settings, old_day, source_products,
+            )
             require(current == window, "COHORT_SESSION_CHANGED")
             until = monotonic() + 60
 
@@ -339,12 +390,13 @@ class MarketCohortHost(CohortHost):
 
             old_journal = old_observation_snapshot(
                 old, old_day, alert_enabled=old_registry.services["alert"].enabled, check_budget=budget,
-                terminals=self._terminals(windows, load_operational_products(), "1m"),
+                terminals=self._terminals(windows, source_products, "1m"),
             )
             accounts = self._account_frontiers(old, old_settings["REDIS_URL"], old_day, windows)
         self._old_settings, self._accounts, self._old_journal = old_settings, accounts, old_journal
+        self._source_products = source_products
         self._old_windows = windows
-        self._old_terminals = self._terminals(windows, load_operational_products(), "1m")
+        self._old_terminals = self._terminals(windows, source_products, "1m")
         self._target_config_sha = sha256(target_config).hexdigest()
         return {
             "old_instance": old_id, "target_instance": target_id,
@@ -391,7 +443,7 @@ class MarketCohortHost(CohortHost):
     def stop_old(self, plan, proof):
         stopped = super().stop_old(plan, proof)
         old_day = date.fromisoformat(plan["market_source_handover"]["old_day"])
-        _, _, _, windows, _, _ = self._authority(self._old_settings, old_day)
+        _, _, _, windows, _, _ = self._authority(self._old_settings, old_day, self._source_products)
         with _redis(self._old_settings["REDIS_URL"]) as old:
             accounts = self._account_frontiers(old, self._old_settings["REDIS_URL"], old_day, windows)
         require(accounts == self._accounts, "MARKET_SOURCE_STOP_ACCOUNT_DRIFT")
@@ -481,7 +533,9 @@ class MarketCohortHost(CohortHost):
 
     def _target_arguments(self, plan, settings):
         intent = plan["market_source_handover"]
-        window, day, subscriptions, _, catalog_sha, _ = self._authority(settings, date.fromisoformat(intent["old_day"]))
+        window, day, subscriptions, _, catalog_sha, _ = self._authority(
+            settings, date.fromisoformat(intent["old_day"]), self._source_products,
+        )
         require(window == plan["window"] and catalog_sha == intent["catalog_sha256"]
                 and day.isoformat() == intent["target_day"], "MARKET_SOURCE_CATALOG_DRIFT")
         return {
@@ -498,7 +552,7 @@ class MarketCohortHost(CohortHost):
                 and sha256(target_config).hexdigest() == self._target_config_sha,
                 "MARKET_SOURCE_CONFIG_DRIFT")
         args = self._target_arguments(plan, target)
-        sessions = {product: (contract, windows) for product, (_, _, contract, windows) in self._old_windows.items()}
+        sessions = {product: self._old_windows[product][2:] for product in args["subscriptions"]}
         sessions_sha = _target_sessions_digest(sessions)
         with _redis(target["REDIS_URL"]) as redis:
             require(len(redis.client_list()) == 1, "MARKET_SOURCE_TARGET_HAS_CLIENTS")
@@ -697,8 +751,11 @@ class MarketCohortHost(CohortHost):
                     and 0 <= (self.now() - datetime.fromisoformat(state["at"])).total_seconds() <= 30
                 ):
                     return None
-                if name == "market-feed" and not self._feed_closed_healthy(binding, state, plan["window"], redis=target):
-                    return None
+                if name == "market-feed":
+                    phases = {product: plan["window"]["phases"][product] for product in args["subscriptions"]}
+                    window = {**plan["window"], "products": len(phases), "phases": phases}
+                    if not self._feed_closed_healthy(binding, state, window, redis=target):
+                        return None
                 if name in {"live", "alert"}:
                     pulse = json.loads(target.get(f"{name}:heartbeat") or b"{}")
                     if not (pulse.get("available") is True and pulse.get("runtime_commit") == binding.commit
@@ -733,7 +790,7 @@ class MarketCohortHost(CohortHost):
     def _resumed_accounts(self, plan):
         intent = plan["market_source_handover"]
         old_day = date.fromisoformat(intent["old_day"])
-        _, _, _, windows, _, _ = self._authority(self._old_settings, old_day)
+        _, _, _, windows, _, _ = self._authority(self._old_settings, old_day, self._source_products)
         settings = self._active_target(plan)
         old_url = self._old_settings["REDIS_URL"]
 
@@ -892,7 +949,7 @@ class MarketCohortHost(CohortHost):
                 )
                 for product in load_operational_products()
             }
-            require(len(sessions) == 60 and _target_sessions_digest(sessions) == staged.get("target_sessions_sha256"),
+            require(sessions and _target_sessions_digest(sessions) == staged.get("target_sessions_sha256"),
                     "MARKET_SOURCE_CATALOG_DRIFT")
             require(redis_instance(redis) == intent["target_instance"], "MARKET_SOURCE_INSTANCE_DRIFT")
             require(require_formal_tick_binding(redis, session.get_bind().url, canonical) == staged["binding"],

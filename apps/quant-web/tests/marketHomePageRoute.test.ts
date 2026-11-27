@@ -57,6 +57,28 @@ test('Home header choice enters selected view and symbol through the page handle
   }
 })
 
+test('Market Foundation opens the remaining products without requesting legacy capabilities', async () => {
+  const pushes: unknown[] = []
+  Object.assign(globalThis, { __marketHomeRoutePushes: pushes })
+  const Page = await loadPage('', true)
+  const root = element('root')
+  const app = createRenderer(nodeOperations()).createApp(Page)
+  try {
+    app.mount(root)
+    await nextTick()
+    const trigger = findNode(root, node => node.type === 'button' && node.text === '白银 AG')
+    assert.ok(trigger)
+    ;(trigger.props.onClick as () => void)()
+    assert.deepEqual(pushes, [{ name: 'market-chart', query: {
+      view: 'newow', symbol: 'ag', strategy: 'trend', series_kind: 'actual_dominant',
+      contract: undefined, frequency: '1d', focus_bar_end: undefined,
+    } }])
+  } finally {
+    app.unmount()
+    Reflect.deleteProperty(globalThis, '__marketHomeRoutePushes')
+  }
+})
+
 test('restored sector filters visible strategy rows', async () => {
   const Page = await loadPage('agriculture'), root = element('root')
   const app = createRenderer(nodeOperations()).createApp(Page)
@@ -68,7 +90,7 @@ test('restored sector filters visible strategy rows', async () => {
   } finally { app.unmount() }
 })
 
-async function loadPage(initialSector = '') {
+async function loadPage(initialSector = '', marketFoundation = false) {
   const source = readFileSync(pageUrl, 'utf8')
   const { descriptor, errors } = parse(source, { filename: pageUrl.pathname })
   assert.deepEqual(errors, [])
@@ -109,8 +131,10 @@ async function loadPage(initialSector = '') {
     function resource(data = null) {
       return { data: ref(data), stale: ref(false), loading: ref(false), unavailable: ref(false), error: ref(null), refresh: async () => {} }
     }
-    export function useMarketHome() {
-      return { overview: resource(), directory: resource(), runtime: resource(), events: resource(), refreshAll: async () => {}, start() {}, dispose() {} }
+    export function useMarketHome(options) {
+      if (${marketFoundation} && options.fetchOverview) throw new Error('Unexpected legacy overview request')
+      const directory = resource(${marketFoundation} ? { items: [{ product: 'ag', product_name: '白银' }] } : null)
+      return { overview: resource(), directory, runtime: resource(), events: resource(), refreshAll: async () => {}, start() {}, dispose() {} }
     }
   `)
   const liveModule = moduleUrl(`
@@ -121,8 +145,9 @@ async function loadPage(initialSector = '') {
     import { ref } from '${vueUrl}'
     export function useNewowCapabilities() {
       return {
-        state: ref('ready'), error: ref(null), openFrequencies: ref(['5m', '1d', '1w']), openFrequenciesFor: () => ['5m', '1d', '1w'],
-        load: async () => {},
+        state: ref('${marketFoundation ? 'unavailable' : 'ready'}'), error: ref(null),
+        openFrequenciesFor: () => ${marketFoundation ? '[]' : "['5m', '1d', '1w']"},
+        load: () => { if (${marketFoundation}) throw new Error('Unexpected legacy capability request') },
       }
     }
   `)
@@ -142,6 +167,7 @@ async function loadPage(initialSector = '') {
   const transpiled = ts.transpileModule(compiled.content, {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
   }).outputText
+    .replace('import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION', JSON.stringify(marketFoundation ? '1' : '0'))
     .replace(/import ['"]@\/styles\/marketHome.css['"];?/g, '')
     .replace(/from ['"]@\/utils\/(newowBacktestReader|marketDisplay)['"]/g,
       (_match, specifier: string) => `from '${new URL(`../src/utils/${specifier}.ts`, import.meta.url).href}'`)

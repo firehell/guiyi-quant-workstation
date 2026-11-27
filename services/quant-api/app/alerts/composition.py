@@ -376,6 +376,7 @@ def warmup_alert_runtime(*, allow_closed_warming: bool = False, allow_break: boo
     """Verify scoped Market windows and evaluate without Event or transport writes."""
     from sqlalchemy import select
     from app.alerts.models import AlertRule
+    from app.alerts.service import AlertService
     from app.alerts.evaluators import AlertEvaluationError
     from app.alerts.registry import SUBING_QUALITY_REWARM_POLICY_V2
     from app.market_data.domain import BarFrequency, SeriesKind, SeriesPageQuery
@@ -407,6 +408,7 @@ def warmup_alert_runtime(*, allow_closed_warming: bool = False, allow_break: boo
                 source._stream.cursor("alert", day)
         with runtime._session_factory() as session:
             market = runtime._market_read_factory(session)
+            alert_service = AlertService(session, operational_products=load_operational_products())
             if allow_break:
                 prove_feed_idle(session)
                 canonical = market.canonical_warmup_reader(
@@ -414,7 +416,7 @@ def warmup_alert_runtime(*, allow_closed_warming: bool = False, allow_break: boo
             else:
                 canonical = market.canonical_warmup_reader(datetime.now(UTC))
             for rule in session.scalars(select(AlertRule).where(AlertRule.enabled.is_(True))):
-                for symbol, frequencies in rule.scope_product_frequencies.items():
+                for symbol, frequencies in alert_service.effective_frequency_scope(rule).items():
                     for frequency in frequencies:
                         query = SeriesPageQuery(SeriesKind.ACTUAL_DOMINANT, symbol, BarFrequency(frequency))
                         window = canonical.closed_window(query, limit=64,

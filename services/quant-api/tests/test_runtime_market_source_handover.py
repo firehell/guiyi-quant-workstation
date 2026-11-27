@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from hashlib import file_digest
 import json
 import os
@@ -24,6 +24,7 @@ from app.runtime_market_source_handover import (
     stage_new_observations,
     verify_preserved_observations,
 )
+from tests.data_foundation.test_tick_htdy_integration import disposable_market  # noqa: F401
 from tests.test_runtime_cohort import Host
 
 OLD_DAY = date(2026, 10, 23)
@@ -47,6 +48,100 @@ def redis_pair():
             for redis in (old, target):
                 for key in redis.scan_iter():
                     redis.delete(key)
+
+
+@pytest.mark.isolated_postgresql
+def test_source_retirement_preserves_60_old_terminals_and_stages_58_products(
+    tmp_path, redis_pair, disposable_market, monkeypatch,  # noqa: F811
+):
+    from contextlib import contextmanager
+
+    from sqlalchemy.orm import Session
+
+    from app.db.readonly import readonly_transaction
+    from app.market_data.day_preparation import VERSION, metadata_preparation_binding
+    from app.market_data.live_market import RedisLiveStore
+    from app.models import Contract, Exchange, Instrument, MainContractMap, TradingCalendar, TradingSession
+    from app.runtime_market_cohort_host import MarketCohortHost
+
+    engine, _ = disposable_market
+    old, target = redis_pair
+    products = load_operational_products()
+    old_products = tuple(sorted((*products, "pd", "pt")))
+    contracts = {product: f"{product.upper()}2701" for product in old_products}
+    with Session(engine) as session:
+        session.add(Exchange(code="GFEX", name="test"))
+        session.flush()
+        for offset in range((NEW_DAY - OLD_DAY).days + 2):
+            day = OLD_DAY + timedelta(days=offset)
+            session.add(TradingCalendar(
+                exchange_code="GFEX", trade_date=day, is_trading_day=day in {OLD_DAY, NEW_DAY},
+                has_night_session=False, provider="rqdata",
+            ))
+        session.add_all(Instrument(symbol=product, name=product, exchange_code="GFEX", is_active=True)
+                        for product in old_products)
+        session.flush()
+        session.add_all(Contract(contract_code=contract, instrument_symbol=product, exchange_code="GFEX",
+                                 listed_date=OLD_DAY, expired_date=NEW_DAY + timedelta(days=1), provider="rqdata")
+                        for product, contract in contracts.items())
+        session.flush()
+        for day, scope in ((OLD_DAY, old_products), (NEW_DAY, products)):
+            for product in scope:
+                session.add(TradingSession(
+                    exchange_code="GFEX", instrument_symbol=product, session_name="day",
+                    start_time=time(9), end_time=time(15), effective_from=day, effective_to=day,
+                    provider="rqdata",
+                ))
+                session.add(MainContractMap(symbol=product, trade_date=day, contract_code=contracts[product]))
+        session.commit()
+
+    @contextmanager
+    def catalog_session(_settings):
+        with Session(engine) as session, readonly_transaction(session, timeout_seconds=20):
+            yield session, tmp_path
+
+    monkeypatch.setenv("HOME", str(tmp_path))
+    host = MarketCohortHost()
+    monkeypatch.setattr(host, "_catalog_session", catalog_session)
+    monkeypatch.setattr(host, "now", lambda: datetime.combine(OLD_DAY, time(7, 5), tzinfo=UTC))
+    window, day, subscribed, windows, _, _ = host._authority({}, OLD_DAY, old_products)
+    assert window["products"] == 60
+    assert day == NEW_DAY
+    assert tuple(subscribed) == products and len(subscribed) == 58
+    assert all(windows[product][2:] == (None, ()) for product in ("pd", "pt"))
+    host.directory.mkdir(parents=True)
+    previous = host.directory / "market-day-metadata-preparation.json"
+    with Session(engine) as session:
+        previous.write_text(json.dumps({
+            "version": VERSION,
+            "binding_id": metadata_preparation_binding(session, tmp_path, old_products),
+            "days": {NEW_DAY.isoformat(): {"status": "inflight"}},
+        }))
+    with pytest.raises(CohortError, match="METADATA_PREPARATION_READBACK_REQUIRED"):
+        host._authority({}, OLD_DAY, old_products)
+    assert previous.exists()
+    terminals = host._terminals(windows, old_products, "1m")
+    assert set(terminals) == set(old_products)
+    for kind, consumers in (("source", ("live",)), ("completed", ("alert", "reference"))):
+        stream = ObservationStream(old, kind=kind)
+        for product, (contract, end) in terminals.items():
+            tail = stream.append(ObservationEnvelope(
+                f"{product}-terminal", OLD_DAY, end, f"live:bar:{product}:1m",
+                {"contract": contract, "bar_end": end.isoformat()}, True,
+            ))
+        for consumer in consumers:
+            stream.initialize(consumer, OLD_DAY, cursor=tail)
+    proof = preserve_stopped_observations(
+        old, OLD_DAY, alert_enabled=True, attempt=tmp_path, check_budget=lambda: None, terminals=terminals,
+    )
+    assert all(proof[kind][str(OLD_DAY)]["count"] == 60 for kind in ("source", "completed"))
+    verify_preserved_observations(tmp_path, proof["archive_sha256"], check_budget=lambda: None)
+    database = make_url("postgresql+psycopg://operator@127.0.0.1:5432/guiyi_quant")
+    stage_new_observations(
+        target, database, tmp_path, old_instance=proof["instance"], day=day, subscriptions=subscribed,
+        alert_enabled=True, expected_instance=redis_instance(target),
+    )
+    assert RedisLiveStore(target).subscriptions(NEW_DAY) == subscribed
 
 
 class IsolatedHost(Host):
@@ -221,6 +316,8 @@ def test_macos_recovery_reads_actual_registry_after_interrupted_cas(tmp_path, re
     home = tmp_path / "isolated-home"
     monkeypatch.setenv("HOME", str(home))
     native = MarketCohortHost()
+    monkeypatch.setattr("app.runtime_market_forward_recovery._bound_operational_products",
+                        lambda _registry: load_operational_products())
     native.directory.mkdir(mode=0o700, parents=True)
     old, target = redis_pair
     redis_urls = [f"redis://127.0.0.1:{client.connection_pool.connection_kwargs['port']}/0"
@@ -671,7 +768,7 @@ def test_target_first_completed_minutes_use_exact_session_and_indexed_original(t
     final = read_first_completed_minutes(target, NEW_DAY, sessions=sessions, now=now)
     assert final["status"] == ("first_completed_incomplete" if late else "first_completed_verified")
     assert final["products"]["ec"]["status"] == ("late" if late else "verified")
-    assert len(final["products"]) == 60
+    assert set(final["products"]) == set(load_operational_products())
     assert final["products"]["rb"] == {
         "status": "verified", "contract": subscriptions["rb"], "bar_end": rb_end.isoformat(),
         "opening_bar_end": night.isoformat(), "opening_is_first": False,

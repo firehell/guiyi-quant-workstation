@@ -184,12 +184,15 @@ def test_enabled_scope_union_excludes_disabled_and_nonoperational_consumers():
                 formula_versions=["test"], profile_id="test", reference_model_version="test", futures_adaptation_version="test",
                 product=product, frequency=frequency, series_kind="actual_dominant", recording_mode="forward_observation",
                 observation_policy_version="test", enabled=enabled))
-        session.add(AlertRule(rule_code="subing_ths_alert_15m_v1", enabled=True, scope_product_frequencies={"rb": ["15m"]}))
+        recorded = {"rb": ["15m"], "pd": ["15m"], "pt": ["30m"]}
+        rule = AlertRule(rule_code="subing_ths_alert_15m_v1", enabled=True, scope_product_frequencies=recorded)
+        session.add(rule)
         session.add(AlertRule(rule_code="htdy_original_15m", enabled=False, scope_product_frequencies={"rb": ["1w"]}))
         session.commit()
         scopes = enabled_consumer_scopes(session, ("rb",))
         assert set(scopes) == {"rb"}
         assert scopes["rb"][0] == ("5m", "15m")
+        assert rule.scope_product_frequencies == recorded
     engine.dispose()
 
 

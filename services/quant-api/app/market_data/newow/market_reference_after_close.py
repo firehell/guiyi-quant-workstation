@@ -86,6 +86,10 @@ def run_receipt(
     canonical_root: Path | None = None, stop_requested: Callable[[], bool] = lambda: False,
     formal: bool = False,
 ) -> dict:
+    from app.market_data.product_retirement import assert_products_not_retired
+
+    assert_products_not_retired(tuple(receipt.revisions))
+
     def verify_publication(product):
         # Called inside the native Catalog maintenance lease when planning,
         # verifying or committing one product. Never hold that lease for a cohort.
@@ -135,8 +139,10 @@ def latest_reference(product: str, strategy: str, frequency: str, *, session_fac
     """Select the existing committed calculation and expose its exact read window."""
     from sqlalchemy import and_, func, select
 
+    from app.market_data.product_retirement import assert_not_retired
     from app.reference_trading.models import ReferenceBatch, ReferenceRevision, ReferenceStream
 
+    assert_not_retired(product)
     if re.fullmatch(r"[a-z]{1,8}", product) is None or strategy not in STRATEGIES or frequency not in FREQUENCIES:
         raise ValueError("MARKET_REFERENCE_SCOPE_INVALID")
     identity = canonical_newow_history_identity(product, strategy, frequency)
@@ -184,10 +190,17 @@ def latest_reference(product: str, strategy: str, frequency: str, *, session_fac
 def latest_formal_reference(product: str, strategy: str, frequency: str, *, session_factory) -> dict | None:
     """Expose the Market result only after the exact formal receipt was acknowledged."""
     from app.market_data.market_archive import current_retained_receipt, formal_archive_root
+    from app.market_data.operational_universe import load_operational_products
+    from app.market_data.product_retirement import assert_not_retired
 
+    assert_not_retired(product)
     root = formal_archive_root()
     receipt = current_retained_receipt(root, now=datetime.now(UTC))
-    if receipt is None or product not in receipt.revisions:
+    if receipt is None:
+        return None
+    if set(receipt.revisions) != set(load_operational_products()):
+        raise ValueError("MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID")
+    if product not in receipt.revisions:
         return None
     routes = _acknowledged_routes(root, receipt.identity)
     if not routes:

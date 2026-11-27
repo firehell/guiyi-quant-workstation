@@ -44,8 +44,10 @@ const messageReloadSequence = ref(0)
 const cardReloadSequence = ref(0)
 const navigationError = ref<string | null>(null)
 const newowCapabilities = useNewowCapabilities()
+const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
+const receiptOnlyHome = marketFoundation || newowAfterMarketOnly
 const home = useMarketHome({
-  fetchOverview: getMarketHomeOverview,
+  fetchOverview: receiptOnlyHome ? undefined : getMarketHomeOverview,
   overviewNeedsRefresh: value => Boolean(value.projection_status && value.projection_status !== 'ready'),
   fetchDirectory: getMarketProductDirectory,
   fetchRuntime: getRuntimeHealth,
@@ -114,9 +116,10 @@ function openCardChart(symbol: string, strategy: 'trend' | 'oscillation', freque
 }
 function openEvent(event: AlertEvent) { rememberPageState(); void router.push({ name: 'market-chart', query: marketHomeEventChartQuery(event) }) }
 function openView(view: 'newow' | 'htdy' | 'subing' | 'free', symbol: string) {
-  const frequencies = newowAfterMarketOnly ? (['1d'] as const) : newowCapabilities.openFrequenciesFor(symbol)
+  const frequencies = receiptOnlyHome ? (['1d'] as const) : newowCapabilities.openFrequenciesFor(symbol)
   const frequency = frequencies.includes('1d') ? '1d' : frequencies[0] ?? null
-  if (view === 'newow' && !newowAfterMarketOnly && (newowCapabilities.state.value !== 'ready' || frequency === null)) {
+  if (view === 'newow' && !receiptOnlyHome
+    && (newowCapabilities.state.value !== 'ready' || frequency === null)) {
     navigationError.value = newowCapabilities.error.value ?? '牛哇开放能力仍在读取，暂不能安全进入。'
     return
   }
@@ -175,7 +178,7 @@ watch([sector, sort, sortDirection, compactDensity], () => saveMarketHomePrefere
 onMounted(() => {
   home.start()
   live.start()
-  if (!newowAfterMarketOnly) void newowCapabilities.load()
+  if (!receiptOnlyHome) void newowCapabilities.load()
   void nextTick(restorePageScroll)
 })
 
@@ -191,7 +194,7 @@ onBeforeUnmount(() => {
   <div class="market-dashboard-page">
     <MarketHomeHeader :options="productOptions" :directory-status="directoryStatus" :loading="activeTab === 'market' && loading" :active-tab="activeTab" @open-view="openView" @refresh="refreshAll" />
     <p v-if="navigationError" class="market-dashboard-page__navigation-error" role="alert">{{ navigationError }}</p>
-    <section v-if="newowAfterMarketOnly && activeTab === 'market'" class="market-home-main" aria-label="行情与盘后研究">
+    <section v-if="receiptOnlyHome && activeTab === 'market'" class="market-home-main" aria-label="行情与盘后研究">
       <p role="status">{{ liveStatus }} · 在品种页查看牛哇最近成功的盘后结果。</p>
       <table>
         <thead><tr><th>品种</th><th>物理合约</th><th>行情价格</th><th>行情时间</th></tr></thead>
@@ -203,7 +206,7 @@ onBeforeUnmount(() => {
         </tr></tbody>
       </table>
     </section>
-    <div v-else-if="!newowAfterMarketOnly" v-show="activeTab === 'market'" style="display: contents">
+    <div v-else-if="!receiptOnlyHome" v-show="activeTab === 'market'" style="display: contents">
       <MarketHomeSectorTicker :sectors="sectors" :active="home.overview.data.value?.active_count ?? null" :selected="sector" @select="sector = $event" />
       <section class="market-home-main">
       <p v-if="home.overview.unavailable.value && !home.overview.data.value" class="market-dashboard-page__error" role="alert">行情快照暂不可用；没有可展示的上一份成功快照。</p>

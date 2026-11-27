@@ -152,6 +152,11 @@ def test_reference_routes_use_the_requests_bound_sandbox_factory(tmp_path, monke
             "product": "rb", "strategy": "trend", "frequency": "1d",
         })
         assert response.status_code == 200 and response.json() == {"result": None}
+        for product in ("PD", " pt "):
+            rejected = client.get("/api/v1/reference-trading/newow/after-close", params={
+                "product": product, "strategy": "trend", "frequency": "1d",
+            })
+            assert rejected.status_code == 410 and rejected.json()["detail"]["code"] == "PRODUCT_RETIRED"
         missing = "reference-stream:" + "f" * 64
         response = client.get(f"/api/v1/reference-trading/streams/{missing}/trades", params={
             "since": "2026-09-18", "through": "2026-09-19",

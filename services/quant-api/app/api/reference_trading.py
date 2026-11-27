@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from app.db.session import SessionLocal
+from app.market_data.product_retirement import ProductRetiredError
 from app.reference_trading.presentation import PresentationUnavailable
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
 from app.reference_trading.health import ForwardReferenceHealth, read_completed_recording_endpoints
@@ -32,7 +33,7 @@ def _bound_market_sessions(request: Request):
 
 def _reader(request: Request) -> HistoricalReferenceQuery:
     factory = _bound_market_sessions(request)
-    return _query if factory is None else HistoricalReferenceQuery(factory)
+    return _query if factory is None else HistoricalReferenceQuery(factory, market_scope=True)
 
 
 def _only_existing_runtime(request: Request) -> None:
@@ -49,6 +50,8 @@ def _keys(request: Request, allowed: frozenset[str]) -> None:
 def _run(call):
     try:
         return call()
+    except ProductRetiredError as exc:
+        raise HTTPException(410, detail={"code": exc.code}) from None
     except QueryConflict as exc:
         code = exc.code
         status = (
@@ -274,5 +277,18 @@ def newow_messages(request: Request, since: date, through: date, product: str | 
                    limit: int = Query(500, ge=1, le=500)):
     from app.reference_trading.messages import read_messages
     _keys(request, frozenset({"since", "through", "product", "strategy", "frequency", "limit"}))
-    return _run(lambda: read_messages(_bound_market_sessions(request) or SessionLocal, since=since, through=through,
-                                     product=product, strategy=strategy, frequency=frequency, limit=limit))
+    factory = _bound_market_sessions(request)
+
+    def read():
+        products = None
+        if factory is not None:
+            from app.market_data.operational_universe import load_operational_products
+            from app.market_data.product_retirement import assert_not_retired
+
+            if product is not None:
+                assert_not_retired(product)
+            products = load_operational_products()
+        return read_messages(factory or SessionLocal, since=since, through=through, product=product,
+                             strategy=strategy, frequency=frequency, limit=limit, market_products=products)
+
+    return _run(read)

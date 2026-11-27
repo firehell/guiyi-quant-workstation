@@ -32,7 +32,7 @@
 - [x] C4. 独立版本化 formula/state/result/chart schema；验证不兼容消费者 fail-closed。
 - [x] C5. 更新 Newow MACD auxiliary 使用 TA-Lib 12/26/9 原始输出的 active delta；保持 Newow API envelope、as-of、physical owner、warming 和 research-display-only 边界。
 - [ ] C6. 迁移 Web/牛哇/回测/快期/苏冰消费者到统一接口；每个消费者只请求自身需要的指标。
-- [ ] C7. 执行 60 品种 × 7 周期性能、内存、缓存、增量恢复、计算隔离和图表视觉回归。
+- [ ] C7. 执行 58 品种 × 7 周期（406 项）性能、内存、缓存、增量恢复、计算隔离和图表视觉回归。
 - [x] C8. 完成独立 Review、OpenSpec strict validation、受影响测试和 develop 集成；同步已接受 delta 到 active specs 与 canonical。
 
 ## 验收要求
@@ -52,6 +52,8 @@
 后续实现属于架构与公式边界任务。实现时按仓库 `AGENTS.md`、`docs/DEVELOPMENT.md` 和当前 active canonical 选择 Lane、工作区与验证；涉及通用公式替换、因果性或 Newow MACD 语义的代码改动应做针对性独立 Review。包发布与正式消费者升级分别处理，不能把 develop 集成或 package Release 当作 Runtime 已切换。
 
 ## 集成验收与剩余依赖
+
+V2 运行与正式计算范围为 58 品种。PD、PT 已从待验矩阵退出。以下原有 420 项矩阵记录继续作为历史证据。
 
 - A7 已登记现有牛哇副图、HTDY、Lux Range 与苏冰同花顺合同。牛哇四类副图和首页主力控盘已通过专属登记入口计算。早期独立复核覆盖六个已开放周期、五种副图或形态和两个截点，60 组结果与原内核的历史前缀逐值一致。杯柄辅助 API 现也经同一注册入口，沿用 `newow_cup_handle_v1`、D1 趋势 profile、分段见证和 `NOT_APPLICABLE`。0.4.0 最终制品独立复核比较三个策略的六个开放周期，并核对杯柄确认前一微秒和确认时点，共 20 组完整结果与 0.3.0 原入口一致。牛哇五个已登记辅助分量各自绑定计算，仅允许六个现役周期的 Web 展示。正式消费者交接在 C6 联验。
 - A7 HTDY 原始内核的历史回放、Alert 和快期候选共用登记入口及原有 FormalPolicy；严格版声明现有研究字段。苏冰六周期共用公式身份表及登记的状态初始化、推进，覆盖 Alert 与参考回放、预热和换合约。原冻结样本逐值验证 382 个 HTDY 末窗及苏冰 46,100 根 Bar 的状态和输出；HTDY 周线样本各物理段不足 32 根。独立复核确认 0.2.0 检查点由 0.2.1 恢复后，六周期最终编码与原版连续运行逐字节一致。
