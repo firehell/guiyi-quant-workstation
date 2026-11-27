@@ -23,11 +23,11 @@ def inputs(products=EXPANDED_PORTFOLIO_PRODUCTS):
     return next(iter(days.values())), batch
 
 
-def input_days(products=EXPANDED_PORTFOLIO_PRODUCTS, *, next_day_at=None):
-    segments = [segment(p, [100, 101, 102], next_day_at=next_day_at) for p in products]
+def input_days(products=EXPANDED_PORTFOLIO_PRODUCTS, *, next_day_at=None, prices=(100, 101, 102)):
+    segments = [segment(p, prices, next_day_at=next_day_at) for p in products]
     batch = []
     contexts = {}
-    for i in range(3):
+    for i in range(len(prices)):
         prepared = {}
         for n, s in enumerate(segments):
             x = s.executions[i]
@@ -474,35 +474,51 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
     from sqlalchemy.engine import make_url
 
     from app import subing_portfolio_worker as worker
+    from app.compute_runtime import ComputeRuntime
+    from app.compute_runtime.isolated_simulation import bind_paper_live_factors, paper_live_scopes
     from app.market_data.live_market import _bar_payload
+    from app.market_data.market_foundation_scope import bind_market_redis, bind_tick_source
     from app.market_data.observation_stream import ObservationStream
     from app.runtime_market_account_readback import paper_watermark
+    from guiyi_quant.compute import REGISTRY
     from scripts.research.subing_model_facts import CAPTURE_VERSION, FEE_POLICY
 
     url = os.getenv("GUIYI_MARKET_PAPER_TEST_DATABASE_URL")
+    market_url = os.getenv("GUIYI_MARKET_FOUNDATION_TEST_DATABASE_URL")
     ports = tuple(int(os.getenv(key, "0")) for key in (
         "GUIYI_TEST_REDIS_PORT", "GUIYI_MARKET_TARGET_REDIS_PORT",
     ))
-    if not url or not all(ports):
+    if not url or not market_url or not all(ports):
         pytest.skip("requires disposable PostgreSQL and two isolated Redis instances")
     assert (pg_port := make_url(url).port) and 1024 < pg_port <= 65535 and pg_port != 5432
     assert ports[0] != ports[1] and all(1024 < port <= 65535 and port != 6379 for port in ports)
 
-    sessions, (first, last, upcoming) = input_days(next_day_at=2)
+    sessions, (first, last, upcoming, following) = input_days(next_day_at=2, prices=(100, 101, 102, 103))
     old_day, _, _, _ = last
     new_day, at, observed, prepared = upcoming
     contexts = sessions[new_day]
     generation = "rqdata-tick:" + "b" * 32 + ":"
     heartbeat = tmp_path / "heartbeat.json"
+    canonical_root = tmp_path / "canonical"
+    canonical_root.mkdir()
+    market_url = make_url(market_url)
     run_id = "market-worker-handoff-" + uuid.uuid4().hex
+    clock = [observed]
+    factor_calls = []
+    original_step = worker.Factors.step
 
     class ReplayClock(datetime):
         @classmethod
         def now(cls, tz=None):
-            return observed.astimezone(tz)
+            return clock[0].astimezone(tz)
+
+    def record_step(self, frequency, candle):
+        factor_calls.append((self.contract, frequency, candle.bar_end))
+        return original_step(self, frequency, candle)
 
     monkeypatch.setattr(worker, "datetime", ReplayClock)
     monkeypatch.setattr(worker, "HEARTBEAT", heartbeat)
+    monkeypatch.setattr(worker.Factors, "step", record_step)
     with Redis(host="127.0.0.1", port=ports[0], db=13) as old_redis, Redis(
         host="127.0.0.1", port=ports[1], db=13,
     ) as target_redis:
@@ -510,6 +526,8 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
         assert old_redis.dbsize() == target_redis.dbsize() == 0
         old = ObservationStream(old_redis, kind="completed")
         target = ObservationStream(target_redis, kind="completed")
+        bind_market_redis(target_redis, tmp_path, market_url)
+        bind_tick_source(target_redis)
         store = ModelStore(url, test_only=True)
         try:
             store.initialize()
@@ -531,6 +549,11 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
             for product, row in prepared.items():
                 context = contexts[product]
                 contract = context["contract"]
+                # Two one-minute fixture sessions each have an authoritative
+                # shortened M30 and H1 close.
+                endpoints = context["expected_1m"]
+                context["sessions"] = [[context["first_open"], endpoints[0]], endpoints]
+                context["expected_30m"] = context["expected_60m"] = endpoints
                 facts = deepcopy(row.execution_facts)
                 facts.update(capture_version=CAPTURE_VERSION, fee_policy_version=FEE_POLICY,
                              time_semantics="current_effective_execution_facts",
@@ -544,26 +567,51 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
                 (tmp_path / f"{product}.json").write_text(json.dumps({str(new_day): {
                     "path": str(payload), "sha256": sha256(raw).hexdigest(),
                 }}))
-                # This fixture Session contains one minute. Its shortened M30 and H1
-                # aggregates settle at the same endpoint with the same OHLCV.
-                data = _bar_payload(worker.bar(row.envelope.data), contract=contract)
-                for frequency in ("60m", "30m", "1m"):
-                    context[f"expected_{frequency}"] = [data["bar_end"]]
-                    target.append(replace(
-                        row.envelope, stream_id="", channel=live_bar_channel(product, frequency), data=data,
-                        observation_id=f"{new_day}:{contract}:{frequency}:{data['bar_end']}",
-                        source_observed_at=at, raw_received_at=at + timedelta(milliseconds=10),
-                        source_generation=generation + "1",
-                    ))
 
-            def consume(stream):
+            def append_batch(batch, *, legacy_period=None):
+                _, end, _, rows = batch
+                identifiers = []
+                for product, row in rows.items():
+                    contract = contexts[product]["contract"]
+                    data = _bar_payload(worker.bar(row.envelope.data), contract=contract)
+                    for frequency in ("60m", "30m", "1m"):
+                        identifiers.append(target.append(replace(
+                            row.envelope, stream_id="", channel=live_bar_channel(product, frequency), data=data,
+                            observation_id=f"{new_day}:{contract}:{frequency}:{data['bar_end']}",
+                            source_observed_at=end, raw_received_at=end + timedelta(milliseconds=10),
+                            source_generation=None if frequency == legacy_period else generation + "1",
+                        )))
+                return identifiers
+
+            def consume(stream, *, check_duplicate=False):
                 restored = PortfolioJournal.restore(store, run_id)
                 factors = {product: worker.Factors(row["contract"]) for product, row in contexts.items()}
-                worker.consume_day(restored, new_day, contexts, factors, stream, tmp_path, once=True)
+                with ComputeRuntime(REGISTRY, owned_live_scopes=paper_live_scopes(new_day, contexts)) as compute:
+                    wrapped = bind_paper_live_factors(
+                        compute, stream, restored, new_day, contexts, factors,
+                        market_url=market_url, canonical_root=canonical_root,
+                    )
+                    worker.consume_day(restored, new_day, contexts, wrapped, stream, tmp_path, once=True)
+                    if check_duplicate:
+                        candle = worker.bar(prepared["rb"].envelope.data)
+                        calls = len(factor_calls)
+                        wrapped["rb"].step("30m", candle)
+                        assert len(factor_calls) == calls
+                        assert compute.queue_load()["live"]["peak_pending"] == 1
 
-            consume(old)
-            assert store.load(run_id) == (old_head, old_events)
-            consume(target)
+            with pytest.raises(ValueError, match="COMPUTE_LIVE_ISOLATION_REQUIRED"):
+                consume(old)
+            assert not factor_calls and store.load(run_id) == (old_head, old_events)
+            for legacy_period in ("30m", "1m"):
+                append_batch(upcoming, legacy_period=legacy_period)
+                with pytest.raises(ValueError, match="COMPUTE_OWNED_LIVE_ORIGINAL_INVALID"):
+                    consume(target)
+                assert store.load(run_id) == (old_head, old_events)
+                target_redis.delete(target.key(new_day), target.identity_key(new_day))
+                factor_calls.clear()
+            originals = append_batch(upcoming)
+            consume(target, check_duplicate=True)
+            assert len(factor_calls) == 2 * len(contexts)
             expected = {product: (row["contract"], at) for product, row in contexts.items()}
             after = paper_watermark(store, run_id, target, new_day, expected, generation_prefix=generation)
             assert after["status"] == "verified" and after["sequence"] == before["sequence"] + 1
@@ -571,10 +619,23 @@ def test_market_handoff_resumes_paper_worker_on_the_same_postgres_run(monkeypatc
             assert after["tail_hash"] != before["tail_hash"]
             new_head, new_events = store.load(run_id)
             assert new_head["identity"] == old_head["identity"] and new_events[:-1] == old_events
-            assert json.loads(heartbeat.read_text())["status"] == "SESSION_COMPLETE"
+            assert append_batch(upcoming) == originals
             consume(target)
             assert store.load(run_id) == (new_head, new_events)
+
+            next_at = following[1]
+            clock[0] = following[2]
+            append_batch(following)
+            consume(target)
+            final_head, final_events = store.load(run_id)
+            assert final_head["sequence"] == new_head["sequence"] + 1
+            assert final_head["identity"] == old_head["identity"] and final_events[:-1] == new_events
+            next_expected = {product: (row["contract"], next_at) for product, row in contexts.items()}
+            assert paper_watermark(store, run_id, target, new_day, next_expected,
+                                   generation_prefix=generation)["status"] == "verified"
+            assert json.loads(heartbeat.read_text())["status"] == "SESSION_COMPLETE"
         finally:
             store.engine.dispose()
             for stream, day in ((old, old_day), (target, new_day)):
                 stream.redis.delete(stream.key(day), stream.identity_key(day))
+            target_redis.delete("live:market-foundation:binding", "live:market-foundation:source")

@@ -7,7 +7,7 @@ from concurrent.futures import Future
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from threading import Event, RLock
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from guiyi_quant.compute import (
     STATE_SCHEMA_VERSION, BarSeries, ComputeRegistry, FeatureIdentity, FeatureRequest, SeriesIdentity,
@@ -16,6 +16,7 @@ from guiyi_quant.compute.contracts import hash_parameters
 from guiyi_quant.compute.incremental import IncrementalState, advance, open_incremental, rebind_incremental
 
 from .contracts import CommittedLiveBar, ComputeCheckpoint, ComputeScope, ComputeWindow, FeatureUpdate
+from .owned_live import OwnedLiveCommit, OwnedLiveScope, OwnedLiveState, OwnedLiveUpdate
 from .scheduler import JobQueue
 
 if TYPE_CHECKING:
@@ -61,6 +62,7 @@ class StateUpdates:
         self, registry: ComputeRegistry, *,
         canonical_scopes: tuple[ComputeScope, ...],
         live_scopes: tuple[ComputeScope, ...],
+        owned_live_scopes: tuple[OwnedLiveScope, ...],
         canonical_pending: int, live_pending: int, max_prefix_bars: int, max_checkpoints: int,
     ) -> None:
         if min(max_prefix_bars, max_checkpoints) < 1:
@@ -70,10 +72,11 @@ class StateUpdates:
         self._max_checkpoints = max_checkpoints
         self._canonical_scopes = self._register(canonical_scopes, mode="incremental")
         self._live_scopes = self._register(live_scopes, mode="live")
-        if sum(len(features) for features in self._live_scopes.values()) > max_checkpoints:
+        if sum(len(features) for features in self._live_scopes.values()) + len(owned_live_scopes) > max_checkpoints:
             raise ValueError("COMPUTE_LIVE_SCOPE_LIMIT")
         self._canonical = JobQueue[_Updates]("incremental", canonical_pending)
-        self._live = JobQueue[_Updates]("live", live_pending)
+        self._live = JobQueue[object]("live", live_pending)
+        self._owned_live = OwnedLiveState(owned_live_scopes)
         self._lock = RLock()
         self._canonical_states: OrderedDict[tuple[FeatureIdentity, str], _State] = OrderedDict()
         self._canonical_results: OrderedDict[_CanonicalJob, _Updates] = OrderedDict()
@@ -242,7 +245,20 @@ class StateUpdates:
             raise ValueError("COMPUTE_CHECKPOINT_SCOPE_INVALID")
         ordered_checkpoints = tuple(by_node.get(node) for node in nodes)
         key = (commit, nodes, ordered_checkpoints)
-        return self._live.submit(key, lambda _: self._run_live(commit, requests, nodes, load, ordered_checkpoints))
+        return cast(Future[_Updates], self._live.submit(
+            key, lambda _: self._run_live(commit, requests, nodes, load, ordered_checkpoints),
+        ))
+
+    def submit_owned_live[T](
+        self, commit: OwnedLiveCommit, *, owner: object, run: Callable[[], T],
+    ) -> Future[OwnedLiveUpdate[T]]:
+        if not isinstance(commit, OwnedLiveCommit) or commit.scope not in self._owned_live.scopes:
+            raise ValueError("COMPUTE_SCOPE_NOT_ENABLED")
+        # Do not coalesce concurrent callers. The second caller must receive
+        # duplicate=True only after the first really advanced the owner state.
+        return cast(Future[OwnedLiveUpdate[T]], self._live.submit(
+            object(), lambda _: self._owned_live.advance(commit, owner, run),
+        ))
 
     def _run_live(
         self, commit: CommittedLiveBar, requests: tuple[FeatureRequest, ...], nodes: tuple[_Node, ...],
