@@ -111,6 +111,7 @@ export interface MarketBarWireDto {
 
 export interface BarData {
   confirmed?: boolean
+  marketSource?: 'canonical' | 'completed_live' | 'active_preview' | 'retained'
   time: string
   trading_day?: string
   physicalContract?: string
@@ -218,6 +219,13 @@ export interface MarketActivityFrame {
   observed_at: string
   received_at: string
   bar: CanonicalBarDto
+}
+
+export interface MarketStudyActivity {
+  bar: BarData
+  generation: string
+  observedAt: string
+  receivedAt: string
 }
 
 export type MarketOverlaySource = 'none' | 'realtime' | 'post_close'

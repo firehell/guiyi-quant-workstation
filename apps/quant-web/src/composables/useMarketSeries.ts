@@ -13,6 +13,7 @@ import type {
   MarketFrequency,
   MarketOverlaySource,
   MarketReadState,
+  MarketStudyActivity,
   MarketTickQuote,
   MarketWsMessage,
   SeriesKind,
@@ -218,10 +219,11 @@ function normalizeMarketWsMessage(value: unknown): MarketWsMessage | null {
 
 export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   const bars = ref<BarData[]>([])
-  const activity = ref<BarData | null>(null)
+  const activity = ref<MarketStudyActivity | null>(null)
   const quote = ref<MarketTickQuote | null>(null)
-  const activeBar = computed(() => activity.value && isLater(activity.value.time, latestEnd(bars.value))
+  const visibleActivity = computed(() => activity.value && isLater(activity.value.bar.time, latestEnd(bars.value))
     ? activity.value : null)
+  const activeBar = computed(() => visibleActivity.value?.bar ?? null)
   const hasMoreBefore = ref(false)
   const nextBefore = ref<string | null>(null)
   const canonicalCoverage = ref<MarketBarsPageResponse['canonical_coverage']>(null)
@@ -249,10 +251,31 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   let reconnectAttempts = 0
   let pendingReconnect: (() => void) | null = null
   let canonicalRefreshToken = 0
-  let appliedCanonicalRevision: string | null = null
+  const appliedCanonicalRevision = ref<string | null>(null)
   let revisionRefresh: { revision: string; promise: Promise<boolean> } | null = null
   let overlayIdentity: MarketOverlayIdentity | null = null
   let loadingBeforePromise: Promise<void> | null = null
+  const studyRevisionPending = computed(() => {
+    const state = marketState.value
+    const revision = state && canonicalRevision(state)
+    return revision !== null && revision !== appliedCanonicalRevision.value
+  })
+  const canonicalEdgePending = computed(() =>
+    isLater(marketState.value?.canonical_end ?? null, canonicalCoverage.value?.end ?? null))
+  const studyActivity = computed(() => {
+    const phase = marketState.value?.phase
+    return (phase === 'TRADING' || phase === 'BREAK') && !canonicalEdgePending.value
+      ? visibleActivity.value : null
+  })
+  const studySocketHasBars = ref(false)
+  const studyCompletedAvailable = computed(() => {
+    const state = marketState.value
+    const latest = bars.value.at(-1)
+    if (!studySocketHasBars.value || !state || canonicalEdgePending.value
+      || latest?.marketSource !== 'completed_live' || latest.trading_day !== state.trading_day) return false
+    return overlaySource.value === 'realtime' && !liveUnavailable.value && state.live_available
+      && latest.physicalContract === normalizePhysicalContract(state.live_contract)
+  })
 
   function clearPreview(): void {
     quote.value = null
@@ -260,6 +283,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   }
 
   function clearOverlay(): void {
+    studySocketHasBars.value = false
     liveBars = []
     overlaySource.value = 'none'
     overlayIdentity = null
@@ -278,6 +302,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   }
 
   function clearSocket(): void {
+    studySocketHasBars.value = false
     pendingReconnect = null
     if (reconnectHandle !== null) {
       clearReconnect(reconnectHandle)
@@ -304,7 +329,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     nextBefore.value = null
     canonicalCoverage.value = null
     canonicalRefreshToken += 1
-    appliedCanonicalRevision = null
+    appliedCanonicalRevision.value = null
     revisionRefresh = null
     marketState.value = null
     liveUnavailable.value = false
@@ -371,7 +396,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         return false
       }
       if (revision) {
-        appliedCanonicalRevision = revision
+        appliedCanonicalRevision.value = revision
         canonicalBars = fresh
         hasMoreBefore.value = merged.hasMoreBefore
         nextBefore.value = merged.nextBefore
@@ -403,7 +428,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     const end = state.canonical_end
     if (!end) return null
     const revision = canonicalRevision(state)
-    if (revision && revision !== appliedCanonicalRevision) {
+    if (revision && revision !== appliedCanonicalRevision.value) {
       if (revisionRefresh?.revision === revision) return revisionRefresh.promise
       const promise = refreshCanonicalEdge(requestGeneration, nextIdentity, ++canonicalRefreshToken, end, revision)
       const attempt = { revision, promise }
@@ -428,10 +453,11 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   function applyLiveBars(incoming: CanonicalBarDto[], physicalContract?: string): boolean {
     const seam = latestEnd(canonicalBars)
     const accepted = normalizeBarSeries(incoming
-      .map((bar) => ({ ...toBarData(bar, physicalContract), confirmed: false }))
+      .map((bar) => ({ ...toBarData(bar, physicalContract), confirmed: false, marketSource: 'completed_live' as const }))
       .filter((bar) => seam === null || Date.parse(bar.time) > Date.parse(seam)))
     if (!accepted.length) return false
     liveBars = normalizeBarSeries([...liveBars, ...accepted])
+    studySocketHasBars.value = true
     publishMerged({ kind: 'live', bars: accepted })
     return true
   }
@@ -521,7 +547,12 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         quote.value = payload.quote && accepts(payload.quote, payload.quote.trading_day) ? payload.quote : null
         activity.value = payload.activity && accepts(payload.activity, payload.activity.bar.trading_day)
           && Date.parse(payload.activity.observed_at) <= Date.parse(payload.activity.bar.bar_end)
-          ? { ...toBarData(payload.activity.bar, payload.activity.contract), confirmed: false } : null
+          ? {
+            bar: { ...toBarData(payload.activity.bar, normalizePhysicalContract(payload.activity.contract)), confirmed: false, marketSource: 'active_preview' },
+            generation: payload.activity.generation,
+            observedAt: payload.activity.observed_at,
+            receivedAt: payload.activity.received_at,
+          } : null
         return
       }
       if (payload.type === 'retained') {
@@ -535,7 +566,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
         retainedBars = day && state.trading_day && day < state.trading_day && contract
           && physicalOwnerMatches(nextIdentity, contract)
           ? payload.bars.filter(bar => bar.trading_day === day)
-            .map(bar => ({ ...toBarData(bar, contract), confirmed: false }))
+            .map(bar => ({ ...toBarData(bar, contract), confirmed: false, marketSource: 'retained' as const }))
           : []
         publishMerged({ kind: 'replace' })
         return
@@ -646,6 +677,7 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
     socket.onclose = () => {
       if (!isCurrentGeneration(requestGeneration, generation) || socket !== activeSocket) return
       activeSocket = null
+      studySocketHasBars.value = false
       clearPreview()
       retryLive(requestGeneration, nextIdentity)
     }
@@ -748,6 +780,10 @@ export function useMarketSeries(dependencies: MarketSeriesDependencies = {}) {
   return {
     bars,
     activeBar,
+    studyActivity,
+    studyCompletedAvailable,
+    studyRevisionPending,
+    studyRevision: appliedCanonicalRevision,
     quote,
     hasMoreBefore,
     canonicalCoverage,

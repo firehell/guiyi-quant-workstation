@@ -103,3 +103,11 @@ test('current continuous preferences migrate without losing period and indicator
   loadMarketDetailPreferences(target,()=>{notices++})
   assert.equal(notices,1)
 })
+
+test('TA-Lib MACD preferences round trip without changing another workspace default', () => {
+  const target = storage()
+  const defaults = defaultMarketDetailPreferences()
+  assert.equal(defaults.talibMacd, undefined)
+  saveMarketDetailPreferences({ ...defaults, talibMacd: ['subing', 'free', 'free'] }, target)
+  assert.deepEqual(loadMarketDetailPreferences(target).talibMacd, ['free', 'subing'])
+})

@@ -12,9 +12,9 @@ import type { BarData, KlineMarker, MainIndicatorId, SeriesKind } from '@/types/
 import { DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
 import type { SavedReferenceLine } from '@/utils/newowMarketReference'
 import type { MarketSeriesMutation } from '@/composables/useMarketSeries'
+import { MARKET_CHART_STUDY_BAR_LIMIT, MARKET_CHART_STUDY_CONTEXT } from '@/utils/marketChartStudies'
 import { candidatePreview } from '@/utils/candidatePreview'
-import { MARKET_CHART_STUDY_BAR_LIMIT, MARKET_CHART_STUDY_IDENTITY, marketChartStudyIssue, marketChartStudyRequest,
-  projectMarketChartStudyDisplay, type MarketChartStudyDisplay, type MarketChartStudyIssue } from '@/utils/marketChartStudies'
+import { useMarketChartStudies } from '@/composables/useMarketChartStudies'
 
 const props = withDefaults(defineProps<{
   chartProfile?: ChartProfileId
@@ -59,42 +59,21 @@ const emit = defineEmits<{
 }>()
 const pageOwnsNavigation = Boolean(inject(DETAIL_CHART_SESSION, null))
 const chart = ref<InstanceType<typeof KlineChart> | null>(null)
-const marketIdentity = inject(MARKET_CHART_STUDY_IDENTITY, null)
-const studyRequest = computed(() => {
-  const identity = marketIdentity?.value
-  if (!identity || candidatePreview.enabled || identity.frequency !== props.period || identity.seriesKind !== props.seriesKind) return null
-  return marketChartStudyRequest(identity, props.visibleMainIndicators, props.bars)
+const market = inject(MARKET_CHART_STUDY_CONTEXT, null)
+const studyContext = computed(() => {
+  const context = market?.value
+  if (!context || context.identity.profile !== props.chartProfile
+    || context.identity.frequency !== props.period || context.identity.seriesKind !== props.seriesKind) return null
+  return props.focusBarEnd ? { ...context, allowTail: false } : context
 })
-const studyDisplay = ref<MarketChartStudyDisplay | null>(null)
-const studyIssue = ref<MarketChartStudyIssue | null>(null)
-const studyUnavailable = ref(false)
-watch(() => studyRequest.value?.key, async (_key, _previous, onCleanup) => {
-  const demand = studyRequest.value
-  studyDisplay.value = null
-  studyIssue.value = null
-  studyUnavailable.value = false
-  if (!demand) return
-  if (demand.query.series_kind === 'continuous') {
-    studyUnavailable.value = true
-    return
-  }
-  const request = new AbortController()
-  onCleanup(() => request.abort())
-  try {
-    const { getMarketChartStudyDisplay } = await import('@/api/market')
-    if (request.signal.aborted) return
-    const payload = await getMarketChartStudyDisplay(demand.query, request.signal)
-    if (request.signal.aborted) return
-    const projected = projectMarketChartStudyDisplay(payload, demand)
-    studyDisplay.value = projected
-    studyUnavailable.value = projected === null
-  } catch (error) {
-    if (!request.signal.aborted) {
-      studyIssue.value = marketChartStudyIssue(error)
-      studyUnavailable.value = true
-    }
-  }
-}, { immediate: true })
+const showTalibMacd = computed(() => studyContext.value?.talibMacd === true)
+const { demand: studyRequest, canonical: studyDisplay, canonicalIssue: studyIssue, historyUnavailable: studyUnavailable,
+  completed: studyCompleted, preview: studyPreview, tailIssue: studyTailIssue } = useMarketChartStudies(
+  () => studyContext.value,
+  () => props.bars,
+  () => showTalibMacd.value ? [...props.visibleMainIndicators, 'macd'] : props.visibleMainIndicators,
+)
+const activeDisplayBar = computed(() => props.activeBar ?? (studyContext.value?.allowTail ? studyContext.value.active.value?.bar : null) ?? null)
 const followLatest = ref(true)
 const fullscreen = ref(false)
 let resolvedFocusKey: string | null = null
@@ -165,7 +144,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"
-      :active-bar="activeBar"
+      :active-bar="activeDisplayBar"
       :subing-volume-tiers="subingVolumeTiers"
       :volume-scoring="volumeScoring"
       :research-markers="researchMarkers"
@@ -179,6 +158,12 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
       :visible-main-indicators="visibleMainIndicators"
       :study-display="studyDisplay"
       :study-issue="studyIssue"
+      :study-completed="studyCompleted"
+      :study-preview="studyPreview"
+      :study-tail-issue="studyTailIssue"
+      :talib-macd="showTalibMacd"
+      :allow-generic-macd="Boolean(studyContext) && !candidatePreview.enabled"
+      @toggle-talib-macd="studyContext?.toggleMacd()"
       :range-detector-source-identity="rangeDetectorSourceIdentity"
       :range-detector-anchor-time="rangeDetectorAnchorTime"
       :alert-markers="markers"

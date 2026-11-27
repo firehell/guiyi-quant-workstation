@@ -55,5 +55,5 @@ export function historicalDisplayBar(page: MarketBarsPageResponse, bar: Canonica
     && item.start_trading_day <= bar.trading_day && bar.trading_day <= item.end_trading_day)
   const calculationSegmentId = segment ? `${physicalContract}:${segment.start_trading_day}`
     : page.request.series_kind === 'contract' && physicalContract ? `contract:${physicalContract}` : undefined
-  return { ...toBarData(bar, physicalContract), calculationSegmentId }
+  return { ...toBarData(bar, physicalContract), calculationSegmentId, marketSource: 'canonical' }
 }

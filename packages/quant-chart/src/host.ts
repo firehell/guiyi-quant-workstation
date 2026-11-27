@@ -16,6 +16,8 @@ export interface LayerDiagnostics {
   packageVersion: string
   formulaVersion: string | null
   sourceIdentity: string | null
+  sourceStage: 'canonical' | 'completed_live' | 'active_preview' | null
+  calculationAnchor: string | null
   frequency: string | null
   pane: ChartPane
   renderer: RendererId
@@ -245,6 +247,7 @@ export function createChartHost(chart: IChartApi) {
     return {
       indicatorId, pane, renderer, status: 'missing_input',
       packageVersion: CHART_MANIFEST.version, formulaVersion: null, sourceIdentity: identity,
+      sourceStage: null, calculationAnchor: null,
       frequency: null, warmup: null, dataCutoff: null, cacheState: null, lastError: null,
       lastErrorAt: null, updatedAt: new Date().toISOString(),
     }

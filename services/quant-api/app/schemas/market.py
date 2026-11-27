@@ -46,7 +46,7 @@ class MarketBarsPageResponse(BaseModel):
     resolved_contract_segments: list[ContractSegmentOut]
 
 
-MarketChartStudyId = Literal["ema10", "ema21", "ema60", "boll"]
+MarketChartStudyId = Literal["ema10", "ema21", "ema60", "boll", "macd"]
 MarketChartStudyPointStatus = Literal["READY", "WARMING", "UNKNOWN", "INVALID", "ERROR"]
 
 
@@ -66,15 +66,32 @@ class MarketChartStudyFeatureOut(BaseModel):
 
 class MarketChartStudyBarOut(BaseModel):
     bar_end: datetime
+    trading_day: date
+    source: Literal["canonical", "completed_live", "active_preview"]
+    open: Decimal
+    high: Decimal
+    low: Decimal
     close: Decimal
+    volume: Decimal
     source_bar_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
 
 
 class MarketChartStudySegmentOut(BaseModel):
     physical_contract: str
     segment_id: str
+    calculation_anchor: datetime
     bars: list[MarketChartStudyBarOut]
     features: list[MarketChartStudyFeatureOut]
+
+
+class MarketChartStudyPreviewOut(BaseModel):
+    segment: MarketChartStudySegmentOut
+    generation: str
+    observed_at: datetime
+    received_at: datetime
+
+
+MarketChartStudyProfile = Literal["free", "htdy", "subing"]
 
 
 class MarketChartStudyDisplayOut(BaseModel):
@@ -88,6 +105,8 @@ class MarketChartStudyDisplayOut(BaseModel):
     source_revision: str | None = Field(pattern=r"^[a-f0-9]{64}$")
     unavailable_reason: Literal["PHYSICAL_OWNER_REQUIRED"] | None
     segments: list[MarketChartStudySegmentOut]
+    preview: MarketChartStudyPreviewOut | None = None
+    tail_unavailable_reason: str | None = None
 
 
 class MarketProgressResponse(BaseModel):

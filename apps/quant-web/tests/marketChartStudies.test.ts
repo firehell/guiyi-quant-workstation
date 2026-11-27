@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import type { BarData } from '../src/types/market.ts'
-import { MARKET_CHART_STUDY_BAR_LIMIT, marketChartStudyIssue, marketChartStudyRequest, marketStudyLayerStatus, projectMarketChartStudyDisplay, retryMarketStudyWhenBusy } from '../src/utils/marketChartStudies.ts'
+import { MARKET_CHART_STUDY_BAR_LIMIT, marketChartStudyIssue, marketChartStudyRequest, marketChartStudyTailRequest, marketStudyLayerStatus, projectMarketChartStudyDisplay, projectMarketChartStudyTail, retryMarketStudyWhenBusy } from '../src/utils/marketChartStudies.ts'
 
 const identity = { symbol: 'rb', frequency: '15m', seriesKind: 'actual_dominant' } as const
 const bars: BarData[] = [1, 2, 3].map(index => ({
@@ -12,6 +12,14 @@ const bars: BarData[] = [1, 2, 3].map(index => ({
   ...(index === 3 ? { confirmed: false } : {}),
 }))
 
+function wireBar(bar: BarData, source: NonNullable<BarData['marketSource']> = 'canonical') {
+  return {
+    source, bar_end: bar.time, trading_day: bar.trading_day,
+    open: String(bar.open), high: String(bar.high), low: String(bar.low),
+    close: String(bar.close), volume: String(bar.volume), source_bar_sha256: bar.sourceBarSha256,
+  }
+}
+
 function fixtures() {
   const request = marketChartStudyRequest(identity, ['ema_21'], bars)!
   return {
@@ -21,8 +29,8 @@ function fixtures() {
       symbol: 'rb', series_kind: 'actual_dominant', frequency: '15m', contract: null,
       as_of: request.query.last, source_revision: 'a'.repeat(64), unavailable_reason: null,
       segments: [{
-        physical_contract: 'RB2701', segment_id: 'RB2701:window-start',
-        bars: request.bars.map(bar => ({ bar_end: bar.time, close: String(bar.close), source_bar_sha256: bar.sourceBarSha256 })),
+        physical_contract: 'RB2701', segment_id: 'RB2701:window-start', calculation_anchor: request.bars[0]!.time,
+        bars: request.bars.map(bar => wireBar(bar)),
         features: [{
           study: 'ema21', formula_version: 'talib_ema21_v1', backend_version: 'ta-lib:fixture',
           parameters_hash: 'b'.repeat(16),
@@ -176,4 +184,88 @@ test('chart study diagnostics distinguish missing, waiting, source rejection and
   wire.segments[0]!.features[0]!.points[0]!.diagnostic = 'Unexpected private payload'
   assert.equal(projectMarketChartStudyDisplay(wire, request)?.points.ema_21?.[bars[0]!.time]?.diagnostic,
     'MARKET_CHART_STUDY_POINT_UNAVAILABLE')
+})
+
+test('tail demand uses completed Live and exact active Market samples, excluding retained prices', () => {
+  const { request, wire } = fixtures()
+  const history = projectMarketChartStudyDisplay(wire, request)!
+  const completed = { ...bars[2]!, marketSource: 'completed_live' as const, trading_day: '2026-11-20' }
+  const retained = { ...completed, marketSource: 'retained' as const }
+  const activity = {
+    bar: { ...completed, time: '2026-11-20T08:00:00Z', marketSource: 'active_preview' as const },
+    generation: 'gen2', observedAt: '2026-11-20T07:46:01Z', receivedAt: '2026-11-20T07:46:02Z',
+  }
+  assert.equal(marketChartStudyTailRequest(request, history, [...request.bars, retained], true, null), null)
+  const tail = marketChartStudyTailRequest(request, history, [...request.bars, completed], true, activity)!
+  assert.equal(tail.query.completed_through, completed.time)
+  assert.equal(tail.query.include_preview, true)
+  assert.equal(tail.query.source_revision, history.sourceRevision)
+
+  const daily = marketChartStudyRequest({ ...identity, frequency: '1d' }, ['ema_21'], request.bars)!
+  assert.equal(marketChartStudyTailRequest(daily, history, [...daily.bars, retained], false, activity)?.query.include_preview, true)
+})
+
+test('historical proof accepts reseeded segments under the same physical owner', () => {
+  const { request, wire } = fixtures()
+  const segment = wire.segments[0]!
+  wire.segments = [0, 1].map(index => ({
+    ...segment, segment_id: `segment-${index}`,
+    bars: [segment.bars[index]!],
+    features: segment.features.map(feature => ({ ...feature, points: [feature.points[index]!] })),
+  }))
+  const projected = projectMarketChartStudyDisplay(wire, request)
+  assert.equal(projected?.segmentsByTime[bars[1]!.time]?.segmentId, 'segment-1')
+  wire.segments[1]!.calculation_anchor = bars[2]!.time
+  assert.throws(() => projectMarketChartStudyDisplay(wire, request), /MARKET_CHART_STUDY_SEGMENT_INVALID/)
+})
+
+test('tail proof distinguishes completed Live from exact preview observation', () => {
+  const { request, wire } = fixtures()
+  const history = projectMarketChartStudyDisplay(wire, request)!
+  const completed = { ...bars[2]!, marketSource: 'completed_live' as const, trading_day: '2026-11-20' }
+  const activity = {
+    bar: { ...completed, time: '2026-11-20T08:00:00Z', marketSource: 'active_preview' as const },
+    generation: 'gen2', observedAt: '2026-11-20T07:46:01Z', receivedAt: '2026-11-20T07:46:02Z',
+  }
+  const demand = marketChartStudyTailRequest(request, history, [...request.bars, completed], true, activity)!
+  const fixtureSegment = wire.segments[0]!
+  function segment(bar: BarData) {
+    return {
+      ...fixtureSegment, bars: [wireBar(bar, bar.marketSource)],
+      features: [{ ...fixtureSegment.features[0]!, points: [fixtureSegment.features[0]!.points[1]!] }],
+    }
+  }
+  const payload = { ...wire, segments: [segment(completed)], tail_unavailable_reason: null,
+    preview: { segment: segment(activity.bar), generation: activity.generation, observed_at: activity.observedAt, received_at: activity.receivedAt } }
+  const result = projectMarketChartStudyTail(payload, demand)
+  assert.equal(result.completed?.points.ema_21?.[completed.time]?.values?.value, 0)
+  assert.equal(result.preview?.data.points.ema_21?.[activity.bar.time]?.values?.value, 0)
+  for (const mutate of [
+    (value: typeof payload) => { value.preview.generation = 'gen1' },
+    (value: typeof payload) => { value.preview.observed_at = '2026-11-20T07:46:01.000001Z' },
+    (value: typeof payload) => { value.preview.received_at = '2026-11-20T07:46:02.000001Z' },
+    (value: typeof payload) => { value.preview.segment.bars[0]!.trading_day = '2026-11-21' },
+    (value: typeof payload) => { value.preview.segment.bars[0]!.open = '1' },
+  ]) {
+    const changed = structuredClone(payload); mutate(changed)
+    const result = projectMarketChartStudyTail(changed, demand)
+    assert.equal(result.preview, null)
+    assert.equal(result.completed?.points.ema_21?.[completed.time]?.status, 'READY')
+  }
+  const wrongSource = structuredClone(payload)
+  wrongSource.segments[0]!.bars[0]!.source = 'retained'
+  assert.throws(() => projectMarketChartStudyTail(wrongSource, demand), /MARKET_CHART_STUDY_BAR_MISMATCH/)
+  assert.throws(() => projectMarketChartStudyTail({ ...payload, source_revision: 'f'.repeat(64) }, demand), /MARKET_CHART_STUDY_SOURCE_INVALID/)
+})
+
+test('TA-Lib MACD requires its own formula and three aligned outputs', () => {
+  const { wire } = fixtures()
+  const request = marketChartStudyRequest(identity, ['macd'], bars)!
+  const feature = wire.segments[0]!.features[0]!
+  feature.study = 'macd'
+  feature.formula_version = 'talib_macd_12_26_9_v1'
+  feature.points[1]!.values = { dif: 1, dea: 0.5, histogram: 0.5 }
+  assert.equal(projectMarketChartStudyDisplay(wire, request)?.points.macd?.[bars[1]!.time]?.values?.histogram, 0.5)
+  feature.formula_version = 'ths_macd_display_v1'
+  assert.throws(() => projectMarketChartStudyDisplay(wire, request), /MARKET_CHART_STUDY_FEATURE_INVALID/)
 })

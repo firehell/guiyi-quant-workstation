@@ -74,11 +74,13 @@ export function buildKlineDerivedData(
 
 export function chartStudySeries(
   bars: readonly BarData[], facts: Record<string, MarketChartStudyPoint> | undefined, output: string,
+  completedFacts?: Record<string, MarketChartStudyPoint>,
 ): KlineValuePoint[] {
-  if (!facts) return []
+  if (!facts && !completedFacts) return []
   return bars.flatMap(bar => {
-    const point = facts[bar.time]
-    return point && bar.confirmed !== false ? [{ time: bar.time, value: point.values?.[output] ?? null }] : []
+    const point = bar.marketSource === 'completed_live' ? completedFacts?.[bar.time]
+      : bar.confirmed !== false ? facts?.[bar.time] : undefined
+    return point ? [{ time: bar.time, value: point.values?.[output] ?? null }] : []
   })
 }
 

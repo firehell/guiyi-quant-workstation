@@ -8,7 +8,7 @@ import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vu
 import { useMarketDetailQuote, projectMarketDetailQuoteHeader } from '@/composables/useMarketDetailQuote'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { candidatePreview } from '@/utils/candidatePreview'
-import { MARKET_CHART_STUDY_IDENTITY } from '@/utils/marketChartStudies'
+import { isGenericChartProfile, MARKET_CHART_STUDY_CONTEXT } from '@/utils/marketChartStudies'
 import { computed, onBeforeUnmount, onUnmounted, provide, ref, watch } from 'vue'
 import { createChart } from 'lightweight-charts'
 import { createDetailChartSession, detailChartTime, DETAIL_CHART_SESSION } from '@/utils/detailChartSession'
@@ -65,7 +65,29 @@ const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-provide(MARKET_CHART_STUDY_IDENTITY, explicitIdentity)
+provide(MARKET_CHART_STUDY_CONTEXT, computed(() => {
+  const identity = explicitIdentity.value
+  if (!identity || !isGenericChartProfile(identity.view)) return null
+  const profile = identity.view
+  const talibMacd = preferences.value.talibMacd?.includes(profile) === true
+  return {
+    identity: { ...identity, profile },
+    talibMacd,
+    toggleMacd() {
+      const current = preferences.value.talibMacd ?? []
+      preferences.value = {
+        ...preferences.value,
+        talibMacd: talibMacd ? current.filter(value => value !== profile) : [...current, profile],
+      }
+      saveMarketDetailPreferences(preferences.value)
+    },
+    active: controller.studyActivity,
+    allowCompleted: controller.studyCompletedAvailable,
+    revision: controller.studyRevision,
+    revisionPending: controller.studyRevisionPending,
+    allowTail: !identity.focusBarEnd,
+  }
+}))
 const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
 const newowAfterMarketOnly = computed(() => marketFoundation || isolatedNewow || explicitIdentity.value?.newowSource === 'after-market')
 const { rows: accountActivity, recentTqRecords, tq, subing, tqAccount, subingAccount } = useWorkstationAccounts()

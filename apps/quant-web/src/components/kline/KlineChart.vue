@@ -22,6 +22,8 @@ import {
   type TickMarkType,
   type Time,
   type UTCTimestamp,
+  type LineSeriesOptions,
+  type DeepPartial,
   type SingleValueData,
   type WhitespaceData,
 } from 'lightweight-charts'
@@ -36,7 +38,7 @@ import type {
   MainIndicatorId,
   SeriesKind,
 } from '@/types/market'
-import { marketStudyLayerStatus, type EmaIndicatorId, type MarketChartStudyDisplay, type MarketChartStudyIssue, type MarketChartStudyPoint } from '@/utils/marketChartStudies'
+import { marketStudyLayerStatus, type ChartStudyId, type EmaIndicatorId, type MarketChartStudyDisplay, type MarketChartStudyIssue, type MarketChartStudyPoint, type MarketChartStudyPreview } from '@/utils/marketChartStudies'
 import { HTDY_WEB_OBSERVATION_METADATA } from '@/utils/mainIndicators'
 import { resolveChartTheme } from '@/styles/chartTheme'
 import {
@@ -96,6 +98,11 @@ const props = withDefaults(defineProps<{
   visibleMainIndicators?: MainIndicatorId[]
   studyDisplay?: MarketChartStudyDisplay | null
   studyIssue?: MarketChartStudyIssue | null
+  studyCompleted?: MarketChartStudyDisplay | null
+  studyPreview?: MarketChartStudyPreview | null
+  studyTailIssue?: MarketChartStudyIssue | null
+  talibMacd?: boolean
+  allowGenericMacd?: boolean
   rangeDetectorSourceIdentity?: string
   rangeDetectorAnchorTime?: string | null
   showDerivedMarkers?: boolean
@@ -132,6 +139,7 @@ const emit = defineEmits<{
   'follow-latest-change': [followLatest: boolean]
   'crosshair-change': [context: HoverKlineContext | null]
   'marker-select': [marker: KlineMarker]
+  'toggle-talib-macd': []
 }>()
 
 const volumeTierPrimitive = new SubingVolumeTierPrimitive()
@@ -198,6 +206,14 @@ let htdyMarkers: ISeriesMarkersPluginApi<Time> | null = null
 const emaLines: Partial<Record<EmaIndicatorId, ISeriesApi<'Line'>>> = {}
 let bollLines: Record<'upper' | 'middle' | 'lower', ISeriesApi<'Line'>> | null = null
 const bollPointCount = ref(0)
+const liveStudyPointCount = ref(0)
+const previewStudyPointCount = ref(0)
+const talibMacdPointCount = ref(0)
+let referenceStudy: ReturnType<typeof referenceIndicatorOverlay> = null
+let talibMacdLayers: { dif: ISeriesApi<'Line'>; dea: ISeriesApi<'Line'>; histogram: ISeriesApi<'Histogram'> } | null = null
+const studyPreviewSeries = new Map<ChartStudyId, Map<string, ISeriesApi<'Line'>>>()
+type NativeStudyPoint = (SingleValueData<Time> & { color?: string }) | WhitespaceData<Time>
+const plottedStudyData = new WeakMap<object, NativeStudyPoint[]>()
 const publicPatternPrimitive = new NewowPublicPatternPrimitive(point => chartTime({ time: point.barEnd, trading_day: point.tradingDay } as BarData))
 watch(() => props.patternGeometry, () => {
   renderPublicPattern()
@@ -333,9 +349,17 @@ watch(() => props.visibleMainIndicators, () => {
   renderDerivedSeries()
   detailSession?.restoreInspectionCursor()
 }, { deep: true })
-watch([() => props.studyDisplay, () => props.studyIssue], () => {
-  renderDerivedSeries()
+watch([() => props.studyDisplay, () => props.studyCompleted, () => props.studyIssue, () => props.studyTailIssue], () => {
+  renderStudyData(resolveChartTheme())
   detailSession?.restoreInspectionCursor()
+})
+watch(() => props.studyPreview, () => renderStudyPreview(resolveChartTheme()))
+watch(() => props.talibMacd, () => {
+  const theme = resolveChartTheme()
+  if (!props.talibMacd) renderThsMacd(theme)
+  renderStudyData(theme)
+  renderStudyPreview(theme)
+  if (props.talibMacd) removeThsMacd()
 })
 watch(() => props.dynamicRange, () => { renderDynamicRange(); detailSession?.restoreInspectionCursor() })
 watch(() => props.savedReferenceLines, renderSavedReferenceLines)
@@ -662,6 +686,10 @@ function onCrosshairMove(param: MouseEventParams<Time>) {
       markersForHoverContext(),
     )
     : null
+  if (nextContext && props.talibMacd) {
+    const values = studyFact('macd', nextContext.time)?.values
+    nextContext.macd = { dif: values?.dif ?? null, dea: values?.dea ?? null, histogram: values?.histogram ?? null }
+  }
   if (nextContext && props.dynamicRange) {
     const point=drawnRangePoints.find(p => matchesRangeBar(p, nextContext.bar))
     nextContext.dynamicRange=point ?? null
@@ -840,7 +868,6 @@ function writeDerivedSeries(): void {
   const rangeKey = JSON.stringify([props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime, 'range_detector_lux_v1'])
   const cachedRange = rangeEnabled && rangeCache?.bars === renderedBars && rangeCache.key === rangeKey ? rangeCache.result : null
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
-    emaPoints: props.studyDisplay?.points,
     rangeDetector: { enabled: rangeEnabled && !cachedRange, sourceIdentity: props.rangeDetectorSourceIdentity, anchorTime: props.rangeDetectorAnchorTime },
   })
   if (cachedRange) derivedData.rangeDetector = cachedRange
@@ -849,10 +876,6 @@ function writeDerivedSeries(): void {
   rangeCalculationMs.value = performance.now() - calculationStarted
   rangeCount.value = derivedData.rangeDetector?.ranges.length ?? 0
   publishRangeResult()
-  const referenceOverlay = referenceIndicatorOverlay(renderedBars, props.referenceIndicators)
-  if (referenceOverlay) {
-    derivedData.ema.ema_21 = referenceOverlay.ema21
-  }
   host.removeLayer('trade-reference')
   const levels = sharedPriceWritten ? referencePriceLevelSegments(renderedBars, props.referenceIndicators ?? []) : []
   referenceTargetSegments.value = levels.filter(level => level.kind === 'target').length
@@ -863,37 +886,9 @@ function writeDerivedSeries(): void {
   }
   const theme = resolveChartTheme()
 
-  const emaColors = { ema_10: theme.ema10, ema_21: theme.ema21, ema_60: theme.ema60 }
-  for (const indicator of EMA_INDICATORS) {
-    if (!props.visibleMainIndicators.includes(indicator)) {
-      host.removeLayer(indicator)
-      delete emaLines[indicator]
-      continue
-    }
-    const usesReference = Boolean(referenceOverlay && indicator === 'ema_21')
-    if (props.studyIssue && !usesReference) {
-      host.removeLayer(indicator)
-      delete emaLines[indicator]
-      host.layer(indicator, indicator, 'main').updateDiagnostics({
-        status: props.studyIssue.status, frequency: props.period, lastError: props.studyIssue.reason,
-      })
-      continue
-    }
-    const last = latestStudyPoint(derivedData.ema[indicator], derivedData.emaFacts[indicator])
-    const fact = last ? derivedData.emaFacts[indicator]?.[last.time] : undefined
-    const identity = usesReference ? undefined : props.studyDisplay?.features[indicator]
-    const written = host.renderLayer(indicator, indicator, 'main', 'line', layer => {
-      const series = emaLines[indicator] ??= layer.line({ color: emaColors[indicator], lineWidth: indicator === 'ema_21' ? 2 : 1, lastValueVisible: false })
-      series.applyOptions({ color: emaColors[indicator] })
-      series.setData(chartValues(derivedData.ema[indicator]))
-      layer.updateDiagnostics({ frequency: props.period,
-        status: last?.value != null ? 'ready' : marketStudyLayerStatus(fact),
-        formulaVersion: identity?.formulaVersion ?? null, sourceIdentity: identity ? props.studyDisplay?.sourceRevision : null,
-        dataCutoff: last?.time ?? null, lastError: last?.value != null ? null : fact?.diagnostic ?? null })
-    })
-    if (!written) delete emaLines[indicator]
-  }
-  renderBoll(theme)
+  referenceStudy = referenceIndicatorOverlay(renderedBars, props.referenceIndicators)
+  renderStudyData(theme)
+  renderStudyPreview(theme)
   const anchor = candles
   if (rangeSelected) host.renderLayer('range-detector', 'range_detector', 'main', 'primitive', layer => {
     if (!layer.hasResource(rangeDetectorPrimitive)) layer.primitive(anchor, rangeDetectorPrimitive)
@@ -923,44 +918,226 @@ function writeDerivedSeries(): void {
   writeMarkersAndMacd(theme)
 }
 
-function renderBoll(theme: ReturnType<typeof resolveChartTheme>): void {
+function studyPoints(id: ChartStudyId, output: string) {
+  return chartStudySeries(renderedBars, props.studyDisplay?.points[id], output, props.studyCompleted?.points[id])
+}
+
+function studyFact(id: ChartStudyId, time: string) {
+  return props.studyCompleted?.points[id]?.[time] ?? props.studyDisplay?.points[id]?.[time]
+}
+
+function studyDiagnostics(id: ChartStudyId, latest: KlineValuePoint | undefined) {
+  const time = latest?.time ?? null
+  const usingLive = !!time && props.studyCompleted?.points[id]?.[time] !== undefined
+  const display = usingLive ? props.studyCompleted : props.studyDisplay
+  const fact = time ? studyFact(id, time) : undefined
+  const proof = time ? display?.segmentsByTime[time] : undefined
+  return {
+    frequency: props.period, status: fact ? marketStudyLayerStatus(fact) : props.studyIssue?.status ?? marketStudyLayerStatus(),
+    formulaVersion: display?.features[id]?.formulaVersion ?? null,
+    sourceIdentity: display?.features[id] ? display.sourceRevision : null,
+    dataCutoff: time,
+    sourceStage: proof ? usingLive ? 'completed_live' as const : 'canonical' as const : null,
+    calculationAnchor: proof?.calculationAnchor ?? null,
+    lastError: props.studyIssue?.reason ?? fact?.diagnostic ?? props.studyTailIssue?.reason ?? null,
+  }
+}
+
+function sameStudyPoint(left: NativeStudyPoint, right: NativeStudyPoint) {
+  if (!sameChartTime(left.time, right.time)) return false
+  if ('value' in left && 'value' in right) return left.value === right.value && left.color === right.color
+  return !('value' in left) && !('value' in right)
+}
+
+/** Keep the native series and use the chart API's tail update where its prefix still matches. */
+function writeStudyPoints(series: ISeriesApi<'Line'> | ISeriesApi<'Histogram'>, data: NativeStudyPoint[]) {
+  const previous = plottedStudyData.get(series)
+  if (previous?.length && previous.length <= data.length
+    && previous.slice(0, -1).every((point, index) => sameStudyPoint(point, data[index]!))
+    && sameChartTime(previous.at(-1)!.time, data[previous.length - 1]!.time)) {
+    const last = previous.length - 1
+    const offset = sameStudyPoint(previous[last]!, data[last]!) ? last + 1 : last
+    for (let index = offset; index < data.length; index++) series.update(data[index]!)
+  } else {
+    series.setData(data)
+  }
+  plottedStudyData.set(series, data)
+}
+
+function renderStudyData(theme: ReturnType<typeof resolveChartTheme>) {
   if (!host) return
-  const selected = props.visibleMainIndicators.includes('boll')
-  if (!selected || props.studyIssue) {
+  const nativeBars = new Map(renderedBars.map(bar => [bar.time, bar]))
+  const emaColors = { ema_10: theme.ema10, ema_21: theme.ema21, ema_60: theme.ema60 }
+  let liveCount = 0
+  for (const indicator of EMA_INDICATORS) {
+    if (!props.visibleMainIndicators.includes(indicator)) {
+      host.removeLayer(indicator)
+      delete emaLines[indicator]
+      continue
+    }
+    const referenceSeries = indicator === 'ema_21' ? referenceStudy?.ema21 : undefined
+    const points = referenceSeries ?? studyPoints(indicator, 'value')
+    derivedData.ema[indicator] = points
+    derivedData.emaFacts[indicator] = referenceSeries ? undefined : {
+      ...props.studyDisplay?.points[indicator], ...props.studyCompleted?.points[indicator],
+    }
+    const facts = derivedData.emaFacts[indicator]
+    const last = latestStudyPoint(points, facts)
+    const written = host.renderLayer(indicator, indicator, 'main', 'line', layer => {
+      const series = emaLines[indicator] ??= layer.line({ color: emaColors[indicator], lineWidth: indicator === 'ema_21' ? 2 : 1, lastValueVisible: false })
+      series.applyOptions({ color: emaColors[indicator] })
+      writeStudyPoints(series, chartValues(points, nativeBars))
+      layer.updateDiagnostics(referenceSeries ? { frequency: props.period,
+        dataCutoff: last?.time ?? null, status: last?.value != null ? 'ready' : 'missing_input', lastError: null,
+      } : studyDiagnostics(indicator, last))
+    })
+    if (!written) delete emaLines[indicator]
+    else if (!referenceSeries) liveCount += readyCompletedCount(indicator)
+  }
+  if (renderBoll(theme, nativeBars)) liveCount += readyCompletedCount('boll')
+  if (renderTalibMacd(theme, nativeBars)) liveCount += readyCompletedCount('macd')
+  liveStudyPointCount.value = liveCount
+}
+
+function readyCompletedCount(id: ChartStudyId) {
+  return Object.values(props.studyCompleted?.points[id] ?? {}).filter(point => point.status === 'READY').length
+}
+
+function renderBoll(theme: ReturnType<typeof resolveChartTheme>, nativeBars: ReadonlyMap<string, BarData>): boolean {
+  if (!host) return false
+  if (!props.visibleMainIndicators.includes('boll')) {
     host.removeLayer('boll')
     bollLines = null
     bollPointCount.value = 0
-    if (selected && props.studyIssue) host.layer('boll', 'boll', 'main').updateDiagnostics({
-      status: props.studyIssue.status, frequency: props.period, lastError: props.studyIssue.reason,
-    })
-    return
+    return false
   }
   const written = host.renderLayer('boll', 'boll', 'main', 'band', layer => {
     const boundary = { color: theme.ema60, lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false } as const
     const center = { ...boundary, color: theme.ema10, lineStyle: 0 } as const
     bollLines ??= { ...layer.band(boundary, boundary), middle: layer.line(center) }
-    const facts = props.studyDisplay?.points.boll
-    const middle = chartStudySeries(renderedBars, facts, 'middle')
-    const last = latestStudyPoint(middle, facts)
-    const fact = last && facts?.[last.time]
     bollLines.upper.applyOptions(boundary)
     bollLines.middle.applyOptions(center)
     bollLines.lower.applyOptions(boundary)
-    bollLines.upper.setData(chartValues(chartStudySeries(renderedBars, facts, 'upper')))
-    bollLines.middle.setData(chartValues(middle))
-    bollLines.lower.setData(chartValues(chartStudySeries(renderedBars, facts, 'lower')))
+    const middle = studyPoints('boll', 'middle')
+    writeStudyPoints(bollLines.upper, chartValues(studyPoints('boll', 'upper'), nativeBars))
+    writeStudyPoints(bollLines.middle, chartValues(middle, nativeBars))
+    writeStudyPoints(bollLines.lower, chartValues(studyPoints('boll', 'lower'), nativeBars))
     bollPointCount.value = middle.filter(point => point.value !== null).length
-    layer.updateDiagnostics({
-      frequency: props.period, formulaVersion: props.studyDisplay?.features.boll?.formulaVersion ?? null,
-      sourceIdentity: facts ? props.studyDisplay?.sourceRevision : null, dataCutoff: last?.time ?? null,
-      status: last?.value != null ? 'ready' : marketStudyLayerStatus(fact),
-      lastError: fact?.diagnostic ?? null,
-    })
+    layer.updateDiagnostics(studyDiagnostics('boll', middle.at(-1)))
   })
   if (!written) {
     bollLines = null
     bollPointCount.value = 0
   }
+  return written
+}
+
+const AUXILIARY_PANE = { auxiliary: 'default' } as const
+
+function renderTalibMacd(theme: ReturnType<typeof resolveChartTheme>, nativeBars: ReadonlyMap<string, BarData>): boolean {
+  if (!host) return false
+  if (!props.talibMacd) {
+    host.removeLayer('talib-macd')
+    talibMacdLayers = null
+    talibMacdPointCount.value = 0
+    return false
+  }
+  const written = host.renderLayer('talib-macd', 'macd', AUXILIARY_PANE, 'histogram', layer => {
+    if (!talibMacdLayers) {
+      talibMacdLayers = {
+        histogram: layer.histogram({ base: 0, lastValueVisible: false }),
+        dif: layer.line({ color: '#00bfcf', lineWidth: 1, lastValueVisible: false }),
+        dea: layer.line({ color: '#d4b000', lineWidth: 1, lastValueVisible: false }),
+      }
+      layer.priceLevel(talibMacdLayers.dif, { price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
+      chart?.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
+      syncPaneLayout()
+    }
+    const histogram = studyPoints('macd', 'histogram')
+    writeStudyPoints(talibMacdLayers.histogram, chartValues(histogram, nativeBars).map(point => 'value' in point
+      ? { ...point, color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : point))
+    writeStudyPoints(talibMacdLayers.dif, chartValues(studyPoints('macd', 'dif'), nativeBars))
+    writeStudyPoints(talibMacdLayers.dea, chartValues(studyPoints('macd', 'dea'), nativeBars))
+    talibMacdPointCount.value = histogram.filter(point => point.value !== null).length
+    layer.updateDiagnostics(studyDiagnostics('macd', histogram.at(-1)))
+  })
+  if (!written) {
+    talibMacdLayers = null
+    talibMacdPointCount.value = 0
+  }
+  return written
+}
+
+function renderStudyPreview(theme: ReturnType<typeof resolveChartTheme>) {
+  if (!host) return
+  const preview = props.studyPreview
+  const latestBar = renderedBars.at(-1)
+  let count = 0
+  const colors = {
+    ema_10: { value: theme.ema10 }, ema_21: { value: theme.ema21 }, ema_60: { value: theme.ema60 },
+    boll: { upper: theme.ema60, middle: theme.ema10, lower: theme.ema60 },
+    macd: { dif: '#00bfcf', dea: '#d4b000', histogram: theme.volumeUp },
+  }
+  for (const id of Object.keys(colors) as ChartStudyId[]) {
+    const layerId = `${id}-active-preview`
+    const selected = id === 'macd' ? props.talibMacd : props.visibleMainIndicators.includes(id)
+    const point = preview?.data.points[id]?.[preview.bar.time]
+    if (!selected || !preview || !point
+      || (id === 'ema_21' && referenceStudy)
+      || (latestBar && compareChartTimes(chartTime(preview.bar), chartTime(latestBar)) <= 0)) {
+      host.removeLayer(layerId)
+      studyPreviewSeries.delete(id)
+      continue
+    }
+    const written = host.renderLayer(layerId, id, id === 'macd' ? AUXILIARY_PANE : 'main', 'line', layer => {
+      const proof = preview.data.segmentsByTime[preview.bar.time]
+      const preceding = latestBar && studyFact(id, latestBar.time)
+      const precedingProof = latestBar && (props.studyCompleted?.segmentsByTime[latestBar.time] ?? props.studyDisplay?.segmentsByTime[latestBar.time])
+      const bridges = latestBar && preceding?.values && proof && precedingProof
+        && proof.segmentId === precedingProof.segmentId && proof.physicalContract === precedingProof.physicalContract
+      const outputs = studyPreviewSeries.get(id) ?? new Map<string, ISeriesApi<'Line'>>()
+      studyPreviewSeries.set(id, outputs)
+      for (const [output, color] of Object.entries(colors[id])) {
+        const options: DeepPartial<LineSeriesOptions> = {
+          color, lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false,
+          pointMarkersVisible: true, pointMarkersRadius: 2, crosshairMarkerVisible: false,
+        }
+        let line = outputs.get(output)
+        if (!line && point.values?.[output] !== undefined) {
+          line = layer.line(options)
+          outputs.set(output, line)
+        }
+        if (!line) continue
+        line.applyOptions(options)
+        const value = point.values?.[output]
+        const previousValue = bridges ? preceding.values?.[output] : undefined
+        line.setData(value === undefined ? [] : [
+          ...(previousValue === undefined || !latestBar ? [] : [{ time: chartTime(latestBar), value: previousValue }]),
+          { time: chartTime(preview.bar), value },
+        ])
+      }
+      layer.updateDiagnostics({
+        sourceStage: 'active_preview', calculationAnchor: proof?.calculationAnchor ?? null,
+        frequency: props.period,
+        formulaVersion: preview.data.features[id]?.formulaVersion ?? null,
+        sourceIdentity: preview.generation, dataCutoff: preview.bar.time,
+        status: marketStudyLayerStatus(point), lastError: point.diagnostic,
+      })
+    })
+    if (!written) studyPreviewSeries.delete(id)
+    else if (point.status === 'READY') count++
+  }
+  previewStudyPointCount.value = count
+}
+
+function removeThsMacd() {
+  host?.removeLayer('macd-crosses')
+  host?.removeLayer('macd')
+  macdHistogram = null
+  macdDif = null
+  macdDea = null
+  macdCrossMarkers = null
+  macdPointCount.value = 0
 }
 
 function renderThsMacd(theme: ReturnType<typeof resolveChartTheme>): void {
@@ -1037,7 +1214,8 @@ function renderThsMacd(theme: ReturnType<typeof resolveChartTheme>): void {
 
 function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void {
   if (!host) return
-  renderThsMacd(theme)
+  if (props.talibMacd) removeThsMacd()
+  else renderThsMacd(theme)
   if (props.visibleMainIndicators.includes('htdy')) {
     const written = host.renderLayer('htdy', 'htdy', 'main', 'line', layer => {
       htdyLines ??= {
@@ -1261,6 +1439,9 @@ defineExpose({
     :data-alert-marker-count="alertMarkers.length"
     :data-macd-point-count="macdPointCount"
     :data-boll-point-count="bollPointCount"
+    :data-live-study-point-count="liveStudyPointCount"
+    :data-preview-study-point-count="previewStudyPointCount"
+    :data-talib-macd-point-count="talibMacdPointCount"
     :data-reference-target-segments="referenceTargetSegments"
     :data-reference-stop-segments="referenceStopSegments"
     :data-research-marker-count="researchMarkers.length"
@@ -1287,13 +1468,20 @@ defineExpose({
       :period="period"
       :show-macd="true"
     />
-    <div
+    <component
+      :is="allowGenericMacd ? 'button' : 'div'"
       class="secondary-panel-label"
+      :class="{ 'secondary-panel-label--select': allowGenericMacd }"
       data-testid="secondary-panel-label"
+      :type="allowGenericMacd ? 'button' : undefined"
+      :aria-pressed="allowGenericMacd ? talibMacd : undefined"
+      :aria-label="allowGenericMacd ? 'TA-Lib MACD' : undefined"
+      :title="allowGenericMacd ? (talibMacd ? '切回同花顺 MACD' : '切换至 TA-Lib MACD') : undefined"
       :style="{ top: macdLabelTop === null ? '80%' : `${macdLabelTop + 5}px` }"
+      @click="allowGenericMacd && emit('toggle-talib-macd')"
     >
-      MACD · MA21 金死叉
-    </div>
+      {{ talibMacd ? 'TA-Lib MACD' : 'MACD · MA21 金死叉' }}
+    </component>
     <div
       v-if="visibleMainIndicators.includes('htdy')"
       class="htdy-legend"
@@ -1316,6 +1504,7 @@ defineExpose({
 .reference-callouts { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
 .chart { width: 100%; height: 100%; }
 .secondary-panel-label { position: absolute; z-index: 3; left: 10px; min-height: 26px; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-primary); font-size: var(--gy-font-size-xs); font-weight: 600; pointer-events: none; }
+.secondary-panel-label.secondary-panel-label--select { border: 0; cursor: pointer; pointer-events: auto; text-align: left; font-family: inherit; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }
 .htdy-legend span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }
 .htdy-legend__line { display: inline-block; width: 18px; border-top: 2px solid; }

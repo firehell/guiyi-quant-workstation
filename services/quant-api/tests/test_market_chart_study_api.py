@@ -103,9 +103,10 @@ def test_cold_chart_study_rejects_a_revision_between_read_and_result(client, mon
 
     response = client.get(PATH, params=params)
     assert response.status_code == 200
-    segment, = response.json()["segments"]
-    assert Decimal(segment["bars"][4]["close"]) == 130
-    assert segment["features"][0]["points"][9]["values"]["value"] == 103
+    december, january = response.json()["segments"]
+    assert Decimal(december["bars"][4]["close"]) == 130
+    assert january["calculation_anchor"] == december["calculation_anchor"]
+    assert january["features"][0]["points"][3]["values"]["value"] == 103
     assert seen == [100, 130, 130, 130]
     assert client.get(PATH, params=params).json() == response.json()
     assert seen == [100, 130, 130, 130, 130]

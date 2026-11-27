@@ -11,6 +11,7 @@ import type {
   MarketProductDirectoryItem,
   MarketOverlaySource,
   MarketReadState,
+  MarketStudyActivity,
   MarketTickQuote,
   ProductResearchResponse,
 } from '../types/market.ts'
@@ -34,6 +35,10 @@ export interface MarketDetailControllerState {
 interface MarketDetailSeriesController {
   bars: Ref<BarData[]>
   activeBar?: Readonly<Ref<BarData | null>>
+  studyActivity?: Readonly<Ref<MarketStudyActivity | null>>
+  studyCompletedAvailable?: Readonly<Ref<boolean>>
+  studyRevisionPending?: Readonly<Ref<boolean>>
+  studyRevision?: Readonly<Ref<string | null>>
   quote?: Readonly<Ref<MarketTickQuote | null>>
   loadingBefore?: Ref<boolean>
   historyError?: Ref<string | null>
@@ -89,6 +94,10 @@ export function useMarketDetailController(
   canonicalCoverage: Readonly<Ref<{ readonly start: string; readonly end: string } | null>>
   bars: Readonly<Ref<BarData[]>>
   activeBar: Readonly<Ref<BarData | null>>
+  studyActivity: Readonly<Ref<MarketStudyActivity | null>>
+  studyCompletedAvailable: Readonly<Ref<boolean>>
+  studyRevisionPending: Readonly<Ref<boolean>>
+  studyRevision: Readonly<Ref<string | null>>
   quote: Readonly<Ref<MarketTickQuote | null>>
   mutation: Readonly<Ref<MarketSeriesMutation>>
   loadingBefore: Readonly<Ref<boolean>>
@@ -302,6 +311,10 @@ export function useMarketDetailController(
     productCatalog: readonly(productCatalog),
     bars: publicBars,
     activeBar: series.activeBar ?? ref(null),
+    studyActivity: series.studyActivity ?? ref(null),
+    studyCompletedAvailable: series.studyCompletedAvailable ?? ref(false),
+    studyRevisionPending: series.studyRevisionPending ?? ref(false),
+    studyRevision: series.studyRevision ?? ref(null),
     quote: series.quote ?? ref(null),
     canonicalCoverage: readonly(series.canonicalCoverage),
     mutation: publicMutation,

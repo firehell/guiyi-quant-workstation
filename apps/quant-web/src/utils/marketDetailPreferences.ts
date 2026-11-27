@@ -10,6 +10,7 @@ import {
   type NewowStrategy,
 } from '../types/marketDetail.ts'
 import { normalizeOptionalEmaIndicators } from './mainIndicators.ts'
+import type { GenericChartProfile } from './marketChartStudies.ts'
 
 export const MARKET_DETAIL_PREFERENCES_KEY = 'guiyi.market.detail.preferences.v2'
 const LEGACY_DETAIL_KEY = 'guiyi.market.detail.preferences.v1'
@@ -33,6 +34,7 @@ export interface MarketDetailPreferences {
   newow: MarketDetailViewRestore['newow']
   htdy: FlexibleDetailPreferences
   free: FreeDetailPreferences
+  talibMacd?: GenericChartProfile[]
 }
 
 export type DetailPreferenceStorage = Pick<Storage, 'getItem' | 'setItem'>
@@ -98,12 +100,17 @@ export function replaceNewowDetailPreferences(
 
 function normalizeCurrent(value: unknown): MarketDetailPreferences {
   if (!isRecord(value) || value.version !== 2) return defaultMarketDetailPreferences()
+  const selected = value.talibMacd
+  const talibMacd = Array.isArray(selected)
+    ? (['free', 'htdy', 'subing'] as const).filter(profile => selected.includes(profile))
+    : []
   return {
     version: 2,
     lastView: isRestorableView(value.lastView) ? value.lastView : 'newow',
     newow: normalizeNewow(value.newow),
     htdy: normalizeFlexible(value.htdy),
     free: normalizeFree(value.free),
+    ...(talibMacd.length ? { talibMacd } : {}),
   }
 }
 

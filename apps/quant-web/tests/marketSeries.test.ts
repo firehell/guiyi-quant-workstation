@@ -674,9 +674,11 @@ describe('market Live overlay', () => {
     await series.replaceSeries({ seriesKind: 'actual_dominant', symbol: 'ag', frequency: '15m' })
     sockets[0].message({ type: 'snapshot', source: 'realtime', trading_day: '2026-08-07', contract: 'AG2601', bars: [] })
     sockets[0].message({ type: 'bar', bar: liveBar('2026-08-07T09:45:00Z', 101) })
+    assert.equal(series.studyCompletedAvailable.value, true)
     sockets[0].disconnect()
     assert.equal(series.liveUnavailable.value, true)
-    assert.equal(series.bars.value.length, 2)
+    assert.equal(series.studyCompletedAvailable.value, false)
+    assert.deepEqual(series.bars.value.map(bar => bar.marketSource), ['canonical', 'completed_live'])
     scheduled[0]()
 
     assert.equal(new URL(sockets[1].url).searchParams.has('after'), false)
@@ -801,6 +803,7 @@ describe('market Live overlay', () => {
     })
 
     assert.equal(series.overlaySource.value, 'post_close')
+    assert.equal(series.studyCompletedAvailable.value, false)
     assert.deepEqual(series.bars.value.map((bar) => bar.time), [
       '2026-08-10T07:00:00Z',
       '2026-08-10T07:15:00Z',
@@ -891,6 +894,7 @@ describe('market Live overlay', () => {
     })
 
     assert.equal(series.overlaySource.value, 'post_close')
+    assert.equal(series.studyCompletedAvailable.value, false)
     assert.deepEqual(series.bars.value.map((bar) => bar.time), [
       '2026-08-10T07:00:00Z',
       '2026-08-10T07:15:00Z',
@@ -1429,12 +1433,19 @@ it('keeps Tick activity out of completed bars and retains the prior trading day 
   } })
   assert.deepEqual(series.bars.value.map(bar => bar.close), [99, 100, 101])
   assert.equal(series.bars.value[1]?.physicalContract, 'AG2601')
+  assert.deepEqual(series.bars.value.map(bar => bar.marketSource), ['canonical', 'retained', 'completed_live'])
   assert.equal(series.activeBar.value?.close, 102)
+  assert.equal(series.studyActivity.value?.generation, 'candidate-1')
+  assert.equal(series.studyCompletedAvailable.value, true)
   socket.message({ type: 'bar', bar: preview })
   assert.equal(series.bars.value.at(-1)?.close, 102)
   assert.equal(series.activeBar.value, null)
   socket.message({ type: 'retained', trading_day: null, contract: null, bars: [] })
   assert.deepEqual(series.bars.value.map(bar => bar.close), [99, 101, 102])
+  socket.message({ type: 'state', state: state({ trading_day: currentDay, live_contract: 'AG2701',
+    canonical_end: '2026-08-07T06:30:00Z', display_preview: true }) })
+  assert.equal(series.studyCompletedAvailable.value, false)
+  assert.equal(series.bars.value.at(-1)?.physicalContract, 'AG2605')
   series.dispose()
 })
 

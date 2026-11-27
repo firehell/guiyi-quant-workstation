@@ -490,16 +490,25 @@ test('Free migrates legacy continuous links and keeps 60-minute and daily naviga
   expect(requests.some(url => url.searchParams.get('series_kind') === 'continuous')).toBe(false)
 })
 
+function studyBar(bar, source) {
+  return {
+    bar_end: bar.bar_end, trading_day: bar.trading_day, source,
+    open: String(bar.open), high: String(bar.high), low: String(bar.low),
+    close: String(bar.close), volume: String(bar.volume),
+    source_bar_sha256: bar.source_bar_sha256 ?? 'c'.repeat(64),
+  }
+}
+
 function chartStudyWire(bars, requestedStudies, point = () => ({ status: 'WARMING', values: null, diagnostic: 'LOOKBACK_REQUIRED' })) {
   return {
     schema_version: 'guiyi_market_chart_studies_v1', result_schema_version: 'guiyi_feature_result_v1',
     symbol: 'jm', series_kind: 'actual_dominant', contract: null, frequency: '15m',
     as_of: bars.at(-1).bar_end, source_revision: 'a'.repeat(64), unavailable_reason: null,
     segments: [{
-      physical_contract: 'JM2601', segment_id: 'JM2601:2026-09-03',
-      bars: bars.map(bar => ({ bar_end: bar.bar_end, close: String(bar.close), source_bar_sha256: 'c'.repeat(64) })),
+      physical_contract: 'JM2601', segment_id: 'JM2601:2026-09-03', calculation_anchor: bars[0].bar_end,
+      bars: bars.map(bar => studyBar(bar, 'canonical')),
       features: requestedStudies.split(',').map(study => ({
-        study, formula_version: `talib_${study}_v1`,
+        study, formula_version: study === 'macd' ? 'talib_macd_12_26_9_v1' : `talib_${study}_v1`,
         backend_version: 'ta-lib:fixture', parameters_hash: 'b'.repeat(16),
         points: bars.map(point),
       })),
@@ -525,7 +534,7 @@ test('Free restores enabled EMA preferences after reload', async ({ page }) => {
   await expect(ema10).toHaveAttribute('aria-pressed', 'true')
   await expect.poll(() => requests.length).toBe(1)
   expect(requests[0]).toEqual({
-    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m',
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', profile: 'free',
     first: bars[0].bar_end, last: bars.at(-1).bar_end, count: '2', studies: 'ema10',
   })
   await page.reload()
@@ -639,6 +648,178 @@ test('Free BOLL rejects an incompatible result schema and recovers on a fresh se
   await diagnostics.getByRole('button', { name: '刷新诊断' }).click()
   await expect(diagnostics.getByText('boll · 就绪', { exact: true })).toBeVisible()
   expect(calls).toBe(2)
+})
+
+test('Free charts verified completed BOLL and only the current tick preview, then clears the disconnected tail', async ({ page }) => {
+  await installDetailFakeWebSocket(page)
+  await mockMarketDetail(page, { live: true })
+  const history = [detailBar('jm', 0, 100), detailBar('jm', 1, 101)]
+  const completed = detailBar('jm', 2, 102)
+  const day = completed.trading_day
+  const contract = completed.physical_contract
+  const point = bar => ({ status: 'READY', values: { upper: bar.close + 10, middle: bar.close, lower: bar.close - 10 }, diagnostic: null })
+  const base = chartStudyWire(history, 'boll', point)
+  const browserState = {
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', operational: true, phase: 'TRADING',
+    trading_day: day, live_eligible: true, live_available: true, live_contract: contract,
+    canonical_end: history.at(-1).bar_end, display_preview: true, after_market: {},
+  }
+  await page.route('**/api/v1/market/state?**', route => route.fulfill({ json: browserState }))
+  let windowReads = 0
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    windowReads++
+    return route.fulfill({ json: base })
+  })
+  function segment(bar, source) {
+    return {
+      ...base.segments[0], bars: [studyBar(bar, source)],
+      features: [{ ...base.segments[0].features[0], points: [point(bar)] }],
+    }
+  }
+  const tailReads = []
+  let seenActivity
+  await page.route('**/api/v1/market/indicators/chart-tail?**', async route => {
+    const params = new URL(route.request().url()).searchParams
+    const query = Object.fromEntries(params)
+    const activity = params.get('include_preview') === 'true' ? seenActivity : null
+    const response = { ...base, segments: [segment(completed, 'completed_live')], tail_unavailable_reason: null,
+      preview: activity ? { generation: activity.generation, observed_at: activity.observed_at,
+        received_at: activity.received_at, segment: segment(activity.bar, 'active_preview') } : null }
+    if (activity) {
+      await new Promise(resolve => tailReads.push({ query, resume: resolve }))
+    } else {
+      tailReads.push({ query })
+    }
+    await route.fulfill({ json: response }).catch(() => {})
+  })
+  const send = data => page.evaluate(payload => {
+    const socket = window.__marketDetailSockets.find(socket => socket.url.includes('/market/ws') && !socket.closed)
+    socket.onmessage?.({ data: JSON.stringify(payload) })
+  }, data)
+  const activity = tick => ({
+    contract, generation: 'generation-1',
+    observed_at: `2026-09-03T03:01:0${tick}Z`, received_at: `2026-09-03T03:01:0${tick}Z`,
+    bar: detailBar('jm', 3, 102 + tick),
+  })
+  const shell = page.getByTestId('kline-shell')
+  await page.goto(freeJm)
+  await expect.poll(() => page.evaluate(() => window.__marketDetailSockets.some(socket => socket.url.includes('/market/ws')))).toBe(true)
+  await page.getByRole('button', { name: 'BOLL', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-boll-point-count', '2')
+  await shell.evaluate(node => { window.__studyCanvas = node.querySelector('canvas') })
+  await send({ type: 'snapshot', source: 'realtime', trading_day: day, contract, bars: [completed] })
+  await expect(shell).toHaveAttribute('data-live-study-point-count', '1')
+  await expect(shell).toHaveAttribute('data-boll-point-count', '3')
+  expect(tailReads[0].query).toEqual({
+    symbol: 'jm', series_kind: 'actual_dominant', frequency: '15m', profile: 'free', studies: 'boll',
+    canonical_end: history.at(-1).bar_end, source_revision: base.source_revision,
+    completed_through: completed.bar_end, include_preview: 'false',
+  })
+
+  seenActivity = activity(1)
+  await send({ type: 'preview', quote: null, activity: seenActivity })
+  await expect.poll(() => tailReads.length).toBe(2)
+  for (const tick of [2, 3, 4]) {
+    seenActivity = activity(tick)
+    await send({ type: 'preview', quote: null, activity: seenActivity })
+  }
+  expect(tailReads).toHaveLength(2)
+  tailReads[1].resume()
+  await expect.poll(() => tailReads.length).toBe(3)
+  await expect(shell).toHaveAttribute('data-preview-study-point-count', '0')
+  tailReads[2].resume()
+  await expect(shell).toHaveAttribute('data-preview-study-point-count', '1')
+  await expect(shell).toHaveAttribute('data-boll-point-count', '3')
+
+  seenActivity = activity(5)
+  await send({ type: 'preview', quote: null, activity: seenActivity })
+  await expect.poll(() => tailReads.length).toBe(4)
+  await shell.evaluate(() => window.__marketDetailSockets.find(socket => socket.url.includes('/market/ws') && !socket.closed).close())
+  tailReads[3].resume()
+  await expect(shell).toHaveAttribute('data-preview-study-point-count', '0')
+  await expect(shell).toHaveAttribute('data-live-study-point-count', '0')
+  await expect(shell).toHaveAttribute('data-boll-point-count', '2')
+  expect(await shell.evaluate(node => node.querySelector('canvas') === window.__studyCanvas)).toBe(true)
+  expect(windowReads).toBe(1)
+})
+
+test('Free recovers each expired live-study seed while Canonical prices stay fixed', async ({ page }) => {
+  await installDetailFakeWebSocket(page)
+  await mockMarketDetail(page, { live: true })
+  const bars = freeHistory(4)
+  const history = bars.slice(0, 2)
+  const live = bars.slice(2)
+  const point = bar => ({ status: 'READY', values: { upper: bar.close + 10, middle: bar.close, lower: bar.close - 10 }, diagnostic: null })
+  const base = chartStudyWire(history, 'boll', point)
+  const revisions = ['a', 'b', 'c'].map(digit => digit.repeat(64))
+  let windowReads = 0
+  await page.route('**/api/v1/market/indicators/chart-window?**', route =>
+    route.fulfill({ json: { ...base, source_revision: revisions[windowReads++] } }))
+  const readRevisions = []
+  await page.route('**/api/v1/market/indicators/chart-tail?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    const revision = params.get('source_revision')
+    readRevisions.push(revision)
+    const last = params.get('completed_through')
+    if (revision === revisions[0] || (revision === revisions[1] && last === live[1].bar_end)) {
+      return route.fulfill({ status: 409, json: { detail: { code: 'MARKET_CHART_STUDY_BASE_EXPIRED' } } })
+    }
+    const completed = live.filter(bar => bar.bar_end <= last)
+    return route.fulfill({ json: { ...base, source_revision: revision, segments: [{
+      ...base.segments[0], bars: completed.map(bar => studyBar(bar, 'completed_live')),
+      features: [{ ...base.segments[0].features[0], points: completed.map(point) }],
+    }] } })
+  })
+  const send = data => page.evaluate(payload => {
+    const socket = window.__marketDetailSockets.find(socket => socket.url.includes('/market/ws') && !socket.closed)
+    socket.onmessage?.({ data: JSON.stringify(payload) })
+  }, data)
+  const shell = page.getByTestId('kline-shell')
+  await page.goto(freeJm)
+  await expect.poll(() => page.evaluate(() => window.__marketDetailSockets.some(socket => socket.url.includes('/market/ws')))).toBe(true)
+  await page.getByRole('button', { name: 'BOLL', exact: true }).click()
+  await expect(shell).toHaveAttribute('data-boll-point-count', '2')
+  await send({ type: 'snapshot', source: 'realtime', trading_day: live[0].trading_day, contract: live[0].physical_contract, bars: [live[0]] })
+  await expect(shell).toHaveAttribute('data-live-study-point-count', '1')
+  await send({ type: 'bar', bar: live[1] })
+  await expect(shell).toHaveAttribute('data-live-study-point-count', '2')
+  await expect(shell).toHaveAttribute('data-boll-point-count', '4')
+  expect(windowReads).toBe(3)
+  expect(readRevisions).toEqual([revisions[0], revisions[1], revisions[1], revisions[2]])
+})
+
+test('Free can switch the existing THS auxiliary pane to independent TA-Lib MACD and back', async ({ page }) => {
+  const bars = freeHistory(40)
+  await mockMarketDetail(page, { barsPage: () => ({ bars }) })
+  const requests = []
+  await page.route('**/api/v1/market/indicators/chart-window?**', route => {
+    const params = new URL(route.request().url()).searchParams
+    requests.push(params.get('studies'))
+    return route.fulfill({ json: chartStudyWire(bars, 'macd', () => ({
+      status: 'READY', values: { dif: 1, dea: 0.5, histogram: 0.5 }, diagnostic: null,
+    })) })
+  })
+  await page.goto(freeJm)
+  const shell = page.getByTestId('kline-shell')
+  const selector = page.getByRole('button', { name: 'TA-Lib MACD' })
+  await expect(selector).toHaveAttribute('aria-pressed', 'false')
+  await expect.poll(async () => Number(await shell.getAttribute('data-macd-point-count'))).toBeGreaterThan(0)
+  await shell.evaluate(node => { window.__studyCanvas = node.querySelector('canvas') })
+  expect(requests).toEqual([])
+  await selector.click()
+  await expect(selector).toHaveAttribute('aria-pressed', 'true')
+  await expect(shell).toHaveAttribute('data-talib-macd-point-count', '40')
+  await expect(shell).toHaveAttribute('data-macd-point-count', '0')
+  await selector.click()
+  await expect(shell).toHaveAttribute('data-talib-macd-point-count', '0')
+  await expect.poll(async () => Number(await shell.getAttribute('data-macd-point-count'))).toBeGreaterThan(0)
+  expect(await shell.evaluate(node => node.querySelector('canvas') === window.__studyCanvas)).toBe(true)
+  expect(requests).toEqual(['macd'])
+  await selector.click()
+  await expect(selector).toHaveAttribute('aria-pressed', 'true')
+  await page.reload()
+  await expect(selector).toHaveAttribute('aria-pressed', 'true')
+  await expect(shell).toHaveAttribute('data-talib-macd-point-count', '40')
 })
 
 test('Free clears a contract when the product changes and keeps HTDY preferences untouched', async ({ page }) => {

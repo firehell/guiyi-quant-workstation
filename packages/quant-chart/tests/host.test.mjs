@@ -63,6 +63,10 @@ test('three auxiliary panes share one chart and a new identity expires an old ge
     assert.equal(layer.line({}).pane, index + 1)
     layer.updateDiagnostics({ status: 'warming', warmup: { available: 8, required: 20 } })
     assert.equal(layer.inspect().packageVersion, CHART_MANIFEST.version)
+    assert.equal(layer.inspect().sourceStage, null)
+    layer.updateDiagnostics({ sourceStage: 'active_preview', calculationAnchor: '2026-10-30T13:01:00Z' })
+    assert.equal(layer.inspect().sourceStage, 'active_preview')
+    assert.equal(layer.inspect().calculationAnchor, '2026-10-30T13:01:00Z')
     assert.deepEqual(layer.inspect().warmup, { available: 8, required: 20 })
   }
   assert.throws(() => host.addAuxiliary('stddev'), /CHART_AUXILIARY_PANE_LIMIT/)

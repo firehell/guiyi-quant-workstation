@@ -35,6 +35,9 @@ function refresh() {
           <dt>面板 / 渲染器</dt>
           <dd>{{ typeof layer.pane === 'string' ? layer.pane : layer.pane.auxiliary }} / {{ layer.renderer }}</dd>
           <dt>来源</dt><dd>{{ layer.sourceIdentity ?? '—' }}</dd>
+          <template v-if="layer.sourceStage || layer.calculationAnchor">
+            <dt>行情阶段 / 计算起点</dt><dd>{{ layer.sourceStage ?? '—' }} / {{ layer.calculationAnchor ?? '—' }}</dd>
+          </template>
           <dt>周期 / 数据截止</dt><dd>{{ layer.frequency ?? '—' }} / {{ layer.dataCutoff ?? '—' }}</dd>
           <dt>预热 / 缓存</dt>
           <dd>{{ layer.warmup ? `${layer.warmup.available}/${layer.warmup.required}` : '—' }} / {{ layer.cacheState ?? '—' }}</dd>

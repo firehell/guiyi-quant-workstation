@@ -1,7 +1,7 @@
 import request from './request'
 import { createConditionalHomeRead } from './homeConditionalRead'
 import { READ_PRIORITY } from '../utils/readAdmission.ts'
-import { retryMarketStudyWhenBusy, type MarketChartStudyQuery } from '../utils/marketChartStudies.ts'
+import { retryMarketStudyWhenBusy, type MarketChartStudyQuery, type MarketChartStudyTailQuery } from '../utils/marketChartStudies.ts'
 import type {
   DominantContractListResponse,
   MarketProductDirectoryResponse,
@@ -80,6 +80,12 @@ export function getMarketChartStudyDisplay(params: MarketChartStudyQuery, signal
   return retryMarketStudyWhenBusy(() => request.get<never, unknown>('/market/indicators/chart-window', {
     params, signal, timeout: 10_000, readPriority: READ_PRIORITY.visibleDetail,
   }), signal)
+}
+
+export function getMarketChartStudyTail(params: MarketChartStudyTailQuery, signal: AbortSignal): Promise<unknown> {
+  return request.get<never, unknown>('/market/indicators/chart-tail', {
+    params, signal, timeout: 10_000, readPriority: READ_PRIORITY.visibleDetail,
+  })
 }
 
 export interface MarketStateRequest {
