@@ -125,6 +125,25 @@ def test_direct_start_accepts_missing_old_root_and_is_idempotent(start):
     assert host.calls[-1] == "verify_installed" and host.redis_writes == 1
 
 
+def test_active_session_is_explicit_and_rechecked_before_effects(start):
+    host, _, _ = start
+    authority = {"mode": "active_session", "subscriptions": {"rb": "RB2701"},
+                 "window_end": "2026-11-27T13:00:00+00:00"}
+    host.active_authority = lambda *_: authority
+    plan = direct.freeze_market_direct_start(
+        host, root=host.release_root, tag="v1.16.151", commit="c" * 40, day=_DAY,
+        active_session=True,
+    )
+    assert plan["authority"]["mode"] == "active_session"
+    host.active_authority = lambda *_: {**authority, "subscriptions": {"rb": "RB2705"}}
+    with pytest.raises(CohortError, match="MARKET_DIRECT_START_AUTHORITY_DRIFT"):
+        direct.apply_market_direct_start(host, plan)
+    assert host.calls == []
+    host.active_authority = lambda *_: authority
+    assert direct.apply_market_direct_start(host, plan) == {"status": "switched", "generation": 95}
+    assert host.calls == ["park", "stage", "install", "precommit", "start"]
+
+
 @pytest.mark.parametrize("failure, registry, expected_phase", [
     ("fail_install", "previous", "installing"), ("fail_start", "new", "starting"),
 ])
@@ -281,7 +300,8 @@ def test_direct_baseline_stages_and_reads_only_a_dedicated_redis(tmp_path, monke
     monkeypatch.setattr(host, "settings", lambda: (settings, "config"))
     observed = []
     monkeypatch.setattr(host, "_prove_staged_warmup",
-                        lambda binding, settings, fingerprint, *, direct: observed.append((binding.service, fingerprint, direct)))
+                        lambda binding, settings, fingerprint, *, direct, active_day=None:
+                        observed.append((binding.service, fingerprint, direct, active_day)))
     host.stage(plan, settings, may_exist=False)
     try:
         assert host.read_target(plan, bound=False) == "staged"

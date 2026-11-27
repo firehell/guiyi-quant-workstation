@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, replace
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from hashlib import sha256
 import json
 import stat
@@ -779,6 +779,7 @@ def main(argv=None):
     p = sub.add_parser("warmup")
     p.add_argument("service", choices=(*CONTINUOUS, *sorted(OPTIONAL_CONTINUOUS),
                                       "market-source-staged", "market-direct-staged"))
+    p.add_argument("--active-trading-day", type=date.fromisoformat)
     args = parser.parse_args(argv)
     try:
         if args.mode == "warmup":
@@ -787,6 +788,8 @@ def main(argv=None):
             from app.core.env import PROJECT_ROOT
             from app.version import APP_VERSION
 
+            active_day = args.active_trading_day
+            require(active_day is None or args.service == "market-direct-staged", "COHORT_SESSION_CHANGED")
             if args.service in {"market-source-staged", "market-direct-staged"}:
                 from app.db.session import SessionLocal
                 from app.db.readonly import readonly_transaction
@@ -800,11 +803,26 @@ def main(argv=None):
                 with (SessionLocal() as session, readonly_transaction(session, timeout_seconds=20),
                       open_formal_tick_dispatch() as dispatch):
                     feed = build_market_feed_service(session, tick_dispatch=dispatch)
-                    require(feed.quiescent(datetime.now(UTC)), "MARKET_SOURCE_STAGED_FEED_NOT_QUIESCENT")
+                    if active_day is None:
+                        require(feed.quiescent(datetime.now(UTC)), "MARKET_SOURCE_STAGED_FEED_NOT_QUIESCENT")
+                    else:
+                        from app.market_data.market_feed import _formal_rank1_conflict
+                        from app.market_data.market_phase import MarketPhase
+
+                        subscriptions = feed._store.subscriptions(active_day)
+                        now = datetime.now(UTC)
+                        require(feed._provider is None and feed.source_stream.registered_day("live") == active_day
+                                and subscriptions is not None and set(subscriptions) == set(feed._products)
+                                and _formal_rank1_conflict(feed, active_day, subscriptions) is None
+                                and any(phase.trading_day == active_day and phase.phase is MarketPhase.TRADING
+                                        for phase in feed._phases(now).values()),
+                                "MARKET_SOURCE_STAGED_FEED_NOT_QUIESCENT")
                 if args.service == "market-direct-staged":
                     from app.market_data.market_archive import formal_archive_directory
 
                     proof = warmup_formal_receipts(archive_root=formal_archive_directory())
+                    if active_day is not None:
+                        proof = {**proof, "active_day": active_day.isoformat()}
                 else:
                     proof = warmup_formal_receipts()
             elif args.service == "alert":

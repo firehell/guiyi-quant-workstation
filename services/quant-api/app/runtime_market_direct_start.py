@@ -21,12 +21,14 @@ from sqlalchemy import text
 
 from app.compute_runtime.artifact import require_locked_core
 from app.market_data.catalog import MarketCatalog
+from app.market_data.live_market import RedisLiveStore
 from app.market_data.live_recovery_guard import after_market_recovery_guard
 from app.market_data.market_data_service import MarketDataService
 from app.market_data.market_foundation_scope import (
     formal_tick_fingerprint, formal_tick_initial_day, require_formal_tick_binding,
 )
 from app.market_data.market_phase import MarketPhase, MarketPhaseResolver
+from app.market_data.observation_stream import ObservationStream
 from app.market_data.operational_universe import load_operational_products
 from app.market_data.storage import CanonicalMonthlyStore
 from app.runtime_bindings import (
@@ -37,10 +39,12 @@ from app.runtime_cohort import CALENDARS, _resolution_source, registry, require
 from app.runtime_cohort_errors import CohortError
 from app.runtime_contracts import REQUIRED_SERVICES
 from app.runtime_deployment import assert_no_unknown_deployment, owner_process_matches
-from app.runtime_handover import _read, _write, deployment_lock, read_service_state
+from app.runtime_handover import _read, _write, deployment_lock, owner_lock_available, read_service_state
 from app.runtime_identity import launchd_arguments, launchd_environments, read_command, read_launchd_service, safe_directory
 from app.runtime_market_cohort_host import MarketCohortHost, _TICK_MARKER, _candidate_market_component, _private_configuration, _redis
-from app.runtime_market_source_handover import read_staged_observations, redis_instance, stage_new_observations
+from app.runtime_market_source_handover import (
+    read_first_completed_minutes, read_staged_observations, redis_instance, stage_new_observations,
+)
 from app.reference_trading.recovery_campaign import digest
 
 _CORE = frozenset({"api", "web", "market-feed", "live", "reference-worker", "after-market"})
@@ -51,6 +55,7 @@ _MARKERS = {
 }
 _RUNTIME_SERVICES = REQUIRED_SERVICES | {"home-projection"}
 _KIND = "market_direct_start_v1"
+_ACTIVE_SESSION = "active_session"
 _PHASES = ("parking", "staging", "installing", "committing", "starting", "switched")
 
 
@@ -81,12 +86,18 @@ def _validate_plan(plan):
     )
 
 
-def freeze_market_direct_start(host, *, root, tag, commit, day):
+def _read_authority(host, settings, root, day, *, active_session):
+    if active_session:
+        return host.active_authority(settings, root, day)
+    return host.authority(settings, root, day)
+
+
+def freeze_market_direct_start(host, *, root, tag, commit, day, active_session=False):
     assert_no_unknown_deployment()
     previous, preimage, _ = market_start_preimage(home=host.home)
     contracts, component = host.release(root, tag, commit, previous)
     settings, config_hash = host.settings()
-    authority = host.authority(settings, root, day)
+    authority = _read_authority(host, settings, root, day, active_session=active_session)
     target_instance = host.empty_target(settings)
     new = _target_bindings(previous, root, tag, commit, contracts)
     plan = {
@@ -135,11 +146,15 @@ def apply_market_direct_start(host, plan, *, resume=False):
                 and list(component) == plan["component"], "MARKET_DIRECT_START_RELEASE_DRIFT")
         settings, config_hash = host.settings()
         now = host.now()
-        past_start_window = now + timedelta(seconds=660) >= datetime.fromisoformat(plan["authority"]["first_session"])
+        authority = plan["authority"]
+        active_session = authority.get("mode") == _ACTIVE_SESSION
+        limit = authority["window_end"] if active_session else authority["first_session"]
+        past_start_window = now + timedelta(seconds=660) >= datetime.fromisoformat(limit)
         require(datetime.fromisoformat(plan["created_at"]) <= now
                 and config_hash == plan["config_sha256"], "MARKET_DIRECT_START_AUTHORITY_DRIFT")
         if not bound or not past_start_window:
-            require(host.authority(settings, root, day) == plan["authority"], "MARKET_DIRECT_START_AUTHORITY_DRIFT")
+            require(_read_authority(host, settings, root, day, active_session=active_session) == authority,
+                    "MARKET_DIRECT_START_AUTHORITY_DRIFT")
         host.deadline = monotonic() + 600
         if not resume:
             require(host.installation_preimage(new) == plan["installed"], "MARKET_DIRECT_START_INSTALL_DRIFT")
@@ -156,9 +171,15 @@ def apply_market_direct_start(host, plan, *, resume=False):
 
         if not bound:
             with host.guards_for_direct_start(new, settings):
+                if active_session:
+                    require(host.active_authority(settings, root, day) == authority,
+                            "MARKET_DIRECT_START_AUTHORITY_DRIFT")
                 if phase in (None, "parking"):
                     persist("parking")
                 host.park(old, new)
+                if active_session:
+                    require(host.active_authority(settings, root, day) == authority,
+                            "MARKET_DIRECT_START_AUTHORITY_DRIFT")
                 stage_may_exist = phase in {"staging", "installing", "committing"}
                 persist("staging")
                 host.stage(plan, settings, may_exist=stage_may_exist)
@@ -169,9 +190,9 @@ def apply_market_direct_start(host, plan, *, resume=False):
                 write_market_start_bindings(new, home=host.home, expected_sha256=preimage)
         require(host.bindings() == new, "MARKET_DIRECT_START_BINDING_DRIFT")
         persist("starting")
-        host.start_new(plan, verify_running_only=past_start_window)
+        proof = host.start_new(plan, verify_running_only=past_start_window)
         persist("switched")
-        return {"status": "switched", "generation": candidate.generation}
+        return {"status": "switched", "generation": candidate.generation, **(proof or {})}
 
 
 def read_market_direct_start(host, plan):
@@ -261,6 +282,44 @@ class MarketDirectStartHost(MarketCohortHost):
                 "sessions_sha256": digest(windows), "phases": phases, "mode": "closed_idle",
                 "first_session": min((datetime.fromisoformat(values[0][0]) for values in windows.values())).isoformat()}
 
+    def active_authority(self, settings, root, day):
+        """Prove a live intake boundary without asserting earlier observations."""
+        now = self.now()
+        code = "MARKET_DIRECT_START_ACTIVE_SESSION_UNPROVEN"
+        with self._catalog_session(settings) as (session, canonical):
+            installed = session.scalars(text("SELECT version_num FROM alembic_version")).all()
+            heads = ScriptDirectory(str(root / "services/quant-api/alembic")).get_heads()
+            require(len(heads) == 1 and installed == heads, "MARKET_DIRECT_START_SCHEMA_UNPROVEN")
+            resolver = MarketPhaseResolver(session)
+            market = MarketDataService(MarketCatalog(session, canonical), CanonicalMonthlyStore(canonical))
+            phases, subscriptions, windows, future_edges = {}, {}, {}, []
+            for product in load_operational_products():
+                phase = resolver.resolve(product, now)
+                sessions = market.session_windows(symbol=product, trading_day=day)
+                phase_window = next((window for window in sessions if window.start <= now < window.end), None)
+                require(phase.phase is not MarketPhase.UNKNOWN, code)
+                if phase_window is not None:
+                    require(phase.phase is MarketPhase.TRADING and phase.trading_day == day
+                            and phase.current_session == phase_window, code)
+                else:
+                    require(phase.phase is not MarketPhase.TRADING, code)
+                phases[product] = {"phase": phase.phase.value}
+                subscriptions[product] = market.dominant_segment_for_day(product, day).contract
+                windows[product] = [[window.start.isoformat(), window.end.isoformat()] for window in sessions]
+                future_edges.extend(edge for window in sessions for edge in (window.start, window.end) if edge > now)
+            require(any(value["phase"] == MarketPhase.TRADING.value for value in phases.values())
+                    and future_edges and min(future_edges) > now + timedelta(seconds=660), code)
+        if os.path.lexists(self.project_config):
+            _, legacy = _private_configuration(self.project_config)
+            with _redis(legacy["REDIS_URL"]) as client:
+                keys = [RedisLiveStore._subscription_key(day)]
+                for kind in ("source", "completed"):
+                    stream = ObservationStream(client, kind=kind)
+                    keys.extend((stream.key(day), stream.identity_key(day)))
+                require(not client.exists(*keys), "MARKET_DIRECT_START_ACTIVE_ORIGINALS_PRESENT")
+        return {"subscriptions": subscriptions, "sessions_sha256": digest(windows), "phases": phases,
+                "mode": _ACTIVE_SESSION, "window_end": min(future_edges).isoformat()}
+
     def empty_target(self, settings):
         database, canonical = self._storage(settings)
         with _redis(settings["REDIS_URL"]) as client:
@@ -291,7 +350,10 @@ class MarketDirectStartHost(MarketCohortHost):
                 binding = read_staged_observations(client, **arguments)
             else:
                 binding = stage_new_observations(client, old_instance=None, **arguments)
-        self._prove_staged_warmup(registry(plan["new"]).services["market-feed"], settings, binding, direct=True)
+        self._prove_staged_warmup(
+            registry(plan["new"]).services["market-feed"], settings, binding, direct=True,
+            active_day=arguments["day"] if plan["authority"].get("mode") == _ACTIVE_SESSION else None,
+        )
 
     def read_target(self, plan, *, bound):
         settings, config_hash = self.settings()
@@ -436,8 +498,10 @@ class MarketDirectStartHost(MarketCohortHost):
         self._assert_clear(root)
         self.verify_installed(new)
         _, config_hash = self.settings()
+        authority = plan["authority"]
         require(config_hash == plan["config_sha256"] and monotonic() < self.deadline
-                and self.authority(settings, root, date.fromisoformat(plan["day"])) == plan["authority"],
+                and _read_authority(self, settings, root, date.fromisoformat(plan["day"]),
+                                    active_session=authority.get("mode") == _ACTIVE_SESSION) == authority,
                 "MARKET_DIRECT_START_AUTHORITY_DRIFT")
         with _redis(settings["REDIS_URL"]) as client:
             read_staged_observations(client, **self._target_arguments(plan, settings))
@@ -473,8 +537,9 @@ class MarketDirectStartHost(MarketCohortHost):
             else:
                 verify_loaded(binding, output)
 
-        probe = {**plan, "window": plan["authority"], "market_source_handover": {
-            "old_day": plan["authority"]["prior_day"], "target_instance": plan["target_instance"]}}
+        authority = plan["authority"]
+        probe = {**plan, "window": authority, "market_source_handover": {
+            "old_day": authority.get("prior_day"), "target_instance": plan["target_instance"]}}
         args = self._target_arguments(plan, settings)
         require(self.read_target(plan, bound=True) == "bound", "MARKET_DIRECT_START_BASELINE_MISSING")
         consumers = ("api", "web", "live", "reference-worker")
@@ -495,6 +560,9 @@ class MarketDirectStartHost(MarketCohortHost):
                         and 0 <= (self.now() - datetime.fromisoformat(state["at"])).total_seconds() <= 30,
                         "MARKET_DIRECT_START_OWNERS_NOT_READY")
         self.verify_continuous_identity(probe)
+        proof = None
+        if authority.get("mode") == _ACTIVE_SESSION:
+            proof = self.verify_active_minutes(plan, settings, args)
         for name in CALENDARS:
             start(name)
             if new.services[name].enabled:
@@ -505,15 +573,94 @@ class MarketDirectStartHost(MarketCohortHost):
                 verify_loaded(binding, output)
             else:
                 require(output is None, "MARKET_DIRECT_START_DISABLED_JOB_PRESENT")
+        return proof
+
+    def verify_active_minutes(self, plan, settings, args):
+        day = args["day"]
+        with self._catalog_session(settings) as (session, canonical):
+            market = MarketDataService(MarketCatalog(session, canonical), CanonicalMonthlyStore(canonical))
+            sessions = {product: (contract, market.session_windows(symbol=product, trading_day=day))
+                        for product, contract in args["subscriptions"].items()}
+        windows = {product: [[window.start.isoformat(), window.end.isoformat()] for window in rows]
+                   for product, (_, rows) in sessions.items()}
+        require(digest(windows) == plan["authority"]["sessions_sha256"], "MARKET_DIRECT_START_AUTHORITY_DRIFT")
+        with _redis(settings["REDIS_URL"]) as client:
+            require(redis_instance(client) == args["expected_instance"], "MARKET_DIRECT_START_TARGET_DRIFT")
+            result = read_first_completed_minutes(client, day, sessions=sessions, now=self.now())
+        cutoff = datetime.fromisoformat(plan["created_at"])
+        verified = [row for row in result["products"].values()
+                    if row["status"] == "verified" and datetime.fromisoformat(row["bar_end"]) >= cutoff]
+        require(verified, "MARKET_DIRECT_START_ACTIVE_MINUTE_UNPROVEN")
+        return {"activation_mode": _ACTIVE_SESSION, "opening_prefix": "not_observed",
+                "first_completed_products": len(verified), "products": len(sessions)}
 
     def _await_direct(self, plan, settings, args, *, feed):
         from time import sleep
 
+        active = plan["authority"].get("mode") == _ACTIVE_SESSION
         while monotonic() < self.deadline:
-            if self._ready_on_target(plan, settings, args, feed=feed) is not None:
+            if active:
+                ready = self._active_target_ready(plan, settings, args, feed=feed)
+            else:
+                ready = self._ready_on_target(plan, settings, args, feed=feed) is not None
+            if ready:
                 return
             sleep(0.2)
         raise CohortError("MARKET_DIRECT_START_OWNERS_NOT_READY")
+
+    def _active_target_ready(self, plan, settings, args, *, feed):
+        new = registry(plan["new"])
+        day = args["day"]
+        now = self.now()
+        require(now < datetime.fromisoformat(plan["authority"]["window_end"]),
+                "MARKET_DIRECT_START_ACTIVE_SESSION_EXPIRED")
+        names = ("api", "web", "reference-worker", "live") + (("market-feed",) if feed else ())
+        with _redis(settings["REDIS_URL"]) as client:
+            require(redis_instance(client) == args["expected_instance"], "MARKET_DIRECT_START_TARGET_DRIFT")
+            require_formal_tick_binding(client, args["database"], args["canonical"])
+            stream = ObservationStream(client, kind="source")
+            require(stream.registered_day("live") == day
+                    and RedisLiveStore(client).subscriptions(day) == args["subscriptions"],
+                    "MARKET_DIRECT_START_TARGET_DAY_DRIFT")
+            for name in names:
+                binding = new.services[name]
+                state = read_service_state(name, runtime_dir=self.directory)
+                if not (state and state.get("phase") == "active" and state.get("ready") is True
+                        and state.get("generation") == binding.generation
+                        and owner_process_matches(state, binding)
+                        and not owner_lock_available(name, runtime_dir=self.directory)
+                        and 0 <= (now - datetime.fromisoformat(state["at"])).total_seconds() <= 30):
+                    return False
+                if name == "reference-worker" and state.get("proof", {}).get("reference_receipts") not in {
+                    "waiting_archive", "current",
+                }:
+                    return False
+                key = {"live": "live:heartbeat", "market-feed": "live:feed:heartbeat"}.get(name)
+                if key:
+                    pulse = json.loads(client.get(key) or b"{}")
+                    if not (pulse.get("runtime_commit") == binding.commit
+                            and pulse.get("runtime_generation") == binding.generation
+                            and pulse.get("runtime_root") == binding.root
+                            and pulse.get("runtime_tag") == binding.tag):
+                        return False
+                    generated = datetime.fromisoformat(pulse["generated_at"])
+                    if not (generated <= datetime.fromisoformat(state["at"])
+                            and 0 <= (now - generated).total_seconds() <= 30):
+                        return False
+                    if feed and pulse.get("available") is not True:
+                        return False
+                    if name == "market-feed":
+                        phases = {p: proof["phase"] for p, proof in plan["authority"]["phases"].items()}
+                        if not (pulse.get("registered_day") == day.isoformat()
+                                and "input_failure" in pulse and pulse["input_failure"] is None
+                                and pulse.get("phase_by_product") == phases
+                                and pulse.get("operational_count") == len(phases)
+                                and pulse.get("subscribed_count") == sum(v == MarketPhase.TRADING.value for v in phases.values())):
+                            return False
+            if feed and (stream.cursor("live", day) == "0-0"
+                         or ObservationStream(client, kind="completed").tail(day) == "0-0"):
+                return False
+        return True
 
 
 def main(argv=None):
@@ -524,6 +671,7 @@ def main(argv=None):
     plan_parser.add_argument("--tag", required=True)
     plan_parser.add_argument("--commit", required=True)
     plan_parser.add_argument("--trading-day", required=True, type=date.fromisoformat)
+    plan_parser.add_argument("--active-session", action="store_true")
     apply_parser = sub.add_parser("apply")
     apply_parser.add_argument("--plan", required=True, type=Path)
     apply_parser.add_argument("--resume", action="store_true")
@@ -537,7 +685,7 @@ def main(argv=None):
         host = MarketDirectStartHost()
         if args.mode == "plan":
             result = freeze_market_direct_start(host, root=args.candidate_root, tag=args.tag,
-                                                commit=args.commit, day=args.trading_day)
+                                                commit=args.commit, day=args.trading_day, active_session=args.active_session)
         elif args.mode == "read":
             _, plan = _resolution_source(args.plan)
             result = read_market_direct_start(host, plan)

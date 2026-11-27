@@ -599,9 +599,13 @@ class MarketCohortHost(CohortHost):
         staged = _read(self._attempt(plan) / "state.json")["effects"]["market_source_stage"]
         return self._prove_staged_warmup(candidate, settings, staged["binding"])
 
-    def _prove_staged_warmup(self, candidate, settings, binding, *, direct=False):
+    def _prove_staged_warmup(self, candidate, settings, binding, *, direct=False, active_day=None):
         root = Path(candidate.root)
         service = "market-direct-staged" if direct else "market-source-staged"
+        args = [service]
+        if active_day is not None:
+            require(direct, "MARKET_SOURCE_STAGED_WARMUP_UNPROVEN")
+            args.extend(("--active-trading-day", active_day.isoformat()))
         core_package = None
         if direct:
             from app.compute_runtime.artifact import locked_core
@@ -611,7 +615,7 @@ class MarketCohortHost(CohortHost):
                "GUIYI_PROJECT_ROOT": candidate.root, "PYTHONDONTWRITEBYTECODE": "1",
                "GUIYI_OBSERVATION_STREAM_ENABLED": "1", "GUIYI_RUNTIME_HANDOVER_ENABLED": "1"}
         result = subprocess.run(
-            [str(root / "services/quant-api/.venv/bin/python"), "-m", "app.runtime_cohort", "warmup", service],
+            [str(root / "services/quant-api/.venv/bin/python"), "-m", "app.runtime_cohort", "warmup", *args],
             cwd=root, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.DEVNULL, check=False, timeout=min(60, max(1, self.deadline - monotonic())),
         )
@@ -620,6 +624,7 @@ class MarketCohortHost(CohortHost):
                 and proof.get("service") == service
                 and self._candidate_sources(proof, root, candidate.tag, core_package=core_package)
                 and proof.get("proof", {}).get("receipt_only") is True
+                and (active_day is None or proof["proof"].get("active_day") == active_day.isoformat())
                 and proof["proof"].get("binding") == binding, "MARKET_SOURCE_STAGED_WARMUP_UNPROVEN")
         return proof["proof"]
 
