@@ -259,6 +259,8 @@ services/quant-api/.venv/bin/python scripts/research/lms405_plan_driven_replay.p
 
 焦煤10月23日研究示例使用10:36报价的条件性前像，假设可见多20手归入同一短线任务。实际MDS行情显示10:38达到1427.5，10:48与10:57分别出现新的5→1反向确认。两份显式测试许可给出20→19→0。只给第一份时剩19手，第二步待确认。无许可时仍为20手。旧序列在第二窗没有新的1427.5触及，只推进第一步。第2次退出量用19手只为检验续接及清空，原版减仓比例、实际动作与账户身份未知。 [带TEST_FIXTURE的输入](evidence/counter-m-target-carry-jm2701.json) · [短线仓证据边界](evidence/COUNTER_M_STUDY.md#焦煤同开均长腿跨越极端m后的管理)
 
+补发图九合约若各自相对焦煤报价相差不超过1分钟，只有14:25相容。10:36仍作为上述工具测试的假设前像，原图的实际拍摄时间与目标前持仓待证。 [九合约报价复查](evidence/COUNTER_M_STUDY.md#焦煤补发图的跨品种报价与晚场换仓)
+
 ```bash
 dir=$(mktemp -d /tmp/lms405-m-carry.XXXXXX)
 PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=.:services/quant-api:packages/quant-core:scripts/research \
