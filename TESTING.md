@@ -2478,3 +2478,16 @@ pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/backtes
 输入摘要、原生授权、订单和成交回调、建模成交时点、逐笔费用及日结权益。
 引擎准入和经济对账以原生运行记录为准。测试中的隔离结果用于验证持久化、
 API、图表和实验边界。
+
+## 交易日志与复盘中心
+
+- 严格校验复盘 OpenSpec，运行 `services/quant-api/tests/alembic/test_trade_journal.py`。
+  PostgreSQL 用例采用 `GUIYI_ISOLATED_MIGRATION_DATABASE_URL`。用例在独立 schema 验证加表、空表回退、
+  计划版本、归案冲突和复盘保存。
+- 桌面端到端用例使用一次性数据库 `isolated_test_trade_journal`，仅绑定本机 15474。
+  从 `20261124_0056` 标记升级至 `20261128_0057`，运行 `services/quant-api/tests/alembic/seed_trade_journal_browser.py`。
+  API 在 8191 以 `--lifespan off` 启动，数据库和模拟中心读连接均指向该测试库。
+  将 `http://127.0.0.1:5191` 加入本次 API 的 `CORS_ORIGINS`。Web 5191 代理至 API 8191。
+  设置 `GUIYI_TRADE_JOURNAL_E2E=1 PLAYWRIGHT_SKIP_WEBSERVER=1 PLAYWRIGHT_BASE_URL=http://127.0.0.1:5191` 后，
+  运行 `pnpm -C apps/quant-web exec playwright test e2e/trade-journal.spec.mjs`。
+  验收使用隔离仿真证据。自然成交和正式环境发布后的验证按各来源单独记录。

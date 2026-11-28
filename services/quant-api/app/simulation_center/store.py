@@ -151,3 +151,25 @@ def read_workstation(dsn: str, alias: str | None, before: str | None, *, now: da
         result["fills"] = [row["facts"] for row in fills[:100]]
         result["next_fill"] = fills[99]["native_id"] if len(fills) > 100 else None
         return result
+
+
+def read_committed_fills(dsn: str, trading_day: str, alias: str | None, native_id: str | None):
+    """Read the day's registered evidence, with an exact lookup independent of UI pagination."""
+    with connect(dsn) as conn:
+        conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        accounts = [account["alias"] for account in _accounts(conn, datetime.now(UTC))]
+        if alias is None:
+            return accounts, None, []
+        if alias not in accounts:
+            raise LookupError("SIMULATION_ACCOUNT_NOT_FOUND")
+        sampled = conn.execute("""
+            SELECT 1 FROM guiyi_simulation.readbacks
+            WHERE alias=%s AND facts->>'trading_day'=%s LIMIT 1
+        """, (alias, trading_day)).fetchone()
+        fills = conn.execute("""
+            SELECT facts FROM guiyi_simulation.fills
+            WHERE alias=%s AND native_id >= %s AND native_id < %s
+                AND (%s::text IS NULL OR native_id=%s)
+            ORDER BY occurred_at, native_id LIMIT 201
+        """, (alias, trading_day + ":", trading_day + ";", native_id, native_id)).fetchall()
+        return accounts, sampled is not None, [fill["facts"] for fill in fills]

@@ -548,3 +548,42 @@ class RunStore:
                 "revision": revision, "input_sha256": snapshot.get("input_sha256"),
                 "available": bool(bars), "reason": None if bars else reason, "bars": bars, "markers": markers,
                 "native_fills": fills, "attempts": attempts}
+
+
+@contextmanager
+def _read_publication(path: Path):
+    db = sqlite3.connect(path.resolve(strict=True).as_uri() + "?mode=ro", uri=True, timeout=2)
+    try:
+        db.execute("PRAGMA query_only=ON")
+        yield db
+    finally:
+        db.close()
+
+
+def read_published_runs(path: Path, day: date, contract: str) -> list[tuple[str, str]]:
+    """List successful publications for one physical contract and trading day."""
+    with _read_publication(path) as db:
+        return db.execute("""
+            SELECT run_id, json_extract(config, '$.strategy_id')
+            FROM bt_runs WHERE status='SUCCEEDED'
+                AND upper(json_extract(config, '$.contract'))=?
+                AND json_extract(config, '$.start')<=? AND json_extract(config, '$.end')>=?
+            ORDER BY seq DESC LIMIT 100
+        """, (contract, day.isoformat(), day.isoformat())).fetchall()
+
+
+def read_published_trades(path: Path, run_id: str, day: date, trade_id: str | None) -> list[dict]:
+    """Read completed native result rows without opening a writer or starting a worker."""
+    with _read_publication(path) as db:
+        rows = db.execute("""
+            SELECT trades.payload
+            FROM bt_runs runs
+            JOIN bt_rows trades ON trades.run_id=runs.run_id AND trades.kind='trades'
+            JOIN json_each(runs.report, '$.native_fills') fills
+                ON json_extract(fills.value, '$.native_trade_id')=trades.identity
+            WHERE runs.run_id=? AND runs.status='SUCCEEDED'
+                AND json_extract(fills.value, '$.trading_day')=?
+                AND (? IS NULL OR trades.identity=?)
+            ORDER BY trades.seq LIMIT 201
+        """, (run_id, day.isoformat(), trade_id, trade_id)).fetchall()
+        return [json.loads(row[0]) for row in rows]

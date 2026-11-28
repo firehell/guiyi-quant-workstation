@@ -1,0 +1,82 @@
+import { expect, test } from '@playwright/test'
+
+test.skip(process.env.GUIYI_TRADE_JOURNAL_E2E !== '1', 'Requires the isolated trade journal API and test database.')
+
+test('plan revision, four-fill case, week review and no-trade day survive reload', async ({ page, baseURL }) => {
+  expect(baseURL).toBe('http://127.0.0.1:5191')
+  const title = '回抽案例 ' + Date.now()
+  const consoleErrors = []
+  page.on('pageerror', error => consoleErrors.push(error.message))
+  await page.goto('/trade-journal?day=2026-11-30')
+  await expect(page.getByRole('heading', { name: '交易日志与复盘中心' })).toBeVisible()
+  await expect(page.getByText('v0.1.0', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '新建计划', exact: true }).click()
+  await page.getByLabel('计划标题').fill(title + '计划')
+  await page.getByLabel('品种', { exact: true }).first().fill('RB')
+  await page.getByLabel('入场条件', { exact: true }).fill('首次计划等回抽')
+  await page.getByRole('button', { name: '保存计划' }).click()
+  await expect(page.getByText('计划已保存')).toBeVisible()
+
+  const plan = page.locator('article').filter({ has: page.getByRole('heading', { name: title + '计划' }) })
+  await plan.getByRole('button', { name: '从计划建案例' }).click()
+  await page.getByLabel('案例标题').fill(title)
+  await page.getByLabel('物理合约').fill('RB2701')
+  await page.getByRole('button', { name: '建立案例' }).click()
+  await expect(page.getByRole('heading', { name: title, exact: true })).toBeVisible()
+  const casePath = page.url()
+
+  await page.getByLabel('发生时间（北京时间）').fill('2026-11-27T21:01')
+  await page.getByLabel('备注', { exact: true }).fill('夜盘观察，等待回抽确认')
+  await page.getByRole('button', { name: '添加到时间线' }).click()
+  await expect(page.getByText('夜盘观察，等待回抽确认')).toBeVisible()
+
+  await page.getByRole('button', { name: '查询证据' }).click()
+  await page.getByRole('button', { name: process.env.GUIYI_TRADE_JOURNAL_TEST_ACCOUNT ?? 'journal-e2e', exact: true }).click()
+  // Source fixtures belong to the dedicated test account on the isolated PostgreSQL instance.
+  for (const id of ['journal-open', 'journal-add', 'journal-reduce', 'journal-close']) {
+    await page.getByRole('checkbox', { name: new RegExp(id) }).check()
+  }
+  await page.getByRole('button', { name: '关联选中证据' }).click()
+  await expect(page.getByText('来源证据已关联')).toBeVisible()
+  await expect(page.locator('.timeline li')).toHaveCount(5)
+  await expect(page.locator('.timeline li').nth(1)).toContainText('成交价 3100')
+  await expect(page.locator('.timeline li').nth(4)).toContainText('成交价 3110')
+
+  const entry = page.getByRole('group', { name: '入场质量' })
+  await entry.getByLabel('自评').selectOption('MISSED')
+  await entry.getByLabel('标签').fill('提前入场')
+  await entry.getByLabel('观察与反思').fill('进场早于回抽完成')
+  await page.getByLabel('标记为已结案').check()
+  await page.getByLabel('下次可执行的改进').fill('等待回抽确认')
+  await page.getByRole('button', { name: '保存案例复盘' }).click()
+  await expect(page.getByText('案例复盘已保存')).toBeVisible()
+
+  await page.getByRole('link', { name: '← 交易复盘' }).click()
+  await plan.getByRole('button', { name: '查看或编辑' }).click()
+  await page.getByLabel('入场条件', { exact: true }).fill('计划后续修订')
+  await page.getByRole('button', { name: '保存计划' }).click()
+  await expect(plan.getByText('计划后续修订')).toBeVisible()
+  await page.goto(casePath)
+  await expect(page.getByText('首次计划等回抽')).toBeVisible()
+  await expect(page.locator('.timeline li')).toHaveCount(5)
+  await expect(entry.getByLabel('标签')).toHaveValue('提前入场')
+
+  await page.getByRole('link', { name: '← 交易复盘' }).click()
+  await page.getByRole('button', { name: '交易周', exact: true }).click()
+  await page.getByLabel('标签', { exact: true }).fill('提前入场')
+  await page.getByRole('button', { name: '筛选', exact: true }).click()
+  await expect(page.getByRole('link', { name: title, exact: true })).toBeVisible()
+  await page.getByRole('checkbox', { name: title, exact: true }).check()
+  await page.getByLabel('执行偏差与反复问题').fill('复盘提前入场')
+  await page.getByRole('button', { name: '保存周复盘' }).click()
+  await expect(page.getByText('周期复盘已保存')).toBeVisible()
+
+  await page.goto('/trade-journal?day=2026-12-02')
+  await expect(page.getByText('没有符合条件的案例。')).toBeVisible()
+  await page.getByLabel('错过的机会').fill('观察但无成交')
+  await page.getByRole('button', { name: '保存日复盘' }).click()
+  await expect(page.getByText('周期复盘已保存')).toBeVisible()
+  await page.reload()
+  await expect(page.getByLabel('错过的机会')).toHaveValue('观察但无成交')
+  expect(consoleErrors).toEqual([])
+})
