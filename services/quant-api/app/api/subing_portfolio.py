@@ -67,6 +67,11 @@ def project(result, *, products, status, **metadata):
 
 @router.get("/status")
 def status():
+    return read_status()
+
+
+def read_status(*, include_charts=True):
+    """Project the existing committed state, optionally omitting the chart payload."""
     store = None
     try:
         active = read_registration(ACTIVE_PORTFOLIO)
@@ -77,7 +82,8 @@ def status():
                 fresh = 0 <= (datetime.now(UTC) - seen_at).total_seconds() < 90
                 return project({"accounts": {}}, products=(),
                     status=heartbeat["status"] if fresh else "STALE_OR_STOPPED",
-                    worker_code=heartbeat.get("code"), worker_at=seen_at,
+                    worker_status=heartbeat["status"], worker_code=heartbeat.get("code"), worker_at=seen_at,
+                    missing_observations=heartbeat.get("missing", []) if fresh else [],
                     next_open=heartbeat.get("next_open") if fresh else None, run_id=None)
             return project({"accounts": {}}, products=(), status="NOT_STARTED", worker_code=None, run_id=None)
         run_id = active["run_id"]
@@ -100,16 +106,18 @@ def status():
         if state["result"]["policy"] != identity["policy"]:
             raise ValueError("PORTFOLIO_SNAPSHOT_POLICY_MISMATCH")
         heartbeat = read_registration(HEARTBEAT) or {}
-        fresh = heartbeat.get("run_id") == run_id and heartbeat.get("at") and (
-            0 <= (datetime.now(UTC) - datetime.fromisoformat(heartbeat["at"])).total_seconds() < 30
-        )
+        same_run = heartbeat.get("run_id") == run_id
+        worker_at = datetime.fromisoformat(heartbeat["at"]) if same_run and heartbeat.get("at") else None
+        fresh = worker_at is not None and 0 <= (datetime.now(UTC) - worker_at).total_seconds() < 30
         return project(
             state["result"], products=products,
             status=heartbeat["status"] if fresh else "STALE_OR_STOPPED",
             run_id=run_id, sequence=sequence, observed_at=last["observed_at"] if last else None,
             trading_day=last["day"] if last else None,
-            worker_code=heartbeat.get("code") if heartbeat.get("run_id") == run_id else None,
-            charts=state.get("charts", {}),
+            worker_at=worker_at, worker_status=heartbeat.get("status") if same_run else None,
+            worker_code=heartbeat.get("code") if same_run else None,
+            missing_observations=heartbeat.get("missing", []) if fresh else [],
+            charts=state.get("charts", {}) if include_charts else {},
         )
     except Exception:
         raise HTTPException(503, detail={"code": "PORTFOLIO_STATUS_UNAVAILABLE"}) from None

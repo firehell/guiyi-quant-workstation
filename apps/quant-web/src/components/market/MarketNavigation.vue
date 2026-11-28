@@ -4,7 +4,7 @@ import { lastWorkstationChart } from '@/utils/workstationRoutes'
 
 const router = useRouter()
 withDefaults(defineProps<{
-  activeTab?: 'operations' | 'market' | 'research' | 'messages' | 'simulation' | 'subing-decision' | null
+  activeTab?: 'operations' | 'market' | 'research' | 'messages' | 'simulation' | 'subing-decision' | 'strategies' | null
 }>(), { activeTab: null })
 </script>
 
@@ -14,6 +14,7 @@ withDefaults(defineProps<{
     <nav class="market-navigation__tabs" role="tablist" aria-label="全局导航">
       <RouterLink to="/workstation" role="tab" :aria-selected="activeTab === 'operations'" :aria-current="activeTab === 'operations' ? 'page' : undefined">运行台</RouterLink>
       <button type="button" role="tab" :aria-selected="activeTab === 'market'" :aria-current="activeTab === 'market' ? 'page' : undefined" @click="router.push(lastWorkstationChart())">行情</button>
+      <RouterLink to="/strategies" role="tab" :aria-selected="activeTab === 'strategies'" :aria-current="activeTab === 'strategies' ? 'page' : undefined">策略</RouterLink>
       <RouterLink to="/research" role="tab" :aria-selected="activeTab === 'research' || activeTab === 'subing-decision'" :aria-current="activeTab === 'research' || activeTab === 'subing-decision' ? 'page' : undefined">研究</RouterLink>
       <RouterLink to="/market?tab=messages" :aria-current="activeTab === 'messages' ? 'page' : undefined">消息</RouterLink>
     </nav>
