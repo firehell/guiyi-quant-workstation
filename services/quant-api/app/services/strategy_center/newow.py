@@ -111,7 +111,12 @@ class Newow:
                 current_diagnostic = "MARKET_REFERENCE_CURRENT_UNAVAILABLE"
         current = {"current_publication": current_status, "current_diagnostic": current_diagnostic}
         if result is None:
-            result = latest_reference(product, strategy.owner_key, frequency, session_factory=self.sessions)
+            try:
+                result = latest_reference(product, strategy.owner_key, frequency, session_factory=self.sessions)
+            except ValueError as error:
+                if str(error) != "MARKET_REFERENCE_RESULT_INVALID":
+                    raise
+                return projection(EVIDENCE, "UNAVAILABLE", diagnostic="MARKET_REFERENCE_RESULT_INVALID", **current)
         if result is None:
             return projection(EVIDENCE, current_status or "NOT_PUBLISHED", diagnostic=current_diagnostic, **current)
         status = "PUBLISHED" if current_status == "PUBLISHED" else "HISTORICAL_RESULT"
