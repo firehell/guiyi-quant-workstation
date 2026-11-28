@@ -10,6 +10,7 @@ from pathlib import Path
 from queue import Empty, Full, Queue
 import signal
 import stat
+import sys
 from threading import Event as Flag, Lock
 from time import monotonic
 
@@ -18,6 +19,7 @@ import psycopg
 from app.simulation_center.config import ObserverConfig, read_config
 from app.simulation_center.readback import Readback, ReadbackError, SECTIONS
 from app.simulation_center.store import Writer
+from guiyi_quant.simnow_execution.supervisor import global_account_lock
 
 EVENT = "eGuiyiSimulationObserver"
 QUERY_METHODS = {
@@ -27,33 +29,57 @@ QUERY_METHODS = {
 QUERY_INTERVAL = 1.1
 QUERY_TIMEOUT = 8
 SAMPLE_INTERVAL = 30
+VERIFY_TIMEOUT = 45
+VERIFY_INTERVAL = 2.2
 
 
-def build_gateway(messages: Queue, overflow: Flag):
+def build_gateway(messages: Queue, overflow: Flag, *, single_connection: bool = False):
     from vnpy.event import Event, EventEngine
     from vnpy.trader.engine import MainEngine
     from vnpy.trader.setting import SETTINGS
     from vnpy_ctp.gateway.ctp_gateway import CtpGateway, CtpTdApi
 
     class ObservationTd(CtpTdApi):
+        front_seen = False
+        front_open = False
+        auth_resolved = False
+        login_resolved = False
+
+        def onFrontConnected(self):
+            if single_connection and self.front_seen:
+                return
+            self.front_seen = True
+            self.front_open = True
+            self.auth_resolved = False
+            self.login_resolved = False
+            self.gateway.emit("front_connected")
+            super().onFrontConnected()
+
         def onFrontDisconnected(self, reason):
+            self.front_open = False
             self.login_status = False
-            self.gateway.emit("disconnected")
+            self.gateway.emit("disconnected", reason if type(reason) is int else None)
 
         def onRspAuthenticate(self, data, error, reqid, last):
-            if error.get("ErrorID"):
+            if not self.front_open or self.auth_resolved or not last or reqid != self.reqid:
+                return
+            self.auth_resolved = True
+            if (error.get("ErrorID") or data.get("BrokerID") != self.brokerid
+                    or data.get("UserID") != self.userid or data.get("AppID") not in (None, self.appid)):
                 self.auth_failed = True
-                self.gateway.emit("login_failed")
+                self.gateway.emit("login_failed", "NATIVE_AUTH_REJECTED", error.get("ErrorID", 0))
             else:
                 self.auth_status = True
                 self.login()
 
         def onRspUserLogin(self, data, error, reqid, last):
-            if (error.get("ErrorID") or not last or reqid != self.reqid
-                    or data.get("BrokerID") != self.brokerid or data.get("UserID") != self.userid
-                    or not data.get("TradingDay")):
+            if not self.front_open or self.login_resolved or not last or reqid != self.reqid:
+                return
+            self.login_resolved = True
+            if (error.get("ErrorID") or data.get("BrokerID") != self.brokerid
+                    or data.get("UserID") != self.userid or not data.get("TradingDay")):
                 self.login_failed = True
-                self.gateway.emit("login_failed")
+                self.gateway.emit("login_failed", "NATIVE_LOGIN_REJECTED", error.get("ErrorID", 0))
                 return
             self.login_status = True
             self.gateway.emit("login", data["TradingDay"])
@@ -98,11 +124,14 @@ def build_gateway(messages: Queue, overflow: Flag):
                     message = (*message, self.fence, datetime.now(UTC))
                 self.event_engine.put(Event(EVENT, message))
 
-        def publish(self, writer, snapshot, fence):
+        def check_fence(self, fence):
             with self.fence_lock:
                 if self.fence != fence:
                     raise ReadbackError("NATIVE_FENCE_CHANGED")
-            writer.publish(snapshot)
+
+        def publish(self, writer, snapshots, fence):
+            self.check_fence(fence)
+            writer.publish(*snapshots)
             with self.fence_lock:
                 return self.fence == fence
 
@@ -148,18 +177,26 @@ def build_gateway(messages: Queue, overflow: Flag):
     return engine, engine.add_gateway(ObservationGateway, "SIMNOW_OBSERVER")
 
 
-def observe(config: ObserverConfig, writer: Writer, stop: Flag):
+def observe(config: ObserverConfig, writer: Writer, stop: Flag, *, verify: bool = False):
     messages = Queue(maxsize=8192)
     overflow = Flag()
-    engine, gateway = build_gateway(messages, overflow)
+    engine, gateway = build_gateway(messages, overflow, single_connection=verify)
     state = Readback()
     next_action = monotonic()
     last_query = float("-inf")
     up_to_date = False
+    front_connected = False
+    first_round = None
+    first_snapshot = None
+    deadline = monotonic() + VERIFY_TIMEOUT if verify else None
 
     try:
         gateway.connect(config)
         while not stop.is_set():
+            if deadline is not None and monotonic() >= deadline:
+                code = ("NATIVE_FRONT_TIMEOUT" if not front_connected else
+                        "NATIVE_LOGIN_TIMEOUT" if state.day is None else "NATIVE_READBACK_TIMEOUT")
+                raise ReadbackError(code)
             try:
                 message = messages.get(timeout=0.25)
             except Empty:
@@ -168,14 +205,18 @@ def observe(config: ObserverConfig, writer: Writer, stop: Flag):
                 raise ReadbackError("NATIVE_EVENT_OVERFLOW")
 
             match message:
+                case ("front_connected",):
+                    front_connected = True
                 case ("login", day):
                     state.login(state.generation + 1, day)
                     writer.status("RECONCILING")
                     up_to_date = False
                     next_action = monotonic()
-                case ("login_failed",):
-                    raise ReadbackError("NATIVE_LOGIN_FAILED")
-                case ("disconnected",):
+                case ("login_failed", stage, code):
+                    raise ReadbackError(f"{stage} code={code if type(code) is int else 0}")
+                case ("disconnected", reason):
+                    if verify:
+                        raise ReadbackError(f"NATIVE_DISCONNECTED code={reason if reason is not None else 0}")
                     state.disconnect()
                     writer.status("DISCONNECTED")
                     up_to_date = False
@@ -191,14 +232,34 @@ def observe(config: ObserverConfig, writer: Writer, stop: Flag):
                         complete = state.reply(section, reqid, data, code, last)
                         if complete and section == "fills":
                             snapshot = state.complete(config.user, observed_at)
-                            up_to_date = gateway.publish(writer, snapshot, fence)
-                            if not up_to_date:
-                                writer.status("RECONCILING")
+                            if verify:
+                                gateway.check_fence(fence)
+                                round_facts = {key: snapshot[key] for key in
+                                               ("account", "trading_day", "generation", "watermark")}
+                                for key in ("positions", "orders", "fills"):
+                                    round_facts[key] = {row["id"]: row for row in snapshot[key]}
+                                if first_round is not None:
+                                    if first_round != round_facts:
+                                        raise ReadbackError("NATIVE_ROUNDS_DIFFER")
+                                    if not gateway.publish(writer, (first_snapshot, snapshot), fence):
+                                        raise ReadbackError("NATIVE_FENCE_CHANGED")
+                                    writer.status("STOPPED")
+                                    return
+                                first_round = round_facts
+                                first_snapshot = snapshot
+                            else:
+                                up_to_date = gateway.publish(writer, (snapshot,), fence)
+                                if not up_to_date:
+                                    writer.status("RECONCILING")
                             state.discard()
-                            next_action = monotonic() + SAMPLE_INTERVAL
+                            next_action = monotonic() + (VERIFY_INTERVAL if verify else SAMPLE_INTERVAL)
                         elif complete:
                             next_action = last_query + QUERY_INTERVAL
                     except ReadbackError:
+                        if verify:
+                            if code and type(code) is int:
+                                raise ReadbackError(f"NATIVE_QUERY_FAILED section={section} code={code}") from None
+                            raise
                         writer.status("READBACK_FAILED")
                         up_to_date = False
                         state.discard()
@@ -207,6 +268,8 @@ def observe(config: ObserverConfig, writer: Writer, stop: Flag):
             if state.day is None or monotonic() < next_action or not messages.empty():
                 continue
             if state.pending:
+                if verify:
+                    raise ReadbackError(f"NATIVE_QUERY_TIMEOUT section={state.pending[0]}")
                 writer.status("READBACK_FAILED")
                 up_to_date = False
                 state.discard()
@@ -221,6 +284,8 @@ def observe(config: ObserverConfig, writer: Writer, stop: Flag):
                 gateway.query(SECTIONS[len(state.rows)], state)
                 next_action = last_query + QUERY_TIMEOUT
             except ReadbackError:
+                if verify:
+                    raise
                 writer.status("READBACK_FAILED")
                 up_to_date = False
                 state.discard()
@@ -230,6 +295,8 @@ def observe(config: ObserverConfig, writer: Writer, stop: Flag):
         raise
     else:
         writer.status("STOPPED")
+        if verify:
+            raise ReadbackError("VERIFICATION_INTERRUPTED")
     finally:
         engine.close()
 
@@ -276,6 +343,7 @@ def claim_workdir(path: Path, alias: str):
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--observe", action="store_true", required=True)
+    parser.add_argument("--verify", action="store_true", help="require two matching readbacks in one bounded connection")
     parser.add_argument("--account-config", type=Path, required=True)
     parser.add_argument("--workdir", type=Path, required=True)
     args = parser.parse_args()
@@ -287,8 +355,14 @@ def main() -> int:
         stop = Flag()
         signal.signal(signal.SIGINT, lambda *_: stop.set())
         signal.signal(signal.SIGTERM, lambda *_: stop.set())
-        with claim_workdir(args.workdir, config.alias), Writer.claim(dsn, config) as writer:
-            observe(config, writer, stop)
+        with global_account_lock(config.account_id), claim_workdir(args.workdir, config.alias):
+            with Writer.claim(dsn, config) as writer:
+                observe(config, writer, stop, verify=args.verify)
+        if args.verify:
+            print("SIMNOW_READBACK_VERIFIED rounds=2")
+    except ReadbackError as exc:
+        print(f"SIMULATION_OBSERVER_UNAVAILABLE reason={exc}", file=sys.stderr)
+        return 1
     except (ImportError, KeyError, OSError, ValueError, psycopg.Error):
         parser.exit(1, "SIMULATION_OBSERVER_UNAVAILABLE\n")
     return 0

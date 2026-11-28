@@ -10,13 +10,7 @@ import stat
 ACCOUNT_ALIAS = r"^[a-z][a-z0-9-]{0,39}$"
 VERSION = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$"
 INSTRUMENT = r"^(SHFE|INE|DCE|CZCE|CFFEX|GFEX):[A-Z]{1,8}[0-9]{3,4}$"
-
-SIMNOW_FRONTS = frozenset({
-    "tcp://180.168.146.187:10201",
-    "tcp://180.168.146.187:10202",
-    "tcp://218.202.237.33:10203",
-    "tcp://180.168.146.187:10130",
-})
+SIMNOW_FIRST_FRONT = "tcp://182.254.243.31:30001"
 
 
 @dataclass(frozen=True)
@@ -53,13 +47,14 @@ class ObserverConfig:
     app_id: str = field(repr=False)
     auth_code: str = field(repr=False)
     deployment: Deployment | None = None
+    account_id: str | None = field(default=None, repr=False)
 
     @classmethod
     def from_dict(cls, data: dict):
         keys = {"alias", "environment", "front", "user", "password", "app_id", "auth_code"}
         if (not isinstance(data, dict) or not keys <= data.keys() <= keys | {"deployment"}
                 or not all(isinstance(data[key], str) for key in keys)
-                or data["environment"] != "simnow" or data["front"] not in SIMNOW_FRONTS
+                or data["environment"] != "SIMNOW_FIRST" or data["front"] != SIMNOW_FIRST_FRONT
                 or not re.fullmatch(ACCOUNT_ALIAS, data["alias"]) or not re.fullmatch(VERSION, data["app_id"])):
             raise ValueError("SIMNOW_CONFIGURATION_INVALID")
         for key in ("user", "password", "auth_code"):
@@ -71,6 +66,10 @@ class ObserverConfig:
 
 
 def read_config(path: Path) -> ObserverConfig:
+    from dataclasses import replace
+
+    from guiyi_quant.simnow_execution.credentials import CredentialStore
+
     if not path.is_absolute():
         raise ValueError("PRIVATE_CONFIG_REQUIRED")
     with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as file:
@@ -80,4 +79,17 @@ def read_config(path: Path) -> ObserverConfig:
         raw = file.read(8193)
         if len(raw) > 8192:
             raise ValueError("PRIVATE_CONFIG_REQUIRED")
-    return ObserverConfig.from_dict(json.loads(raw))
+    data = json.loads(raw)
+    keys = {"alias", "environment", "account_id"}
+    if (not isinstance(data, dict) or not keys <= data.keys() <= keys | {"deployment"}
+            or not all(isinstance(data[key], str) for key in keys)
+            or data["environment"] != "SIMNOW_FIRST" or not re.fullmatch(ACCOUNT_ALIAS, data["alias"])
+            or not re.fullmatch(r"[0-9a-f]{64}", data["account_id"])):
+        raise ValueError("SIMNOW_CONFIGURATION_INVALID")
+    credentials = CredentialStore().load(data["account_id"])
+    validated = ObserverConfig.from_dict({
+        "alias": data["alias"], "environment": data["environment"], "front": SIMNOW_FIRST_FRONT,
+        "user": credentials.user, "password": credentials.password, "app_id": "simnow_client_test",
+        "auth_code": "0" * 16, "deployment": data.get("deployment"),
+    })
+    return replace(validated, account_id=credentials.account_id)

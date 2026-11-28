@@ -48,8 +48,9 @@ P6 保留证书信任链、独立行情读取、SimNow 权限与无结算写入�
 Web API 通过只读事务查询数据库，连接柜台由宿主负责。
 
 仅在获得相应环境和账户的连接授权后，使用私有账户目录与权限 0600 的 JSON。配置字段为
-`alias`、`environment`（`simnow`）、`front`（受限前置）、`user`、`password`、`app_id`、`auth_code`，以及
-可选的 `deployment`（策略 ID、公式版本、参数 Profile、风险政策与物理合约）。账户不共用工作目录。
+`alias`、`environment`（`SIMNOW_FIRST`）、`account_id`（已登记的钥匙串账户指纹），以及可选的
+`deployment`（策略 ID、公式版本、参数 Profile、风险政策与物理合约）。宿主沿用已有 SimNow 第一套前置、
+钥匙串凭据加载器和跨宿主账户锁。首次现场验收使用 `--verify`，要求同一连接内两轮四段读回一致，完成或失败后退出。
 数据库由操作员显式应用 [simulation_schema.sql](simulation_schema.sql)。写进程使用
 `GUIYI_SIMULATION_WRITER_DSN`，API 使用 `GUIYI_SIMULATION_READER_DSN`。两者按相应 schema 使用独立角色权限。
 
@@ -57,7 +58,7 @@ Web API 通过只读事务查询数据库，连接柜台由宿主负责。
 
 ```sh
 PYTHONPATH="$PWD/services/quant-api" services/newow-vnpy/.venv/bin/python \
-    services/newow-vnpy/simulation_observer.py --observe \
+    services/newow-vnpy/simulation_observer.py --observe --verify \
     --account-config /absolute/private/account.json --workdir /absolute/private/account-runtime
 ```
 

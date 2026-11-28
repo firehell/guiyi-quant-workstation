@@ -57,8 +57,14 @@ class Writer:
                 """UPDATE guiyi_simulation.accounts SET status = %s, status_at = clock_timestamp()
                    WHERE alias = %s""", (status, self.alias))
 
-    def publish(self, snapshot: dict):
-        """Persist one complete round and its immutable fills in the same transaction."""
+    def publish(self, *snapshots: dict):
+        """Persist one round or a verified pair with their immutable fills atomically."""
+        with self.connection.transaction():
+            for snapshot in snapshots:
+                self._persist(snapshot)
+            self.status("OBSERVING")
+
+    def _persist(self, snapshot: dict):
         with self.connection.transaction():
             previous = self.connection.execute(
                 """SELECT facts FROM guiyi_simulation.readbacks WHERE alias = %s
@@ -83,7 +89,6 @@ class Writer:
                 """INSERT INTO guiyi_simulation.readbacks (alias, observed_at, facts)
                    VALUES (%s, %s, %s)""",
                 (self.alias, datetime.fromisoformat(snapshot["observed_at"]), Jsonb(snapshot)))
-            self.status("OBSERVING")
 
 
 def _check_prefix(previous: dict, current: dict):

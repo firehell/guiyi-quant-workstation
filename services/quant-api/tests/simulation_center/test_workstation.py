@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+import json
 import os
 
 from fastapi import FastAPI
@@ -6,10 +7,11 @@ from fastapi.testclient import TestClient
 import pytest
 
 from app.api.simulation_center import router
-from app.simulation_center.config import ObserverConfig
+from app.simulation_center.config import ObserverConfig, SIMNOW_FIRST_FRONT, read_config
 from app.simulation_center.facts import normalize
 from app.simulation_center.readback import ReadbackError
 from app.simulation_center.store import Writer, read_workstation
+from guiyi_quant.simnow_execution.credentials import Credentials, fingerprint_for
 from test_facts import sample
 
 
@@ -29,7 +31,7 @@ def test_api_is_read_only_and_distinguishes_unconfigured(monkeypatch):
 def config(alias, user):
     return ObserverConfig.from_dict({
         "alias": alias, "user": user, "password": "fixture-pass", "auth_code": "fixture-auth",
-        "app_id": "fixture-app", "front": "tcp://180.168.146.187:10201", "environment": "simnow",
+        "app_id": "fixture-app", "front": SIMNOW_FIRST_FRONT, "environment": "SIMNOW_FIRST",
         "deployment": {"strategy_id": "htdy_60m", "formula_version": "test-formula",
                        "profile_id": "test-profile", "risk_policy_version": "test-risk",
                        "instruments": ["SHFE:RB2701"]},
@@ -43,8 +45,32 @@ def test_config_rejects_unknown_endpoint_and_hides_credentials():
     with pytest.raises(ValueError, match="SIMNOW_CONFIGURATION_INVALID"):
         ObserverConfig.from_dict({
             "alias": "case-a", "user": "INV", "password": "fixture-pass", "auth_code": "fixture-auth",
-            "app_id": "fixture-app", "front": "tcp://127.0.0.1:10201", "environment": "simnow",
+            "app_id": "fixture-app", "front": "tcp://127.0.0.1:10201", "environment": "SIMNOW_FIRST",
         })
+
+
+def test_observer_reads_matching_first_account_from_keychain(tmp_path, monkeypatch):
+    account = fingerprint_for("123456")
+    config_file = tmp_path / "observer.json"
+    metadata = {"alias": "simnow-first", "environment": "SIMNOW_FIRST", "account_id": account}
+    config_file.write_text(json.dumps(metadata))
+    config_file.chmod(0o600)
+    requested = []
+
+    class LocalStore:
+        def load(self, fingerprint):
+            requested.append(fingerprint)
+            return Credentials("123456", "fixture-pass", account)
+
+    monkeypatch.setattr("guiyi_quant.simnow_execution.credentials.CredentialStore", LocalStore)
+    registered = read_config(config_file)
+    assert registered.account_id == account and registered.front.endswith(":30001")
+    assert requested == [account]
+    assert "fixture-pass" not in repr(registered) and "123456" not in repr(registered)
+    config_file.write_text(json.dumps({**metadata, "environment": "SIMNOW_API_TEST"}))
+    with pytest.raises(ValueError, match="SIMNOW_CONFIGURATION_INVALID"):
+        read_config(config_file)
+    assert requested == [account]
 
 
 @pytest.mark.isolated_postgresql
@@ -65,6 +91,12 @@ def test_postgresql_retains_prior_round_and_isolates_accounts(monkeypatch):
         with pytest.raises(ReadbackError, match="ACCOUNT_ALREADY_OWNED"):
             with Writer.claim(dsn, first):
                 pytest.fail("duplicate writer")
+        invalid_second = {**original, "orders": [], "fills": [],
+                          "observed_at": (observed + timedelta(seconds=1)).isoformat()}
+        with pytest.raises(ReadbackError, match="RETAINED_ORDER_REGRESSION"):
+            writer.publish(original, invalid_second)
+        assert read_workstation(dsn, "case-a", None)["readback"] is None
+        assert read_workstation(dsn, "case-a", None)["fills"] == []
         writer.publish(original)
         assert read_workstation(dsn, "case-b", None)["readback"] is None
         assert read_workstation(dsn, "case-a", None)["fills"] == original["fills"]

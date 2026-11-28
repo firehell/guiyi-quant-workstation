@@ -17,6 +17,7 @@ def test_isolated_veighna_read_only_assembly(tmp_path):
         try:
             td.brokerid = "9999"
             td.userid = "fixture-account"
+            td.front_open = True
             td.reqid = 1
             settlement_calls = []
             td.reqSettlementInfoConfirm = lambda *args: settlement_calls.append(args)
@@ -29,10 +30,38 @@ def test_isolated_veighna_read_only_assembly(tmp_path):
             td.onRtnTrade({"InvestorID": td.userid})
             assert messages.get(timeout=2) == ("changed",)
             with pytest.raises(ReadbackError, match="NATIVE_FENCE_CHANGED"):
-                gateway.publish(None, {}, 1)
+                gateway.publish(None, ({},), 1)
             for method in (gateway.send_order, gateway.cancel_order, td.send_order, td.cancel_order):
                 with pytest.raises(ReadbackError, match="OBSERVER_READ_ONLY"):
                     method(None)
+        finally:
+            engine.close()
+
+
+def test_one_shot_authentication_ignores_duplicate_and_stale_callbacks(tmp_path):
+    messages = Queue()
+    workdir = tmp_path.resolve()
+    workdir.chmod(0o700)
+    with claim_workdir(workdir, "isolated-a"):
+        engine, gateway = build_gateway(messages, Event(), single_connection=True)
+        td = gateway.td_api
+        try:
+            commands = []
+            td.auth_code = "fixture-auth"
+            td.brokerid, td.userid, td.appid = "9999", "fixture-account", "fixture-app"
+            td.authenticate = lambda: commands.append("auth")
+            td.login = lambda: commands.append("login")
+            td.reqid = 1
+            response = {"BrokerID": td.brokerid, "UserID": td.userid, "AppID": td.appid}
+            td.onFrontConnected()
+            td.onRspAuthenticate(response, {}, 2, True)
+            td.onRspAuthenticate(response, {}, 1, False)
+            td.onRspAuthenticate(response, {}, 1, True)
+            td.onRspAuthenticate(response, {}, 1, True)
+            td.onFrontDisconnected(4097)
+            td.onFrontConnected()
+            td.onRspAuthenticate(response, {}, 1, True)
+            assert commands == ["auth", "login"]
         finally:
             engine.close()
 
