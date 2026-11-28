@@ -4,7 +4,7 @@ import { lastWorkstationChart } from '@/utils/workstationRoutes'
 
 const router = useRouter()
 withDefaults(defineProps<{
-  activeTab?: 'operations' | 'market' | 'research' | 'messages' | 'simulation' | 'subing-decision' | 'strategies' | 'backtests' | 'simulations' | null
+  activeTab?: 'operations' | 'market' | 'research' | 'messages' | 'simulation' | 'subing-decision' | 'strategies' | 'backtests' | 'simulations' | 'trade-journal' | null
 }>(), { activeTab: null })
 </script>
 
@@ -17,6 +17,7 @@ withDefaults(defineProps<{
       <RouterLink to="/strategies" role="tab" :aria-selected="activeTab === 'strategies'" :aria-current="activeTab === 'strategies' ? 'page' : undefined">策略</RouterLink>
       <RouterLink to="/backtests" role="tab" :aria-selected="activeTab === 'backtests'" :aria-current="activeTab === 'backtests' ? 'page' : undefined">回测</RouterLink>
       <RouterLink to="/simulations" role="tab" :aria-selected="activeTab === 'simulations'" :aria-current="activeTab === 'simulations' ? 'page' : undefined">模拟交易</RouterLink>
+      <RouterLink to="/trade-journal" role="tab" :aria-selected="activeTab === 'trade-journal'" :aria-current="activeTab === 'trade-journal' ? 'page' : undefined">交易复盘</RouterLink>
       <RouterLink to="/research" role="tab" :aria-selected="activeTab === 'research' || activeTab === 'subing-decision'" :aria-current="activeTab === 'research' || activeTab === 'subing-decision' ? 'page' : undefined">研究</RouterLink>
       <RouterLink to="/market?tab=messages" :aria-current="activeTab === 'messages' ? 'page' : undefined">消息</RouterLink>
     </nav>

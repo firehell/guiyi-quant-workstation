@@ -1,3 +1,11 @@
+## 2026-11-28 14:41｜交易日志与复盘中心独立发布
+
+- [Trade Journal & Review Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/trade-journal-center/v0.1.0)
+  绑定 `62ed608042549cf0a5efe676147c4f316f9487d9`，经 [PR #691](https://github.com/firehell/guiyi-quant-workstation/pull/691)
+  集成到 `develop`。提供交易计划及版本、人工归案、时间线、五维复盘和日周复盘。
+- 54 项定向回归通过，5 项跳过。OpenSpec 严格校验、隔离迁移、四笔归案浏览器用例、API wheel 与 Web 构建通过。
+  工作站正式部署需要应用发布及数据库迁移 `20261128_0057`，SimNow 自然成交关联仍待原生证据。
+
 ## 2026-11-28 13:59｜模拟交易中心独立发布
 
 - [Simulation Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/simulation-center/v0.1.0) 绑定 `9e0e89c00f512981eb7fea26eba51c0685e75341`，经 [PR #690](https://github.com/firehell/guiyi-quant-workstation/pull/690) 集成到 `develop`。发布内容包括只读工作台、VeighNa CTP 账户观察和火天大有离线执行与对账。

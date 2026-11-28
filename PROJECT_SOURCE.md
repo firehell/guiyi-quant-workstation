@@ -36,6 +36,12 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 
 `/simulations` 与 `/api/v1/simulations` 提供账户、策略登记、原生读回和权益采样查询。独立 SimNow 观察宿主沿用 VeighNa CTP，火天大有执行链可在隔离环境验收。见 [模拟交易中心合同](openspec/specs/simulation-center/spec.md)与 [执行启用设计](openspec/changes/add-simulation-center/design.md)。
 
+## 交易日志与复盘中心
+
+`/trade-journal` 支持交易计划与版本、人工归案、操作时间线、五维案例复盘及日周复盘。
+`/api/v1/trade-journal` 保存用户记录，关联 SimNow、苏冰 Paper、可核验的 TQKQ 历史、牛哇参考交易和回测结果。
+具体来源与案例归集见[交易日志与复盘合同](openspec/specs/trade-journal-center/spec.md)。
+
 ## 苏冰独立量化与 L.M.S 研究
 
 苏冰量化的唯一策略是16品种共享资金 Paper。`/research/subing-decision`

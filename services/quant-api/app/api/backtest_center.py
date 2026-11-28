@@ -9,6 +9,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from app.api.local_write import require_workstation_origin
 from app.backtest_center import BACKTEST_CENTER_VERSION
 from app.backtest_center.contracts import (
     BacktestError,
@@ -26,7 +27,6 @@ from app.backtest_center.worker import Settings, Worker
 
 router = APIRouter(prefix="/api/v1/backtests", tags=["backtest-center"])
 _setup_lock = Lock()
-_DEVELOP_ORIGINS = frozenset(f"http://{host}:{port}" for host in ("localhost", "127.0.0.1") for port in (5173, 5175))
 Offset = Annotated[int, Query(ge=0, le=1_000_000)]
 Limit = Annotated[int, Query(ge=1, le=200)]
 
@@ -62,11 +62,7 @@ def get_store(request: Request) -> RunStore:
 
 
 def require_local_write(request: Request) -> None:
-    if origin := request.headers.get("origin"):
-        allowed = {*_DEVELOP_ORIGINS, str(request.base_url).rstrip("/")}
-        allowed.update(item.strip() for item in os.getenv("CORS_ORIGINS", "").split(",") if item.strip())
-        if origin.rstrip("/") not in allowed:
-            raise HTTPException(403, detail={"code": "BACKTEST_ORIGIN_FORBIDDEN"})
+    require_workstation_origin(request, "BACKTEST_ORIGIN_FORBIDDEN")
 
 
 Store = Annotated[RunStore, Depends(get_store)]
