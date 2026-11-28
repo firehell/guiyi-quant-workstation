@@ -435,6 +435,21 @@ class RecoveryHost(WorkstationHost):
                     and state.get("ready") is True
                     and (item.service not in PAIR or self.owns_http(item, state["pid"]))
                 ):
+                    if observe_poll:
+                        proof = state.get("proof")
+                        require(
+                            isinstance(proof, dict)
+                            and "failure_code" not in proof
+                            and (
+                                proof.get("cycle_ok") is True
+                                or item.service == "market-feed"
+                                and isinstance(proof.get("closed_cleaned"), dict)
+                                and proof["closed_cleaned"].get("status") == "CLOSED_CLEANED"
+                                or item.service == "live"
+                                and {"input_read_frontier", "trading_day"} <= proof.keys()
+                            ),
+                            "MARKET_POLL_SUCCESS_UNPROVEN_" + suffix,
+                        )
                     return {"pid": state["pid"], "ready_at": state["at"]}
                 if observe_poll:
                     require(

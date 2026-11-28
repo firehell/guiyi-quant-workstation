@@ -403,7 +403,20 @@ def test_pending_controller_requires_original_attempt_and_controller_identity(sc
 
 @pytest.mark.parametrize("name", ["market-feed", "live"])
 @pytest.mark.parametrize(
-    "next_result", ["ready", "timeout", "failure", "stale", "pid", "missing", "released-lock"]
+    "next_result",
+    [
+        "ready",
+        "domain-ready",
+        "empty-ready",
+        "failure-ready",
+        "foreign-ready",
+        "timeout",
+        "failure",
+        "stale",
+        "pid",
+        "missing",
+        "released-lock",
+    ],
 )
 def test_switched_poll_requires_same_fresh_healthy_owner(scenario, monkeypatch, name, next_result):
     host, plan = scenario
@@ -420,8 +433,30 @@ def test_switched_poll_requires_same_fresh_healthy_owner(scenario, monkeypatch, 
 
     def advance(seconds):
         touched.append(seconds)
-        if next_result in {"ready", "pid", "stale", "released-lock"}:
+        if next_result in {
+            "ready",
+            "domain-ready",
+            "empty-ready",
+            "failure-ready",
+            "foreign-ready",
+            "pid",
+            "stale",
+            "released-lock",
+        }:
             sample["ready"] = True
+            sample["proof"] = {"cycle_ok": True}
+        if next_result == "domain-ready":
+            sample["proof"] = (
+                {"input_read_frontier": "123-0", "trading_day": DAY.isoformat()}
+                if name == "live"
+                else {"closed_cleaned": {"status": "CLOSED_CLEANED"}}
+            )
+        if next_result == "empty-ready":
+            sample["proof"] = {}
+        if next_result == "failure-ready":
+            sample["proof"]["failure_code"] = "FEED_POLL_FAILED"
+        if next_result == "foreign-ready":
+            sample["proof"] = {"other_worker": True}
         if next_result == "failure":
             sample["proof"] = {"failure_code": "FEED_POLL_FAILED"}
         if next_result == "stale":
@@ -440,10 +475,13 @@ def test_switched_poll_requires_same_fresh_healthy_owner(scenario, monkeypatch, 
     monkeypatch.setattr(host, "free", lambda _: next_result == "released-lock" and bool(touched))
     monkeypatch.setattr(recovery, "read_service_state", lambda *_, **__: dict(sample))
     monkeypatch.setattr(recovery, "owner_process_matches", lambda *_: True)
-    if next_result == "ready":
+    if next_result in {"ready", "domain-ready"}:
         assert host.prove_running(item) == {"pid": 123, "ready_at": host.now().isoformat()}
     else:
         codes = {
+            "empty-ready": "POLL_SUCCESS_UNPROVEN",
+            "failure-ready": "POLL_SUCCESS_UNPROVEN",
+            "foreign-ready": "POLL_SUCCESS_UNPROVEN",
             "timeout": "COMPLETED_POLL_UNPROVEN",
             "failure": "POLL_FAILURE",
             "stale": "POLL_OWNER_UNPROVEN",
