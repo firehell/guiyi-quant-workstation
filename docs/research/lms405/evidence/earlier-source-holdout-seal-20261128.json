@@ -1,0 +1,66 @@
+{
+  "admitted": 0,
+  "cases": [
+    {
+      "contract": "RU2609",
+      "decision": null,
+      "missing": [
+        "PLAN_BODY",
+        "PHYSICAL_CONTRACT_IN_PLAN",
+        "SYSTEM_VERSION",
+        "POSITION_BEFORE"
+      ],
+      "plan": "A5315553815822385",
+      "trading_day": "2026-07-01"
+    },
+    {
+      "contract": "LH2609",
+      "decision": null,
+      "missing": [
+        "PLAN_BODY",
+        "PHYSICAL_CONTRACT_IN_PLAN",
+        "SYSTEM_VERSION",
+        "POSITION_BEFORE"
+      ],
+      "plan": "A5315553815822385",
+      "trading_day": "2026-07-01"
+    },
+    {
+      "contract": "RU2701",
+      "decision": null,
+      "geometry_band": [
+        19760,
+        19840
+      ],
+      "illustrative_only": {
+        "candidate_clocks": {
+          "ordinary": "2026-10-19 13:46:00.000001+00:00"
+        },
+        "first_contact": "2026-10-19 13:01:00+00:00"
+      },
+      "market": {
+        "1": {
+          "count": 345,
+          "digest": "d2762d8da9bbd886a7dea384b1bdda6923f164f456252bde7710616d8cd54eb7"
+        },
+        "5": {
+          "count": 69,
+          "digest": "e0702b8e552490e8bf622ce1602f21368504b1f502e5eae7db4e52821172dc8c"
+        },
+        "15": {
+          "count": 23,
+          "digest": "a653e2c7a7b4230c96e9a6ba56f44eb8c53b01b158260ccd85ba4312f3e07cf5"
+        }
+      },
+      "missing": [
+        "HISTORICAL_PLAN_REVISION",
+        "SYSTEM_VERSION",
+        "POSITION_BEFORE"
+      ],
+      "plan": "A5355789916438626",
+      "published_proxy": "2026-10-19T17:49:00+08:00",
+      "trading_day": "2026-10-20"
+    }
+  ],
+  "purpose": "pre-outcome intake"
+}
