@@ -266,6 +266,13 @@ class RecoveryHost(WorkstationHost):
             path = self.path(item)
             before = sha256(self.bytes(path)).hexdigest() if os.path.lexists(path) else None
             require(before == initial_files[path.name], "MARKET_OLD_DEFINITION_DRIFT")
+            intent = attempt / ("old-bootout-" + name + ".json")
+            identity = {"label": item.label, "generation": item.generation, "commit": item.commit}
+            submitted = _read(intent)
+            if submitted is not None:
+                require(submitted == identity, "MARKET_OLD_PARK_INTENT_DRIFT")
+                self.wait_parked(item, root, "MARKET_OLD_PARK_UNPROVEN")
+                continue
             output = read_launchd_service(item.label, root=root)
             if output:
                 self.verify_loaded(item, output)
@@ -273,17 +280,24 @@ class RecoveryHost(WorkstationHost):
                     self.drain_http(item, attempt)
                 else:
                     self._assert_old_job_idle(item, output)
-            self.unload_verified(item, root, old=True)
-            disabled, _ = self.authorities(root)
-            require(
-                disabled.get(item.label) is True
-                and read_launchd_service(item.label, root=root) is None
-                and self.free(name),
-                "MARKET_OLD_PARK_UNPROVEN",
-            )
+            self.unload_verified(item, root, old=True, before_bootout=lambda: _write(intent, identity))
+            self.wait_parked(item, root, "MARKET_OLD_PARK_UNPROVEN")
         closed_ports()
 
-    def unload_verified(self, item, root, *, old=False):
+    def wait_parked(self, item, root, code, *, timeout=30):
+        """A successful bootout can return before launchd releases the job and owner."""
+        deadline = time.monotonic() + timeout
+        while True:
+            disabled, _ = self.authorities(root)
+            output = read_launchd_service(item.label, root=root)
+            if output:
+                self.verify_loaded(item, output)
+            if disabled.get(item.label) is True and output is None and self.free(item.service):
+                return
+            require(time.monotonic() < deadline, code)
+            time.sleep(0.2)
+
+    def unload_verified(self, item, root, *, old=False, before_bootout=None):
         guard = (
             after_market_recovery_guard(root=self.directory / "live-recovery-guards", legacy_root=True)
             if item.service in CALENDARS
@@ -291,13 +305,17 @@ class RecoveryHost(WorkstationHost):
         )
         with guard:
             target = f"gui/{os.getuid()}/{item.label}"
-            self.launch("disable", target)
+            disabled, _ = self.authorities(root)
+            if disabled.get(item.label) is not True:
+                self.launch("disable", target)
             current = read_launchd_service(item.label, root=root)
             if current:
                 self.verify_loaded(item, current)
                 if item.service in CALENDARS or old and item.service not in PAIR:
                     self._assert_old_job_idle(item, current)
                     require(self.free(item.service), "MARKET_OLD_JOB_BUSY")
+                if before_bootout is not None:
+                    before_bootout()
                 self.launch("bootout", target)
 
     def free(self, name):
@@ -393,13 +411,7 @@ class RecoveryHost(WorkstationHost):
         for name in reversed(START_ORDER):
             item = targets[name]
             self.unload_verified(item, root)
-            disabled, _ = self.authorities(root)
-            require(
-                disabled.get(item.label) is True
-                and read_launchd_service(item.label, root=root) is None
-                and self.free(name),
-                "MARKET_TARGET_STOP_UNKNOWN",
-            )
+            self.wait_parked(item, root, "MARKET_TARGET_STOP_UNKNOWN")
         closed_ports()
 
 

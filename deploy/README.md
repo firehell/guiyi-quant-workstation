@@ -596,6 +596,12 @@ Tick 次日元数据准备使用独立状态文件。旧范围在同一交易日
 首次启用 Alert 仅在两个日志完整且 Live 已追尾时原子登记于完成流尾。已有游标、历史 Event 和投递保留。
 新交易时段如已开始，需按现场验证新的业务边界，不能重做首次注册。Reference 等待现有或新归档凭证。
 
+已发布控制器可接续前一发布留下的同一份未完成恢复计划。在更高版本、干净 detached 的控制器发布根内，用
+`--verify-pending-market-recovery --controller-tag "$control_tag" --controller-commit "$control_commit" --plan "$plan"`
+独立只读检查控制器、原计划前像和候选自身解释器生成的目标身份及八份 plist。检查成功后只执行一次对应的
+`--resume-pending-market-recovery`，使用相同参数。控制器对每个旧服务提交一次卸载，然后有界等待读回。
+若超时，保留原计划与卸载意图，用现场只读状态查明结果。服务继续使用原计划指定的发布根与版本。
+
 ### V2 直接首启
 
 在精确应用发布树使用 `install-local-services.sh --plan-market-direct-start --candidate-root <absolute-release-root> --tag <application-tag> --commit <commit> --trading-day YYYY-MM-DD`。
