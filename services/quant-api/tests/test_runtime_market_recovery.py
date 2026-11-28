@@ -295,9 +295,60 @@ def test_parked_old_roles_and_existing_intent_skip_all_mutations(scenario, monke
     )
     monkeypatch.setattr(host, "launch", lambda *args: pytest.fail("already parked"))
     originals = {host.path(b).name: None for b in old.services.values()}
+    dispatcher = host.directory / "run-local-service.sh"
+    dispatcher.write_bytes(b"fixture")
+    originals[dispatcher.name] = recovery.sha256(b"fixture").hexdigest()
     monkeypatch.setattr(recovery, "after_market_recovery_guard", lambda **_: nullcontext())
     recovery.RecoveryHost.park(host, old, host.root, originals, attempt)
     assert host.calls == []
+
+
+@pytest.mark.parametrize(
+    "drift,code",
+    [
+        ("last-plist", "MARKET_OLD_DEFINITION_DRIFT"),
+        ("last-intent", "MARKET_OLD_PARK_INTENT_DRIFT"),
+        ("last-loaded", "WORKSTATION_TARGET_IDENTITY_DRIFT"),
+        ("dispatcher", "MARKET_OLD_DISPATCHER_DRIFT"),
+        ("web-drain", "MARKET_HTTP_DRAIN_DRIFT"),
+    ],
+)
+def test_old_scope_checks_every_role_before_any_stop(scenario, monkeypatch, tmp_path, drift, code):
+    host, plan = scenario
+    old = host.inventory()[0]
+    last = old.services[recovery.START_ORDER[-1]]
+    folder = tmp_path / "attempt"
+    folder.mkdir(mode=0o700)
+    host.path(last).parent.mkdir(parents=True, exist_ok=True)
+    originals = {host.path(b).name: None for b in old.services.values()}
+    dispatcher = host.directory / "run-local-service.sh"
+    dispatcher.write_bytes(b"stable")
+    originals[dispatcher.name] = recovery.sha256(b"stable").hexdigest()
+    if drift == "last-plist":
+        host.path(last).write_bytes(b"changed")
+    elif drift == "last-intent":
+        _write(folder / ("old-bootout-" + last.service + ".json"), {"generation": 123})
+    elif drift == "last-loaded":
+        monkeypatch.setattr(
+            recovery, "read_launchd_service", lambda label, **_: "wrong" if label == last.label else None
+        )
+
+        def verify(item, output):
+            assert item == last and output == "wrong"
+            raise CohortError(code)
+
+        monkeypatch.setattr(host, "verify_loaded", verify)
+    elif drift == "dispatcher":
+        dispatcher.write_bytes(b"changed")
+    else:
+        _write(
+            host.directory / "web.handover.json",
+            {"generation": old.services["web"].generation, "phase": "drain", "request_id": "a" * 32},
+        )
+    monkeypatch.setattr(host, "unload_verified", lambda *a, **kw: pytest.fail("unloaded an earlier role"))
+    monkeypatch.setattr(host, "drain_http", lambda *a, **kw: pytest.fail("drained an earlier HTTP owner"))
+    with pytest.raises(CohortError, match=code):
+        recovery.RecoveryHost.park(host, old, host.root, originals, folder)
 
 
 def test_pending_controller_compares_native_plists_and_forward_version(scenario, monkeypatch):

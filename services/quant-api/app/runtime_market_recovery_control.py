@@ -139,6 +139,9 @@ def verify_pending(host, plan):
         "MARKET_CANDIDATE_DRIFT",
     )
     peers(host, old, root, plan)
+    if authority == "old":
+        require(progress["phase"] in {"parking", "cas_intent"}, "MARKET_RECOVERY_PHASE_INVALID")
+        host.preflight_parking(old, root, plan["files"], attempt)
     return {
         "authority": authority,
         "phase": progress["phase"],
@@ -148,6 +151,7 @@ def verify_pending(host, plan):
         "target_tag": identity.tag,
         "target_commit": identity.commit,
         "candidate_plists": "verified",
+        "old_parking_verified": authority == "old",
     }
 
 

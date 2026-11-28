@@ -260,26 +260,60 @@ class RecoveryHost(WorkstationHost):
             self.verify_release(Path(item.root), item.tag, item.commit)
         self.ready({n: previous.services[n] for n in PAIR})
 
-    def park(self, old, root, initial_files, attempt):
+    def old_role(self, item, root, initial_files, attempt):
+        path = self.path(item)
+        before = sha256(self.bytes(path)).hexdigest() if os.path.lexists(path) else None
+        require(
+            path.name in initial_files and before == initial_files[path.name], "MARKET_OLD_DEFINITION_DRIFT"
+        )
+        intent = attempt / ("old-bootout-" + item.service + ".json")
+        identity = {"label": item.label, "generation": item.generation, "commit": item.commit}
+        submitted = _read(intent)
+        require(submitted is None or submitted == identity, "MARKET_OLD_PARK_INTENT_DRIFT")
+        output = read_launchd_service(item.label, root=root)
+        if output:
+            self.verify_loaded(item, output)
+            if item.service not in PAIR:
+                self._assert_old_job_idle(item, output)
+        if submitted is None and (not output or item.service not in PAIR):
+            require(self.free(item.service), "MARKET_OLD_JOB_BUSY")
+        return output, intent, identity, submitted
+
+    def preflight_parking(self, old, root, initial_files, attempt):
+        dispatcher = self.directory / "run-local-service.sh"
+        require(
+            sha256(self.bytes(dispatcher)).hexdigest() == initial_files.get(dispatcher.name),
+            "MARKET_OLD_DISPATCHER_DRIFT",
+        )
+        drains = _read(attempt / "drains.json") or {}
+        require(
+            set(drains) <= set(PAIR)
+            and all(isinstance(v, str) and re.fullmatch("[0-9a-f]{32}", v) for v in drains.values()),
+            "MARKET_HTTP_DRAIN_DRIFT",
+        )
         for name in START_ORDER:
             item = old.services[name]
-            path = self.path(item)
-            before = sha256(self.bytes(path)).hexdigest() if os.path.lexists(path) else None
-            require(before == initial_files[path.name], "MARKET_OLD_DEFINITION_DRIFT")
-            intent = attempt / ("old-bootout-" + name + ".json")
-            identity = {"label": item.label, "generation": item.generation, "commit": item.commit}
-            submitted = _read(intent)
+            self.old_role(item, root, initial_files, attempt)
+            if name in PAIR:
+                control = _read(self.directory / f"{name}.handover.json") or {}
+                if control.get("generation") == item.generation and control.get("phase") == "drain":
+                    require(
+                        drains.get(name) and control.get("request_id") == drains[name],
+                        "MARKET_HTTP_DRAIN_DRIFT",
+                    )
+
+    def park(self, old, root, initial_files, attempt):
+        # Check every selected predecessor before the first side effect. Recheck
+        # each role immediately before its own drain or unload as well.
+        self.preflight_parking(old, root, initial_files, attempt)
+        for name in START_ORDER:
+            item = old.services[name]
+            output, intent, identity, submitted = self.old_role(item, root, initial_files, attempt)
             if submitted is not None:
-                require(submitted == identity, "MARKET_OLD_PARK_INTENT_DRIFT")
                 self.wait_parked(item, root, "MARKET_OLD_PARK_UNPROVEN")
                 continue
-            output = read_launchd_service(item.label, root=root)
-            if output:
-                self.verify_loaded(item, output)
-                if name in PAIR:
-                    self.drain_http(item, attempt)
-                else:
-                    self._assert_old_job_idle(item, output)
+            if output and name in PAIR:
+                self.drain_http(item, attempt)
             self.unload_verified(item, root, old=True, before_bootout=lambda: _write(intent, identity))
             self.wait_parked(item, root, "MARKET_OLD_PARK_UNPROVEN")
         closed_ports()
