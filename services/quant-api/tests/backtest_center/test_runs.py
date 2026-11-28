@@ -72,6 +72,28 @@ def test_concurrent_duplicate_and_rerun(store):
     assert store.rerun(original, "repeat-run")["run_id"] == after["run_id"]
 
 
+def test_research_publication_uses_read_only_verified_snapshot(store, tmp_path):
+    run_id = store.submit("research", CONFIG)["run_id"]
+    assert store.claim()["run_id"] == run_id
+    assert store.admit(run_id, SNAPSHOT)
+    assert store.publish(run_id, RESULT)
+    reader = RunStore.open_reader(store.path)
+    publication = reader.research_publication(run_id)
+    assert publication["snapshot"] == SNAPSHOT
+    assert publication["run_id"] == run_id
+    assert publication["equity"] == RESULT["equity"]
+    with pytest.raises(BacktestError, match="BACKTEST_READ_ONLY"):
+        reader.submit("forbidden", CONFIG)
+    absent = tmp_path / "absent.db"
+    with pytest.raises(FileNotFoundError):
+        RunStore.open_reader(absent)
+    assert not absent.exists()
+    with store.connection(write=True) as database:
+        database.execute("UPDATE bt_rows SET payload='{}' WHERE run_id=? AND kind='equity'", (run_id,))
+    with pytest.raises(BacktestError, match="BACKTEST_RESULT_DIGEST_MISMATCH"):
+        reader.research_publication(run_id)
+
+
 def test_cancel_publish_and_restart_readback(store):
     first = store.submit("first", CONFIG)["run_id"]
     second = store.submit("after", CONFIG)["run_id"]

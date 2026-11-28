@@ -143,9 +143,17 @@ def _compare_decimal(left: str, right: str) -> int:
 
 
 class RunStore:
-    def __init__(self, path: Path, submission_identity=None):
+    @classmethod
+    def open_reader(cls, path: Path) -> RunStore:
+        """Open an existing publication store without initializing its schema."""
+        return cls(path, read_only=True)
+
+    def __init__(self, path: Path, submission_identity=None, *, read_only=False):
+        self.read_only = read_only
         self.submission_identity = submission_identity
-        self.path = path.resolve()
+        self.path = path.resolve(strict=read_only)
+        if read_only:
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
         try:
@@ -156,7 +164,10 @@ class RunStore:
 
     @contextmanager
     def connection(self, *, write=False):
-        db = sqlite3.connect(self.path, timeout=10, isolation_level=None)
+        if self.read_only and write:
+            raise BacktestError("BACKTEST_READ_ONLY")
+        location = self.path.as_uri() + "?mode=ro" if self.read_only else self.path
+        db = sqlite3.connect(location, uri=self.read_only, timeout=10, isolation_level=None)
         db.row_factory = sqlite3.Row
         db.create_collation("DECIMAL", _compare_decimal)
         try:
@@ -509,6 +520,21 @@ class RunStore:
         with self.connection() as db:
             row = self._succeeded(db, run_id)
             return json.loads(row["report"])
+
+    def research_publication(self, run_id: str) -> dict:
+        """Read one intact immutable Run and its source identity in the same transaction."""
+        with self.connection() as db:
+            row = self._succeeded(db, run_id)
+            artifact = self._artifact(db, row)
+            if digest(artifact) != row["result_digest"]:
+                raise BacktestError("BACKTEST_RESULT_DIGEST_MISMATCH")
+            return {
+                **artifact,
+                "run_id": run_id,
+                "result_digest": row["result_digest"],
+                "snapshot": json.loads(row["snapshot"]),
+                "config": json.loads(row["config"]),
+            }
 
     def replay(self, run_id: str, trade_id: str) -> dict:
         """Read only the publication's own chart, including when the native bundle changes later."""
