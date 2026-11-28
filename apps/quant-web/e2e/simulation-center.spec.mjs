@@ -4,7 +4,7 @@ const now = '2026-11-27T21:03:00+08:00'
 
 test('simulation center reports absent cabinet configuration', async ({ page }) => {
   await page.route('**/api/v1/simulations', route => route.fulfill({ json: {
-    source: 'SIMNOW_CTP', status: 'NOT_CONFIGURED', selected: null,
+    version: '0.1.0', source: 'SIMNOW_CTP', status: 'NOT_CONFIGURED', selected: null,
     accounts: [], readback: null, equity: [], fills: [], next_fill: null,
   } }))
   await page.goto('/simulations')
@@ -23,7 +23,7 @@ test('account selection only renders that account and native read status', async
       { alias: 'trial-b', deployment: null, status: 'DISCONNECTED', status_at: now },
     ]
     return route.fulfill({ json: {
-      source: 'SIMNOW_CTP', status: 'AVAILABLE', selected: alias, accounts,
+      version: '0.1.0', source: 'SIMNOW_CTP', status: 'AVAILABLE', selected: alias, accounts,
       readback: alias === 'trial-a' ? { observed_at: now, trading_day: '2026-11-30',
         account: { equity: '100.01', available: '84', margin: '16.01', currency: 'CNY' },
         positions: [], orders: [] } : null,

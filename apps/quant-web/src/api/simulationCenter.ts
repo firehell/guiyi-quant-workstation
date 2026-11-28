@@ -46,6 +46,7 @@ export interface Fill extends CabinetInstrument {
 }
 
 export interface SimulationWorkspace {
+  version: string
   source: 'SIMNOW_CTP'
   status: 'AVAILABLE' | 'NOT_CONFIGURED'
   selected: string | null

@@ -34,7 +34,7 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 
 ## 模拟交易中心
 
-`/simulations` 与 `/api/v1/simulations` 提供账户、策略登记、原生读回和权益采样查询。独立 SimNow 观察宿主沿用 VeighNa CTP。仿真执行和旧账户迁移条件见 [OpenSpec 设计](openspec/changes/add-simulation-center/design.md)。
+`/simulations` 与 `/api/v1/simulations` 提供账户、策略登记、原生读回和权益采样查询。独立 SimNow 观察宿主沿用 VeighNa CTP，火天大有执行链可在隔离环境验收。见 [模拟交易中心合同](openspec/specs/simulation-center/spec.md)与 [执行启用设计](openspec/changes/add-simulation-center/design.md)。
 
 ## 苏冰独立量化与 L.M.S 研究
 

@@ -22,6 +22,7 @@ def test_api_is_read_only_and_distinguishes_unconfigured(monkeypatch):
     with TestClient(app) as client:
         response = client.get("/api/v1/simulations")
         assert (response.status_code, response.json()["status"]) == (200, "NOT_CONFIGURED")
+        assert response.json()["version"] == "0.1.0"
         assert response.json()["readback"] is None
         assert client.post("/api/v1/simulations", json={}).status_code == 405
         assert client.get("/api/v1/simulations?account=../unsafe").status_code == 422
@@ -132,6 +133,7 @@ def test_postgresql_retains_prior_round_and_isolates_accounts(monkeypatch):
     app.include_router(router)
     with TestClient(app) as client:
         result = client.get("/api/v1/simulations?account=case-a").json()
+        assert result["version"] == "0.1.0"
         assert result["source"] == "SIMNOW_CTP"
         assert result["readback"]["account"]["equity"] == "100.01"
         assert "INV" not in str(result) and "fixture-pass" not in str(result)

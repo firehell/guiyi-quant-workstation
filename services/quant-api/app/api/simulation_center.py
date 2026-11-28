@@ -6,6 +6,7 @@ from typing import Annotated
 from fastapi import APIRouter, HTTPException, Query
 import psycopg
 
+from app.simulation_center import SIMULATION_CENTER_VERSION
 from app.simulation_center.config import ACCOUNT_ALIAS
 from app.simulation_center.store import SOURCE, read_workstation
 
@@ -21,10 +22,11 @@ def workstation(account: Alias = None, before: Cursor = None):
     if before and account is None:
         raise HTTPException(422, detail={"code": "ACCOUNT_REQUIRED_FOR_CURSOR"})
     if not dsn:
-        return {"source": SOURCE, "status": "NOT_CONFIGURED", "accounts": [], "selected": None,
+        return {"version": SIMULATION_CENTER_VERSION, "source": SOURCE, "status": "NOT_CONFIGURED",
+                "accounts": [], "selected": None,
                 "readback": None, "equity": [], "fills": [], "next_fill": None}
     try:
-        return read_workstation(dsn, account, before)
+        return {"version": SIMULATION_CENTER_VERSION, **read_workstation(dsn, account, before)}
     except LookupError:
         raise HTTPException(404, detail={"code": "SIMULATION_ACCOUNT_NOT_FOUND"}) from None
     except psycopg.Error:
