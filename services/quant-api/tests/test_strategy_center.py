@@ -258,3 +258,18 @@ def test_tqkq_separates_monitor_identity_from_native_readback_and_source(monkeyp
     packet["overview"]["readback_status"] = "verified"
     packet["overview"]["trading_scope"]["native_readback_verified"] = True
     assert htdy.runtime()["status"] == "UNVERIFIED"
+
+
+
+def test_invalid_historical_window_preserves_current_publication_status(monkeypatch):
+    monkeypatch.setattr(newow, "latest_formal_reference", lambda *args, **kwargs: None)
+
+    def legacy_window(*args, **kwargs):
+        raise ValueError("MARKET_REFERENCE_RESULT_INVALID")
+
+    monkeypatch.setattr(newow, "latest_reference", legacy_window)
+    adapter = newow.Newow(lambda: None, receipt_only=True, formal=True)
+    result = adapter.evidence(CATALOG["newow_main_rise"], "rb", "1d")
+    assert result["status"] == "UNAVAILABLE"
+    assert result["diagnostic"] == "MARKET_REFERENCE_RESULT_INVALID"
+    assert result["current_publication"] == "NOT_PUBLISHED"
