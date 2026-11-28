@@ -50,7 +50,7 @@ def worker_python():
 
 
 def worker_revision():
-    files = ("calculate_job.py", "performance.py", "uv.lock")
+    files = ("calculate_job.py", "performance.py", "advanced.py", "uv.lock")
     return {name: checksum(worker_root() / name) for name in files}
 
 

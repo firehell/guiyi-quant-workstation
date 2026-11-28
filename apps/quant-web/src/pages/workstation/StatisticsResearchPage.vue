@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
 import request from '@/api/request'
 
-type Kind = 'backtest' | 'case' | 'factor' | 'event' | 'fills'
+type Kind = 'backtest' | 'case' | 'factor' | 'event' | 'fills' | 'panel' | 'event_test' | 'search'
 type Run = { run_id: string; product: string; contract: string; strategy_id: string; frequency: string;
   qualification: string; formula_version: string; start: string; end: string }
 type Task = { id: string; status: string; reason?: string; started_at?: string;
@@ -25,12 +25,24 @@ type Analysis = {
   factor?: Record<string, number>
   event?: Record<string, { n: number; mean_label: number | null }>
   unavailable?: Record<string, string>
+  advanced?: { estimand: string; estimate: Estimate; months: Record<string, Estimate>; hac_lag: number;
+    eligible_cross_sections?: number; excluded?: unknown; missing_member_counts?: unknown;
+    accepted_events?: number; purged_overlapping_events?: number; excluded_unpaired_days?: number;
+    quantiles?: Record<string, { mean_label: number; member_observations: number; trading_days: number }> }
+  experiment_plan?: { delays: number[]; scored: boolean }
 }
+type Estimate = { n: number; mean: number | null; interval: number[] | null; p: number | null; p_bh?: number; reason?: string }
+const foldFields = [
+  ['train_warmup_start', '训练预热起点'], ['train_start', '训练起点'], ['train_end', '训练终点'],
+  ['test_warmup_start', '测试预热起点'], ['test_start', '测试起点'], ['test_end', '测试终点'],
+] as const
+type Fold = Record<typeof foldFields[number][0], string>
+function newFold(): Fold { return Object.fromEntries(foldFields.map(([key]) => [key, ''])) as Fold }
 type Source = { kind: string; status: string }
 const root = '/statistics-research'
 const route = useRoute()
 const router = useRouter()
-const modes: Array<[Kind, string]> = [['backtest', '回测统计'], ['case', '交易案例'], ['fills', '账户与参考证据'], ['factor', '因子实验'], ['event', '突破事件']]
+const modes: Array<[Kind, string]> = [['backtest', '回测统计'], ['case', '交易案例'], ['fills', '账户与参考证据'], ['factor', '因子实验'], ['event', '突破事件'], ['panel', '同步横截面'], ['event_test', '事件稳健检验'], ['search', 'OOS 参数方案']]
 const mode = ref<Kind>('backtest')
 const sources = ref<Source[]>([])
 const worker = ref(false)
@@ -71,6 +83,24 @@ const caseId = ref('')
 const book = ref('SIMNOW')
 const scope = ref('')
 const evidenceDay = ref('')
+const panelMembers = ref<string[]>([])
+const eventMember = ref('')
+const hacLag = ref(2)
+const delayChoices = ref([0, 1, 2, 3])
+const budget = ref(3)
+const seed = ref(13)
+const folds = ref<Fold[]>([newFold()])
+const submittingExperiment = ref(false)
+async function submitExperiment() {
+  const id = active.value?.id
+  if (!id || submittingExperiment.value) return
+  submittingExperiment.value = true
+  try {
+    const result = await request.post<unknown, { experiment_id: string }>(root + '/tasks/' + id + '/submit-experiment')
+    await router.push({ name: 'backtests', query: { view: 'validation', experiment: result.experiment_id } })
+  } catch (error) { taskError.value = message(error) }
+  finally { submittingExperiment.value = false }
+}
 const contract = ref('FU2603')
 const product = ref('fu')
 const since = ref('')
@@ -93,6 +123,9 @@ const evidenceColumns: Record<Kind, Array<[string, string]>> = {
   backtest: [['trading_day', '交易日'], ['at', '结算时刻'], ['equity', '已对账权益'], ['native_equity', '原生权益'], ['settlement_price', '结算价']],
   fills: [['trading_day', '交易日'], ['occurred_at', '时刻'], ['native_id', '来源 ID'], ['action', '动作'],
     ['price', '价格'], ['quantity', '数量'], ['fee', '费用']],
+  panel: [['member', '源研究 ID'], ['available_at', '同步时点'], ['feature', '特征'], ['label', '观察标签'], ['trading_day', '交易日']],
+  event_test: [['at', '突破 Bar'], ['available_at', '确认检查时点'], ['confirmed', '是否确认'], ['label_available_at', '标签结束'], ['label', '观察标签']],
+  search: [],
   case: [['trading_day', '交易日'], ['at', '执行时刻'], ['action', '动作'], ['native_id', '原生 ID'], ['price', '成交价'],
     ['quantity', '数量'], ['remaining', '剩余'], ['fees_to_date', '累计费用']],
   factor: [['at', '特征 Bar'], ['feature', '特征值'], ['label', '观察标签'], ['label_available_at', '标签结束']],
@@ -184,6 +217,9 @@ async function submit(rerun = false) {
   const source = rerun && previous ? previous.request.source : mode.value === 'backtest'
     ? { kind: 'backtest', run_id: runId.value }
     : mode.value === 'case' ? { kind: 'case', case_id: caseId.value }
+    : mode.value === 'panel' ? { kind: 'panel', members: panelMembers.value, hac_lag: hacLag.value }
+    : mode.value === 'event_test' ? { kind: 'event_test', member: eventMember.value, hac_lag: hacLag.value }
+    : mode.value === 'search' ? { kind: 'search', base_run_id: runId.value, choices: delayChoices.value, budget: budget.value, seed: seed.value, folds: folds.value }
     : mode.value === 'fills' ? { kind: 'fills', book: book.value, day: evidenceDay.value, scope: scope.value, contract: contract.value }
       : { kind: mode.value, product: product.value, contract: contract.value, since: since.value,
           through: through.value, frequency: frequency.value, feature: feature.value }
@@ -210,21 +246,21 @@ async function cancel() {
         <span v-if="version">v{{ version }}</span>
       </header>
       <div class="sources" aria-label="来源状态">
-        <span v-for="source in sources" :key="source.kind">{{ ({ backtest: '历史回测', case: '交易日志', factor: '因子', event: '事件', paper: 'Paper', simnow: 'SimNow', reference: '页面参考' } as Record<string, string>)[source.kind] }}
-          <small>{{ ({ AVAILABLE: '可用', NOT_CONFIGURED: '未配置', EXACT_CASE_REQUIRED: '指定案例', EXACT_ACCOUNT_SCOPE_REQUIRED: '指定来源范围', EXACT_MARKET_WINDOW_REQUIRED: '指定窗口', VERIFIED_ACCOUNT_SETTLEMENT_REQUIRED: '缺已核验账户结算' } as Record<string, string>)[source.status] }}</small>
+        <span v-for="source in sources" :key="source.kind">{{ ({ backtest: '历史回测', case: '交易日志', factor: '因子', event: '事件', paper: 'Paper', simnow: 'SimNow', reference: '页面参考', advanced: '高级研究' } as Record<string, string>)[source.kind] }}
+          <small>{{ ({ AVAILABLE: '可用', NOT_CONFIGURED: '未配置', EXACT_CASE_REQUIRED: '指定案例', EXACT_PUBLISHED_RESEARCH_REQUIRED: '选择已发布样本', EXACT_ACCOUNT_SCOPE_REQUIRED: '指定来源范围', EXACT_MARKET_WINDOW_REQUIRED: '指定窗口', VERIFIED_ACCOUNT_SETTLEMENT_REQUIRED: '缺已核验账户结算' } as Record<string, string>)[source.status] }}</small>
         </span>
       </div>
       <section>
         <div class="tabs">
           <button v-for="[kind, label] in modes" :key="kind" :aria-pressed="mode === kind" @click="mode = kind">{{ label }}</button>
         </div>
-        <form v-if="mode === 'backtest'" class="controls" @submit.prevent="loadRuns()">
+        <form v-if="mode === 'backtest' || mode === 'search'" class="controls" @submit.prevent="loadRuns()">
           <label>品种 <input v-model="productFilter" placeholder="全部品种"></label>
           <label>策略 ID <input v-model="strategyFilter" placeholder="全部策略"></label>
           <label>周期 <select v-model="frequencyFilter"><option value="">全部</option><option v-for="f in ['5m', '15m', '30m', '60m', '1d', '1w']" :key="f">{{ f }}</option></select></label>
           <button>筛选</button>
         </form>
-        <div v-if="mode === 'backtest'" class="scroll">
+        <div v-if="mode === 'backtest' || mode === 'search'" class="scroll">
           <p v-if="catalogError" role="status">{{ catalogError }}</p>
           <table v-if="runs.length">
             <thead><tr><th>合约</th><th>策略 / 周期</th><th>窗口</th><th>资格</th><th>原始 Run</th><th>选择</th></tr></thead>
@@ -242,6 +278,31 @@ async function cancel() {
         <form class="controls" @submit.prevent="submit()">
           <label v-if="mode === 'backtest'">已发布 Run <input v-model="runId" required></label>
           <label v-else-if="mode === 'case'">案例 ID <input v-model="caseId" required></label>
+          <template v-else-if="mode === 'panel' || mode === 'event_test'">
+            <label v-if="mode === 'panel'">已发布因子研究（3 至 8 项）
+              <select v-model="panelMembers" required multiple>
+                <option v-for="item in recent.filter(r => r.status === 'SUCCEEDED' && r.request.source.kind === 'factor')" :key="item.id" :value="item.id">{{ item.id }}</option>
+              </select>
+            </label>
+            <label v-else>已发布突破研究
+              <select v-model="eventMember" required><option value="">请选择</option>
+                <option v-for="item in recent.filter(r => r.status === 'SUCCEEDED' && r.request.source.kind === 'event')" :key="item.id" :value="item.id">{{ item.id }}</option>
+              </select>
+            </label>
+            <label>HAC 滞后 <input v-model.number="hacLag" type="number" min="0" max="8" required></label>
+          </template>
+          <template v-else-if="mode === 'search'">
+            <label>基础已发布 Run <input v-model="runId" required></label>
+            <label v-for="delay in [0, 1, 2, 3]" :key="delay"><input v-model="delayChoices" type="checkbox" :value="delay">延迟 {{ delay }} 分钟</label>
+            <label>候选数 <input v-model.number="budget" type="number" min="2" max="4" required></label>
+            <label>随机种子 <input v-model.number="seed" type="number" min="0" max="4294967295" required></label>
+            <fieldset v-for="(fold, index) in folds" :key="index">
+              <legend>训练 / 测试折 {{ index + 1 }}</legend>
+              <label v-for="[field, title] in foldFields" :key="field">{{ title }} <input v-model="fold[field]" type="date" required></label>
+              <button v-if="index > 0" type="button" @click="folds.splice(index, 1)">移除该折</button>
+            </fieldset>
+            <button v-if="folds.length < 8" type="button" @click="folds.push(newFold())">添加一折</button>
+          </template>
           <template v-else-if="mode === 'fills'">
             <label>来源 <select v-model="book"><option value="SIMNOW">SimNow</option><option value="SUBING_PAPER">苏冰共享 Paper</option><option value="NEWOW_REFERENCE">牛哇页面参考</option></select></label>
             <label>来源范围 <input v-model="scope" required></label>
@@ -307,6 +368,27 @@ async function cancel() {
           </div>
           <p v-if="result.event">确认组 {{ result.event.confirmed?.n }} · 对照组 {{ result.event.control?.n }} · 平均观察收益 {{ percent(result.event.confirmed?.mean_label ?? null) }} / {{ percent(result.event.control?.mean_label ?? null) }}</p>
           <p v-if="result.coverage.reason || Object.keys(result.unavailable ?? {}).length" role="status">证据缺项 {{ show(result.coverage.reason) }} {{ show(result.unavailable) }}</p>
+          <section v-if="result.advanced">
+            <h3>{{ result.source.kind === 'panel' ? '同步 Rank IC' : '去重后的事件差值' }}</h3>
+            <p>有效配对交易日 {{ result.advanced.estimate.n }} · 均值 {{ show(result.advanced.estimate.mean) }} · HAC 95% 区间 {{ show(result.advanced.estimate.interval) }}</p>
+            <p v-if="result.advanced.estimate.reason">推断缺项 {{ result.advanced.estimate.reason }}</p>
+            <p v-if="result.advanced.excluded">排除 {{ show(result.advanced.excluded) }} · 缺少成员 {{ show(result.advanced.missing_member_counts) }}</p>
+            <p v-else>保留事件 {{ result.advanced.accepted_events }} · 重叠剔除 {{ result.advanced.purged_overlapping_events }} · 无配对交易日 {{ result.advanced.excluded_unpaired_days }}</p>
+            <div v-if="result.advanced.quantiles" class="controls" aria-label="同步截面分位收益">
+              <span v-for="[bucket, value] in Object.entries(result.advanced.quantiles)" :key="bucket">
+                分位 {{ bucket }} · {{ percent(value.mean_label) }} · {{ value.member_observations }} 个成员观测 / {{ value.trading_days }} 日
+              </span>
+            </div>
+            <table v-if="Object.keys(result.advanced.months).length">
+              <thead><tr><th>月份</th><th>交易日</th><th>均值</th><th>HAC 区间</th><th>BH 调整 p 值</th></tr></thead>
+              <tbody><tr v-for="[key, value] in Object.entries(result.advanced.months)" :key="key"><td>{{ key }}</td><td>{{ value.n }}</td><td>{{ show(value.mean) }}</td><td>{{ show(value.interval) }}</td><td>{{ show(value.p_bh) }}</td></tr></tbody>
+            </table>
+          </section>
+          <section v-if="result.experiment_plan">
+            <h3>待运行的 OOS / Walk-forward 方案</h3>
+            <p>候选延迟 {{ result.experiment_plan.delays.join('、') }} 分钟 · 计划 Run 上限 {{ result.policy.total_native_run_limit }}</p>
+            <button :disabled="submittingExperiment" @click="submitExperiment">提交到回测中心实验</button>
+          </section>
           <details><summary>样本覆盖与计算口径</summary><dl><template v-for="[key, value] in Object.entries({ ...result.policy, ...result.coverage, ...result.source })" :key="key"><dt>{{ key }}</dt><dd>{{ show(value) }}</dd></template></dl></details>
           <details v-if="result.native"><summary>Plus 原生摘要</summary><p>{{ result.native_scope }}</p><dl><template v-for="[key, value] in Object.entries(result.native)" :key="key"><dt>{{ key }}</dt><dd>{{ value }}</dd></template></dl></details>
           <div class="scroll">
@@ -372,6 +454,6 @@ button{cursor:pointer}button:disabled{opacity:.45;cursor:default}button[aria-pre
 .metrics>div{border:1px solid #50617455;border-radius:6px;padding:10px}
 .metrics strong{display:block;font-size:17px;font-variant-numeric:tabular-nums}
 dl{display:grid;grid-template-columns:minmax(90px,auto) minmax(0,1fr);gap:3px 9px}dd{margin:0;overflow-wrap:anywhere}
-.history{display:grid;gap:7px}
+.history{display:grid;gap:7px}fieldset{display:flex;gap:8px;flex-wrap:wrap;border:1px solid #50617455}
 @media(max-width:600px){main{padding:12px}section{padding:11px}input{max-width:180px}}
 </style>

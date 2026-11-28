@@ -1,8 +1,9 @@
 [project]
 name = "guiyi-research-worker"
-version = "0.1.0"
+version = "0.2.0"
 requires-python = ">=3.13,<3.14"
 dependencies = [
+    "optuna==5.1.0",
     "pandas",
     "polars",
     "quantstats==0.0.81",

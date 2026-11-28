@@ -11,6 +11,8 @@ from threading import Thread
 from time import sleep
 import tomllib
 
+from advanced import events, panel, search
+
 
 
 def backtest(payload):
@@ -57,7 +59,8 @@ def event(payload):
             "unavailable": {name: "SAMPLE_INSUFFICIENT" for name, values in groups.items() if not values}}
 
 
-ANALYSES = {"backtest": backtest, "factor": factor, "event": event}
+ANALYSES = {"backtest": backtest, "factor": factor, "event": event,
+            "panel": panel, "event_test": events, "search": search}
 
 
 def watch_parent(parent):
@@ -68,7 +71,8 @@ def watch_parent(parent):
 
 def environment(kind):
     dependencies = {"backtest": ("quantstats", "pandas", "numpy"), "factor": ("scipy", "pandas", "numpy"),
-                    "event": ()}
+                    "event": (), "panel": ("scipy", "statsmodels", "numpy", "pandas"),
+                    "event_test": ("statsmodels", "numpy", "pandas"), "search": ("optuna", "numpy")}
     lock = tomllib.loads(Path(__file__).with_name("uv.lock").read_text())
     locked = {row["name"]: row["version"] for row in lock["package"]}
     actual = {package: version(package) for package in dependencies[kind]}

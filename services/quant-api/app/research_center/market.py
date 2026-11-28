@@ -98,5 +98,6 @@ def market_input(db, requested, kind):
                    "executable": False, "confirmation_bars": 3 if kind == "event" else 0,
                    "label_horizon_bars": 2},
         "coverage": {"bars": len(bars), "samples": len(samples), "excluded": dict(excluded)},
+        "trading_days": sorted({bar.trading_day.isoformat() for bar in bars}),
         "samples": samples,
     }
