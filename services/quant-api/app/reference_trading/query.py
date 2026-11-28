@@ -194,6 +194,25 @@ class HistoricalReferenceQuery:
                 raise QueryConflict("STREAM_NOT_FOUND")
             return self._stream_info(row)
 
+    def journal_streams(self, product: str) -> list[dict[str, object]]:
+        """Available Newow stream identities for the journal's source picker."""
+        self._require_market_product(product)
+        strategies = [code for code in _CAPABILITIES if code.startswith(("newow_", "newow-"))]
+        with self._factory() as session, readonly_transaction(session, timeout_seconds=5):
+            rows = session.execute(
+                select(ReferenceStream).where(
+                    ReferenceStream.strategy_code.in_(strategies),
+                    ReferenceStream.product == product,
+                    ReferenceStream.active_revision_id.is_not(None),
+                ).order_by(
+                    ReferenceStream.strategy_code, ReferenceStream.frequency, ReferenceStream.stream_id
+                ).limit(100)
+            ).scalars()
+            return [
+                self._stream_info(row) for row in rows if self._registered(row)
+                and (row.recording_mode == "historical_replay" or row.enabled)
+            ]
+
     @staticmethod
     def _stream_info(row: ReferenceStream) -> dict[str, object]:
         return {

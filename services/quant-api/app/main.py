@@ -13,6 +13,7 @@ import logging
 import os
 
 from app.api.simulation_center import router as simulation_center_router
+from app.api.trade_journal import router as trade_journal_router
 from app.api.simulation_monitor import router as simulation_monitor_router
 from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
@@ -99,6 +100,7 @@ async def isolate_legacy_newow_calculation(request, call_next):
 
 # Market + Alert + Runtime 运维面
 app.include_router(simulation_center_router)
+app.include_router(trade_journal_router)
 app.include_router(simulation_monitor_router)
 app.include_router(market_router)
 app.include_router(market_newow_router)
