@@ -228,6 +228,7 @@ def test_source_drift_or_foreign_registration_prevents_drain(scenario):
 def test_calendar_became_busy_after_disable_is_never_booted_out(scenario, monkeypatch):
     host, _ = scenario
     ctl = []
+    monkeypatch.setattr(host, "authorities", lambda root: ({}, set()))
     item = host.inventory()[0].services["after-market"]
     monkeypatch.setattr(recovery, "after_market_recovery_guard", lambda **_: nullcontext())
     from app.runtime_bindings import authorized_program_arguments
@@ -240,6 +241,164 @@ def test_calendar_became_busy_after_disable_is_never_booted_out(scenario, monkey
     with pytest.raises(CohortError, match="OLD_JOB_BUSY"):
         host.unload_verified(item, host.root)
     assert [cmd[0] for cmd in ctl] == ["disable"]
+
+
+def test_park_waits_read_only_for_async_launchd_and_owner(scenario, monkeypatch):
+    host, _ = scenario
+    item = host.inventory()[0].services["api"]
+    states = iter([(True, "stopping", False), (True, None, False), (True, None, True)])
+    observation = {}
+
+    def authorities(_):
+        disabled, output, available = next(states)
+        observation.update(output=output, free=available)
+        return {item.label: disabled}, set()
+
+    monkeypatch.setattr(host, "authorities", authorities)
+    monkeypatch.setattr(recovery, "read_launchd_service", lambda *_, **__: observation["output"])
+    monkeypatch.setattr(host, "verify_loaded", lambda value, output: host.calls.append(("verify", output)))
+    monkeypatch.setattr(host, "free", lambda name: observation["free"])
+    monkeypatch.setattr(
+        host, "launch", lambda *args: pytest.fail("read-only wait issued launchctl mutation")
+    )
+    monkeypatch.setattr(recovery.time, "sleep", lambda _: None)
+    host.wait_parked(item, host.root, "MARKET_OLD_PARK_UNPROVEN")
+    assert host.calls == [("verify", "stopping")]
+
+
+def test_park_timeout_has_no_repeat_bootout(scenario, monkeypatch):
+    host, _ = scenario
+    item = host.inventory()[0].services["web"]
+    calls = []
+    monkeypatch.setattr(host, "authorities", lambda root: ({item.label: True}, set()))
+    monkeypatch.setattr(recovery, "read_launchd_service", lambda *_, **__: "old")
+    monkeypatch.setattr(host, "verify_loaded", lambda b, out: None)
+    monkeypatch.setattr(host, "launch", lambda *args: calls.append(args))
+    host.unload_verified(item, host.root, old=True, before_bootout=lambda: calls.append(("intent",)))
+    with pytest.raises(CohortError, match="MARKET_OLD_PARK_UNPROVEN"):
+        host.wait_parked(item, host.root, "MARKET_OLD_PARK_UNPROVEN", timeout=0)
+    assert calls == [("intent",), ("bootout", f"gui/{os.getuid()}/{item.label}")]
+
+
+def test_parked_old_roles_and_existing_intent_skip_all_mutations(scenario, monkeypatch, tmp_path):
+    host, _ = scenario
+    old = host.inventory()[0]
+    attempt = tmp_path / "journal"
+    attempt.mkdir(mode=0o700)
+    api = old.services["api"]
+    _write(
+        attempt / "old-bootout-api.json",
+        {"generation": api.generation, "label": api.label, "commit": api.commit},
+    )
+    monkeypatch.setattr(
+        host, "authorities", lambda root: ({b.label: True for b in old.services.values()}, set())
+    )
+    monkeypatch.setattr(host, "launch", lambda *args: pytest.fail("already parked"))
+    originals = {host.path(b).name: None for b in old.services.values()}
+    dispatcher = host.directory / "run-local-service.sh"
+    dispatcher.write_bytes(b"fixture")
+    originals[dispatcher.name] = recovery.sha256(b"fixture").hexdigest()
+    monkeypatch.setattr(recovery, "after_market_recovery_guard", lambda **_: nullcontext())
+    recovery.RecoveryHost.park(host, old, host.root, originals, attempt)
+    assert host.calls == []
+
+
+@pytest.mark.parametrize(
+    "drift,code",
+    [
+        ("last-plist", "MARKET_OLD_DEFINITION_DRIFT"),
+        ("last-intent", "MARKET_OLD_PARK_INTENT_DRIFT"),
+        ("last-loaded", "WORKSTATION_TARGET_IDENTITY_DRIFT"),
+        ("dispatcher", "MARKET_OLD_DISPATCHER_DRIFT"),
+        ("web-drain", "MARKET_HTTP_DRAIN_DRIFT"),
+    ],
+)
+def test_old_scope_checks_every_role_before_any_stop(scenario, monkeypatch, tmp_path, drift, code):
+    host, plan = scenario
+    old = host.inventory()[0]
+    last = old.services[recovery.START_ORDER[-1]]
+    folder = tmp_path / "attempt"
+    folder.mkdir(mode=0o700)
+    host.path(last).parent.mkdir(parents=True, exist_ok=True)
+    originals = {host.path(b).name: None for b in old.services.values()}
+    dispatcher = host.directory / "run-local-service.sh"
+    dispatcher.write_bytes(b"stable")
+    originals[dispatcher.name] = recovery.sha256(b"stable").hexdigest()
+    if drift == "last-plist":
+        host.path(last).write_bytes(b"changed")
+    elif drift == "last-intent":
+        _write(folder / ("old-bootout-" + last.service + ".json"), {"generation": 123})
+    elif drift == "last-loaded":
+        monkeypatch.setattr(
+            recovery, "read_launchd_service", lambda label, **_: "wrong" if label == last.label else None
+        )
+
+        def verify(item, output):
+            assert item == last and output == "wrong"
+            raise CohortError(code)
+
+        monkeypatch.setattr(host, "verify_loaded", verify)
+    elif drift == "dispatcher":
+        dispatcher.write_bytes(b"changed")
+    else:
+        _write(
+            host.directory / "web.handover.json",
+            {"generation": old.services["web"].generation, "phase": "drain", "request_id": "a" * 32},
+        )
+    monkeypatch.setattr(host, "unload_verified", lambda *a, **kw: pytest.fail("unloaded an earlier role"))
+    monkeypatch.setattr(host, "drain_http", lambda *a, **kw: pytest.fail("drained an earlier HTTP owner"))
+    with pytest.raises(CohortError, match=code):
+        recovery.RecoveryHost.park(host, old, host.root, originals, folder)
+
+
+def test_pending_controller_compares_native_plists_and_forward_version(scenario, monkeypatch):
+    from app import runtime_market_recovery_control as control
+
+    host, plan = scenario
+    controller = control.ReleasedController("v1.1.2", "d" * 40)
+    old = host.inventory()[0]
+    targets, component, schema = host.targets(host.root, "v1.1.1", "b" * 40, old)
+    monkeypatch.setattr(controller, "verify_control", lambda: None)
+    monkeypatch.setattr(controller, "_plist", lambda b: b.service.encode())
+    monkeypatch.setattr(control, "read_command", lambda *_, **__: "")
+    proof = {
+        "targets": {n: asdict(v) for n, v in targets.items()},
+        "component": component,
+        "schema": schema,
+        "plists": {n: control.sha256(n.encode()).hexdigest() for n in targets},
+    }
+    monkeypatch.setattr(control, "candidate_proof", lambda *a: proof)
+    assert controller.targets(host.root, "v1.1.1", "b" * 40, old) == (targets, component, schema)
+    proof["plists"]["api"] = "f" * 64
+    with pytest.raises(CohortError, match="PLIST_DRIFT"):
+        controller.targets(host.root, "v1.1.1", "b" * 40, old)
+    controller.control_tag = "v1.1.1"
+    with pytest.raises(CohortError, match="FORWARD_RELEASE_REQUIRED"):
+        controller.targets(host.root, "v1.1.1", "b" * 40, old)
+
+
+def test_pending_controller_requires_original_attempt_and_controller_identity(scenario, monkeypatch):
+    from app import runtime_market_recovery_control as control
+
+    host, plan = scenario
+    monkeypatch.setattr(host, "verify_control", lambda: None, raising=False)
+    with pytest.raises(CohortError, match="NO_PENDING_PLAN"):
+        control.verify_pending(host, plan)
+    progress = host.directory / "market-recovery.json"
+    _write(progress, {"phase": "parking", "plan_sha256": plan["plan_sha256"]})
+    monkeypatch.setattr(control, "assert_no_unknown_deployment", lambda **_: None)
+    original = host.directory / ("market-recovery-" + plan["plan_sha256"])
+    original.mkdir(mode=0o700)
+    host._private_original(original / "previous-registry.json", b"different")
+    with pytest.raises(CohortError, match="ORIGINAL_DRIFT"):
+        control.verify_pending(host, plan)
+
+    def dirty():
+        raise CohortError("RELEASE_IDENTITY_INVALID")
+
+    monkeypatch.setattr(host, "verify_control", dirty)
+    with pytest.raises(CohortError, match="RELEASE_IDENTITY_INVALID"):
+        control.verify_pending(host, plan)
 
 
 def test_atomic_new_alert_at_exact_frozen_tail():
