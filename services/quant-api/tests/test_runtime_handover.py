@@ -161,3 +161,14 @@ def test_drain_persists_intent_before_installing_control(tmp_path):
     request = request_drain("alert", generation=1, runtime_dir=tmp_path,
                             before_install=recorded.append)
     assert recorded == [request] and _read(control)["request_id"] == request
+
+
+
+def test_drain_can_install_an_exact_previously_reserved_request(tmp_path):
+    from app.runtime_handover import _read, request_drain
+
+    reserved = "ab" * 16
+    request = request_drain("alert", generation=1, runtime_dir=tmp_path, request_id=reserved)
+    assert request == reserved
+    installed = _read(tmp_path / "alert.handover.json")
+    assert installed["request_id"] == reserved and installed["phase"] == "drain"

@@ -227,9 +227,10 @@ class JournalPreservingMarketStartHost(MarketDirectStartHost):
             require(output is not None and any(env.get("GUIYI_RUNTIME_ENV") == str(self.target_config)
                     for env in launchd_environments(output)), _OWNER_REQUIRED)
             control = _read(self.directory / f"{name}.handover.json") or {}
-            if name in drains:
-                require(control.get("phase") == "drain" and control.get("request_id") == drains[name]
-                        and control.get("generation") == service.generation, _OWNER_REQUIRED)
+            reserved = drains.get(name)
+            if reserved is not None and control.get("generation") == service.generation:
+                require(control.get("phase") == "drain" and control.get("request_id") == reserved,
+                        _OWNER_REQUIRED)
                 continue
             require(state.get("phase") == "active" and owner_process_matches(state, service)
                     and not (control.get("phase") == "drain" and control.get("generation") == service.generation),
@@ -243,7 +244,8 @@ class JournalPreservingMarketStartHost(MarketDirectStartHost):
                 drains[name] = identifier
                 _write(drains_path, drains)
 
-            request_drain(name, generation=service.generation, runtime_dir=self.directory, before_install=remember)
+            request_drain(name, generation=service.generation, runtime_dir=self.directory,
+                          before_install=remember, request_id=drains.get(name))
 
         for service in wanted:
             name = service.service
@@ -473,6 +475,7 @@ class QuietWindowMarketStartHost(JournalPreservingMarketStartHost):
         proof, selected = self._quiet_proof(settings, date.fromisoformat(plan["day"]), authority["subscriptions"])
         require(proof == {key: previous[key] for key in proof}
                 and (staged is None or selected is staged), _JOURNAL_REQUIRED)
+        return selected
 
     def stage(self, plan, settings, *, may_exist):
         self._check_retained(plan, settings)
@@ -492,8 +495,7 @@ class QuietWindowMarketStartHost(JournalPreservingMarketStartHost):
         settings, observed_hash = self.settings()
         require(observed_hash == plan["config_sha256"], "MARKET_DIRECT_START_CONFIG_DRIFT")
         if not bound:
-            self._check_retained(plan, settings)
-            return "retained"
+            return "scope_staged" if self._check_retained(plan, settings) else "retained"
         database, canonical = self._storage(settings)
         authority = plan["authority"]
         day = date.fromisoformat(plan["day"])
