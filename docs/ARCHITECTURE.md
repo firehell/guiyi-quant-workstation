@@ -12,6 +12,7 @@
 | API/Web | app.main 的注册路由；Market 两条页面路由和统一详情控制器 | 重新算公式、配对交易或自选行情事实 |
 | 策略中心 | `app.strategy_center` 读取 ReferenceTrading、TQKQ Monitor 和 SuBing PortfolioJournal | 策略计算、账户、调度、配置写入 |
 | 交易日志与复盘中心 | `app.trade_journal` 保存计划、案例与复盘，读取各领域已有证据 | 交易账户、行情、策略与回测执行 |
+| 统计与研究中心 | `app.research_center` 读取上游正式证据，隔离 worker 计算并发布带指纹的研究结果 | 行情、成交或原生回测事实，策略晋升 |
 | Runtime/Alert | runtime_entry 与既有监督服务；Event 持久化后 one-shot transport | 自行扩大 Scope、重放通知或晋升策略 |
 | 维护工具 | guiyi CLI、部署入口和有界修复脚本复用领域服务 | 另建行情 resolver 或绕过维护锁 |
 

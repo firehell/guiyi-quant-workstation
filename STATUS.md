@@ -1,3 +1,9 @@
+## 2026-11-28｜统计与研究中心 V0.3 独立发布
+
+- [Statistics and Research Center v0.3.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/statistics-research-center/v0.3.0) 经 [PR #694](https://github.com/firehell/guiyi-quant-workstation/pull/694) 合入 `develop`，绑定 `513b4485ffdcac454a21d2704a097122fb219521`。
+- 实测 FU2603 本地离线 AI 草稿、原始结算及反例复算。浏览器验证可从双折 Plus 实验回查草稿与来源。4 个训练 Run 和 2 个测试 Run 全部成功，重复提交返回原实验，切换回测库被拒绝。82 项定向 API 回归、11 项隔离 worker 测试、Web 构建、API wheel 和 OpenSpec 校验通过。
+- 组件已发布。工作站应用部署、研究数据库迁移和正式本地模型配置待应用发布。见[统计与研究中心合同](openspec/specs/statistics-research-center/spec.md)与[部署和复算](services/research-worker/README.md)。
+
 ## 2026-11-28｜统计与研究中心 V0.2 独立发布
 
 - [Statistics and Research Center v0.2.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/statistics-research-center/v0.2.0) 经 [PR #693](https://github.com/firehell/guiyi-quant-workstation/pull/693) 合入 `develop`，绑定 `7fb5fa0829b580757043c40d0d8f05602a4f257e`。

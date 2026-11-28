@@ -42,6 +42,10 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 `/api/v1/trade-journal` 保存用户记录，关联 SimNow、苏冰 Paper、可核验的 TQKQ 历史、牛哇参考交易和回测结果。
 具体来源与案例归集见[交易日志与复盘合同](openspec/specs/trade-journal-center/spec.md)。
 
+## 统计与研究中心
+
+`/research/statistics` 提供已发布 Run 统计和原始证据下钻、因子与事件研究、同步截面及样本外方案。离线 AI 助手从已有研究生成带引用的假设草稿。后续样本外实验由用户确认并交给回测中心。详见[统计与研究中心合同](openspec/specs/statistics-research-center/spec.md)。
+
 ## 苏冰独立量化与 L.M.S 研究
 
 苏冰量化的唯一策略是16品种共享资金 Paper。`/research/subing-decision`
