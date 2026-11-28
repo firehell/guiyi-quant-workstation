@@ -4,13 +4,13 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
-from hashlib import sha256
+import re
 
 import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from app.simulation_center.config import ObserverConfig
+from app.simulation_center.config import ACCOUNT_ALIAS, ObserverConfig, native_account_key
 from app.simulation_center.readback import ReadbackError
 
 SOURCE = "SIMNOW_CTP"
@@ -22,6 +22,20 @@ def connect(dsn: str):
                            options="-c statement_timeout=4000 -c lock_timeout=1500")
 
 
+def register_account(conn, alias: str, native_key: str) -> None:
+    """Bind an existing SimNow identity without starting an observer or changing its state."""
+    if not re.fullmatch(ACCOUNT_ALIAS, alias) or not re.fullmatch(r"[0-9a-f]{64}", native_key):
+        raise ReadbackError("ACCOUNT_BINDING_INVALID")
+    with conn.transaction():
+        conn.execute(
+            """INSERT INTO guiyi_simulation.accounts (alias, native_key, status)
+               VALUES (%s, %s, 'REGISTERED') ON CONFLICT DO NOTHING""", (alias, native_key))
+        account = conn.execute("SELECT native_key FROM guiyi_simulation.accounts WHERE alias = %s",
+                               (alias,)).fetchone()
+        if account is None or account["native_key"] != native_key:
+            raise ReadbackError("ACCOUNT_BINDING_CONFLICT")
+
+
 class Writer:
     def __init__(self, connection, alias: str):
         self.connection = connection
@@ -30,21 +44,14 @@ class Writer:
     @classmethod
     @contextmanager
     def claim(cls, dsn: str, config: ObserverConfig) -> Iterator["Writer"]:
-        # Using the same account on another front does not create another account.
-        native_key = sha256(("simnow:9999:" + config.user).encode()).hexdigest()
+        native_key = native_account_key(config.user)
         with connect(dsn) as conn:
             with conn.transaction():
                 locked = conn.execute("SELECT pg_try_advisory_lock(hashtextextended(%s, 0)) AS locked",
                                       ("guiyi_simulation:" + native_key,)).fetchone()
                 if not locked["locked"]:
                     raise ReadbackError("ACCOUNT_ALREADY_OWNED")
-                conn.execute(
-                    """INSERT INTO guiyi_simulation.accounts (alias, native_key)
-                       VALUES (%s, %s) ON CONFLICT DO NOTHING""", (config.alias, native_key))
-                account = conn.execute("SELECT native_key FROM guiyi_simulation.accounts WHERE alias = %s",
-                                       (config.alias,)).fetchone()
-                if account is None or account["native_key"] != native_key:
-                    raise ReadbackError("ACCOUNT_BINDING_CONFLICT")
+                register_account(conn, config.alias, native_key)
                 deployment = asdict(config.deployment) if config.deployment else None
                 conn.execute("""UPDATE guiyi_simulation.accounts SET deployment = %s, status = 'CONNECTING',
                                 status_at = clock_timestamp() WHERE alias = %s""",
@@ -114,7 +121,8 @@ def _accounts(conn, now):
            FROM guiyi_simulation.accounts a ORDER BY a.alias LIMIT 128"""
     ).fetchall()
     return [
-        {**row, "status": "STALE" if now - row["status_at"] > MAX_READ_AGE else row["status"]}
+        {**row, "status": "STALE" if row["status"] != "REGISTERED" and now - row["status_at"] > MAX_READ_AGE
+         else row["status"]}
         for row in rows
     ]
 

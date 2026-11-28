@@ -26,7 +26,9 @@ Canonical、Scope、通知或 Runtime mutation；当前运行事实只看 [STATU
 从同 Session 首个严格后继的 1m 开盘起算。配置页列出策略接入资格，
 P3/P4 从原 Newow 试验面读取。
 
-本机 API 进程读取以下本地配置：
+正式工作台 API 从当前用户的 `~/Library/Application Support/GuiyiQuant/workstation-api.json` 加载回测引擎配置。文件权限为 `0600`，许可证只传给原生回测子进程。该文件也可配置 `GUIYI_SIMULATION_READER_DSN`，供模拟中心读取账户登记和已有柜台记录。开发环境可继续显式设置相应环境变量。
+
+回测配置如下：
 
 - `GUIYI_BACKTEST_STORE` 是独立 SQLite 文件，默认
   `~/.local/state/guiyi/backtest-center/research.sqlite3`。

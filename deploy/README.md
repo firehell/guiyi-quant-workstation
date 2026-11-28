@@ -92,6 +92,33 @@ umask 077
 
 计划有效十五分钟。CAS 前保存原始登记与精确计划，CAS 后通过所有者、监听进程、API 版本和 Web 构建字节核验结果。若中断先使用只读入口。已证实原登记仍在、定义未变、目标端口空闲时，`--cancel-uncommitted-workstation-forward --plan "$PLAN"` 关闭该次尝试。已证实新登记生效时，`--resume-workstation-forward --plan "$PLAN"` 仅继续当前两项的启动。状态与两份登记均不匹配时需核实现场。计划与恢复材料只保存在当前用户私有文件中。
 
+### 已启用行情工作站的 API/Web 配置与交接
+
+正式 API 从当前用户的 `~/Library/Application Support/GuiyiQuant/workstation-api.json` 读取专用设置。
+配置目录权限为 0700，文件权限为 0600，文件和路径必须由当前用户安全持有。JSON 对象支持四项 Plus 设置
+`GUIYI_BACKTEST_PLUS_PYTHON`、`GUIYI_BACKTEST_PLUS_BUNDLE`、`GUIYI_BACKTEST_PLUS_COST_PROFILE`、`RQSDK_LICENSE`，
+四项一起提供。已单独核准的只读数据库连接可用 `GUIYI_SIMULATION_READER_DSN` 单独配置。
+将设置放在同等权限的输入文件中，通过应用虚拟环境安装。已有键的值冲突时操作中止，仅输出配置摘要和键组状态。
+
+```bash
+services/quant-api/.venv/bin/python -I -B -m app.api.workstation_settings install --source "$PRIVATE_JSON"
+services/quant-api/.venv/bin/python -I -B -m app.api.workstation_settings read
+```
+
+在已构建的精确应用发布树中，同一解释器可交接当前八项服务中的 API 与 Web。先检查六项共享合同、行情服务 PID 与定义、
+已退役服务证据和初始化的默认回测库，再按 API、Web 顺序预热候选、排空原进程、CAS 和读回端口。
+API 排空期间为 SQLite 持有写入保留锁，要求单次回测与实验都已结束。已有队列时等待其自然完成。
+每个新端口核验实际监听子进程、版本或页面构建字节；其它服务保留登记和进程。以下命令都使用本次发布的 tag 和 commit。
+
+```bash
+services/quant-api/.venv/bin/python -I -B -m app.workstation_port_release check --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
+services/quant-api/.venv/bin/python -I -B -m app.workstation_port_release apply --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
+services/quant-api/.venv/bin/python -I -B -m app.workstation_port_release check --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
+```
+
+`check` 输出 `pending`，两项已生效时返回 `switched`。API 交接已结束而 Web 尚未开始时，重新执行同一命令只处理 Web。
+原生交接记录为未知时，先核对 `deployment-outcome.json`、登记、plist、owner 与端口，再决定恢复动作。
+
 ## 按服务连续交接
 
 新增稳定目录 `~/Library/Application Support/GuiyiQuant/service-bindings.json` 是启用新拓扑后的唯一身份入口。
