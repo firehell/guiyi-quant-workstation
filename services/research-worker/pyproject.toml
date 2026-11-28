@@ -1,0 +1,16 @@
+[project]
+name = "guiyi-research-worker"
+version = "0.3.0"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "optuna==5.1.0",
+    "pandas",
+    "polars",
+    "quantstats==0.0.81",
+    "statsmodels",
+    "TA-Lib==0.6.8",
+    "vnpy==4.5.0",
+]
+
+[tool.uv]
+package = false

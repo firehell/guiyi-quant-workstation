@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { onMounted, onScopeDispose, ref, shallowRef } from 'vue'
-import MarketNavigation from '@/components/market/MarketNavigation.vue'
 import NewowMarketReferencePanel from '@/components/market/detail/newow/NewowMarketReferencePanel.vue'
 import { getMarketProductDirectory } from '@/api/market'
 import type { MarketProductDirectoryItem } from '@/types/market'
@@ -25,12 +24,14 @@ onScopeDispose(() => controller.abort())
 
 <template>
   <div class="research">
-    <MarketNavigation active-tab="research" />
     <main>
-      <h1>研究</h1>
-      <nav aria-label="苏冰研究结果">
-        <RouterLink to="/research/subing-decision?mode=history">苏冰历史回放</RouterLink>
-        <RouterLink to="/research/new-subing">新苏冰历史研究</RouterLink>
+      <h1>研究中心</h1>
+      <nav aria-label="研究入口">
+        <RouterLink to="/research/statistics?mode=backtest"><strong>回测统计</strong><small>已发布 Run、净收益与逐笔回放</small></RouterLink>
+        <RouterLink to="/research/statistics?mode=factor"><strong>因子与事件研究</strong><small>固定窗口、因子分组与事件样本</small></RouterLink>
+        <RouterLink to="/research/statistics?mode=case"><strong>交易案例研究</strong><small>关联交易计划、操作与复盘证据</small></RouterLink>
+        <RouterLink to="/research/subing-decision?mode=history"><strong>苏冰独立量化回放</strong><small>模型历史运行与物理合约记录</small></RouterLink>
+        <RouterLink to="/research/new-subing"><strong>新苏冰历史研究</strong><small>已登记的历史研究结果</small></RouterLink>
       </nav>
       <section aria-labelledby="newow-research-heading">
         <h2 id="newow-research-heading">牛哇盘后参考</h2>
@@ -51,7 +52,11 @@ onScopeDispose(() => controller.abort())
 main { max-width: 1600px; margin: auto; padding: 24px 32px; }
 h1 { margin: 0 0 14px; font-size: 24px; }
 h2 { margin: 0 0 12px; font-size: 16px; }
-nav, .selection { display: flex; align-items: center; gap: 16px; }
+.research nav { display: grid; grid-template-columns: repeat(auto-fit,minmax(180px,1fr)); gap: 9px; }
+.research nav a { display: grid; gap: 4px; padding: 12px; border-radius: 5px; border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
+.research nav a:hover { background: var(--gy-bg-hover); }
+.research nav small { color: var(--gy-text-secondary); }
+.selection { display: flex; align-items: center; gap: 16px; }
 section { margin-top: 16px; padding: 16px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); background: var(--gy-bg-panel); }
 select { padding: 4px 8px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: var(--gy-bg-panel); color: inherit; font: inherit; }
 </style>

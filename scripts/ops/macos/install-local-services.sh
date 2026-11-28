@@ -22,6 +22,12 @@ ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
 # These entrypoints do not render files or mutate a service until an apply mode.
 case "$MODE" in
+  --read-workstation-host) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward audit "$@" ;;
+  --plan-workstation-forward) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward plan "$@" ;;
+  --apply-workstation-forward) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward apply "$@" ;;
+  --read-workstation-forward) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward read "$@" ;;
+  --cancel-uncommitted-workstation-forward) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward cancel-uncommitted "$@" ;;
+  --resume-workstation-forward) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward resume "$@" ;;
   --read-market-account-handover) shift; exec "$PYTHON_BIN" -m app.runtime_market_macos "$@" ;;
   --plan-market-source-handover) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-market-plan "$@" ;;
   --apply-market-source-handover) shift; exec /bin/bash "$PROJECT_ROOT/scripts/ops/macos/run-local-service.sh" cohort-market-apply "$@" ;;

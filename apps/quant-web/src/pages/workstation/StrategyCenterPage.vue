@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import MarketNavigation from '@/components/market/MarketNavigation.vue'
+import { NEWOW_FREQUENCIES, NEWOW_STRATEGIES } from '@/types/marketDetail'
+import { workstationChartLink } from '@/utils/workstationRoutes'
 import {
   readStrategies, readStrategyDetail, readStrategyProjection, readStrategyRuntime,
   type StrategyDefinition, type StrategyDetail, type StrategyDomain, type StrategyProjection, type VersionReference,
@@ -51,8 +52,28 @@ const references = computed(() => [
   ...(detail.value?.references ?? []),
   ...(Array.isArray(bindings.value?.references) ? bindings.value.references as VersionReference[] : []),
 ])
+const backtestQuery = computed(() => {
+  function uniqueReference(kind: string) {
+    const versions = new Set(references.value.filter(item => item.kind === kind).map(item => item.value))
+    return versions.size === 1 ? versions.values().next().value : undefined
+  }
+  return {
+    view: 'config', strategy: selected.value?.strategy_id,
+    formula_version: uniqueReference('formula'), profile_id: uniqueReference('profile'),
+  }
+})
 const selection = computed(() => selected.value?.domain === 'newow' && product.value && frequency.value
   ? { product: product.value, frequency: frequency.value } : undefined)
+const selectedChart = computed(() => {
+  const item = selected.value
+  const period = NEWOW_FREQUENCIES.find(value => value === frequency.value)
+  if (item?.domain !== 'newow' || !period || !product.value) return null
+  const dual = item.owner_key === 'dual_fusion'
+  const strategy = dual ? 'trend' : NEWOW_STRATEGIES.find(key => key === item.owner_key)
+  if (!strategy) return null
+  return workstationChartLink({ view: 'newow', seriesKind: 'actual_dominant', symbol: product.value, frequency: period,
+    strategy, newowMode: dual ? 'dual' : undefined, newowSource: 'after-market' })
+})
 const lifecycle = computed(() => selected.value?.lifecycle === 'ACTIVE' ? '现役目录' : selected.value?.lifecycle)
 
 const refreshEpoch = ref(0)
@@ -205,7 +226,6 @@ const newowFacts = computed(() => [
 
 <template>
   <div class="strategy-center">
-    <MarketNavigation active-tab="strategies" />
     <main>
       <header class="heading">
         <div><h1>策略中心</h1><small v-if="componentVersion">v{{ componentVersion }}</small></div>
@@ -226,8 +246,12 @@ const newowFacts = computed(() => [
 
         <article v-if="selected" aria-label="策略详情">
           <header class="detail-heading">
-            <div><h2>{{ selected.name }}</h2><p>{{ selected.description }}</p></div>
-            <span>{{ lifecycle }}</span>
+            <div><h2>{{ selected.name }}</h2><p>{{ selected.description }}</p><code>{{ selected.strategy_id }}</code></div>
+            <div class="strategy-links">
+              <span>{{ lifecycle }}</span>
+              <RouterLink v-if="selectedChart" :to="selectedChart">在看盘中查看 {{ product.toUpperCase() }} · {{ frequency }}</RouterLink>
+              <RouterLink :to="{ name: 'backtests', query: backtestQuery }">查看回测资格与配置</RouterLink>
+            </div>
           </header>
           <p v-if="detailError" role="alert">策略详情读取失败</p>
           <section v-else-if="detail">
@@ -343,6 +367,13 @@ const newowFacts = computed(() => [
             </template>
           </section>
         </article>
+        <section v-else-if="!selectedId && items.length" aria-label="策略一览" class="strategy-overview">
+          <h2>策略一览</h2>
+          <table><thead><tr><th>策略</th><th>目录身份</th><th>证据来源</th><th>领域状态</th></tr></thead><tbody>
+            <tr v-for="item in items" :key="item.strategy_id"><th><RouterLink :to="{ name: 'strategies', params: { strategyId: item.strategy_id } }">{{ item.name }}</RouterLink></th>
+              <td><code>{{ item.strategy_id }}</code></td><td>{{ domains.find(domain => domain.id === item.domain)?.result }}</td><td>{{ statusOf(runtime[item.domain]) }}</td></tr>
+          </tbody></table>
+        </section>
         <p v-else class="empty">{{ selectedId && items.length ? '策略不存在' : error ? '请刷新目录' : items.length ? '选择策略查看详情' : '正在读取策略目录' }}</p>
       </div>
     </main>
@@ -350,6 +381,10 @@ const newowFacts = computed(() => [
 </template>
 
 <style scoped>
+.strategy-overview { min-width: 0; overflow: auto; padding: 16px; background: var(--gy-bg-panel); border: 1px solid var(--gy-border); border-radius: 6px; }
+.strategy-overview h2 { margin: 0 0 10px; }
+@media(max-width: 760px) { .strategy-center .workspace { grid-template-columns: minmax(0,1fr); } }
+.strategy-links { display: grid; gap: 7px; justify-items: end; }
 .strategy-center { min-height: 100%; background: var(--gy-bg-app); }
 main { max-width: 1550px; margin: auto; padding: 24px 32px; }
 .heading, .detail-heading, .domain header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

@@ -41,6 +41,7 @@ class V2Strategy(StrEnum):
 class MarketSource(StrEnum):
     CANONICAL = "canonical"
     OBSERVATION = "observation"
+    RQALPHA_PLUS = "rqalpha_plus_local_bundle"
 
 
 def _utc(value: datetime) -> datetime:
@@ -83,6 +84,7 @@ class CompletedMarketPayload:
         available = _utc(self.available_at)
         if (
             self.bar.frequency not in DECISION_FREQUENCIES
+            or (self.bar.series_kind == "physical_futures") != (self.source is MarketSource.RQALPHA_PLUS)
             or not all((self.revision, self.source_ref, self.owner_ref, self.availability_policy))
             or not start < self.bar.bar.bar_end <= end
             or self.bar.bar.bar_end > available
@@ -353,6 +355,7 @@ def step_completed(
         identity = build_product_identity(
             bar.bar.product, ProductStrategy(strategy.value), bar.frequency,
             input_quality_policy=payload.quality_policy,
+            series_kind=bar.series_kind,
         )
         next_kernel, frame, _ = replay_step(
             identity, kernel_state, bar, verified_lifecycle=payload.verified_lifecycle,

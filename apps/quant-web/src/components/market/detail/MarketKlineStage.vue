@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ArchivePane, WorkstationStyles } from '@/utils/workstationChartPanes'
 import type { ChartProfileId } from '@guiyi/quant-chart'
 import type { DynamicRangeDisplay } from '@/utils/dynamicRange'
 import type { PatternGeometry } from '@/utils/newowPatternDisplay'
@@ -18,6 +19,9 @@ import { useMarketChartStudies } from '@/composables/useMarketChartStudies'
 
 const props = withDefaults(defineProps<{
   chartProfile?: ChartProfileId
+  workstationPanes?: ArchivePane[]
+  workstationStyles?: WorkstationStyles
+  logPrice?: boolean
   dynamicRange?: DynamicRangeDisplay | null
   patternGeometry?: PatternGeometry | null
   subingVolumeTiers?: boolean
@@ -62,11 +66,11 @@ const chart = ref<InstanceType<typeof KlineChart> | null>(null)
 const market = inject(MARKET_CHART_STUDY_CONTEXT, null)
 const studyContext = computed(() => {
   const context = market?.value
-  if (!context || context.identity.profile !== props.chartProfile
+  if (!context || context.identity.profile !== (props.workstationPanes ? 'newow' : props.chartProfile)
     || context.identity.frequency !== props.period || context.identity.seriesKind !== props.seriesKind) return null
   return props.focusBarEnd ? { ...context, allowTail: false } : context
 })
-const showTalibMacd = computed(() => studyContext.value?.talibMacd === true)
+const showTalibMacd = computed(() => props.workstationPanes ? props.workstationPanes.some(p => p.id === 'macd') : studyContext.value?.talibMacd === true)
 const { demand: studyRequest, canonical: studyDisplay, canonicalIssue: studyIssue, historyUnavailable: studyUnavailable,
   completed: studyCompleted, preview: studyPreview, tailIssue: studyTailIssue } = useMarketChartStudies(
   () => studyContext.value,
@@ -119,6 +123,7 @@ watch(() => props.mutation, async (mutation) => {
 function syncFullscreen() { fullscreen.value = Boolean(document.fullscreenElement) }
 document.addEventListener('fullscreenchange', syncFullscreen)
 onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFullscreen))
+defineExpose({ inspectLayers: () => chart.value?.inspectLayers() ?? [] })
 </script>
 
 <template>
@@ -141,6 +146,7 @@ onBeforeUnmount(() => document.removeEventListener('fullscreenchange', syncFulls
     <KlineChart
       :key="identityKey"
       :chart-profile="chartProfile"
+      :workstation-panes="workstationPanes" :workstation-styles="workstationStyles" :log-price="logPrice"
       :show-derived-markers="showDerivedMarkers"
       ref="chart"
       :bars="bars"

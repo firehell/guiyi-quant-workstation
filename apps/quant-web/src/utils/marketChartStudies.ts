@@ -12,6 +12,11 @@ export type GenericChartProfile = 'free' | 'htdy' | 'subing'
 export type MarketStudySelection = MainIndicatorId | 'macd'
 export const isGenericChartProfile = (profile: unknown): profile is GenericChartProfile =>
   profile === 'free' || profile === 'htdy' || profile === 'subing'
+// Registry defaults, hashed with guiyi_quant.compute.contracts.hash_parameters.
+const WORKSTATION_PARAMETERS: Record<ChartStudyId, string> = {
+  ema_10: '98f49abca86eb526', ema_21: '92210fca093bfe8c', ema_60: '94d0f49990074e0a',
+  boll: 'bcc734b77616a3e9', macd: 'f9b4b4b0b4d0678d',
+}
 const SHA256 = /^[0-9a-f]{64}$/
 type StudyPointStatus = 'READY' | 'WARMING' | 'UNKNOWN' | 'INVALID' | 'ERROR'
 const STUDY_POINT_REASONS = new Set([
@@ -89,7 +94,7 @@ export interface MarketChartStudyIdentity {
   seriesKind: SeriesKind
   frequency: MarketFrequency
   contract?: string
-  profile?: GenericChartProfile
+  profile?: GenericChartProfile | 'newow'
 }
 
 export interface MarketChartStudyQuery {
@@ -97,7 +102,7 @@ export interface MarketChartStudyQuery {
   series_kind: SeriesKind
   frequency: MarketFrequency
   contract?: string
-  profile: GenericChartProfile
+  profile: GenericChartProfile | 'newow'
   first: string
   last: string
   count: number
@@ -156,11 +161,13 @@ export function marketChartStudyRequest(
 ): { query: MarketChartStudyQuery; ids: ChartStudyId[]; bars: BarData[]; key: string; truncatedBefore: boolean } | null {
   const ids = [...new Set(indicators.filter((id): id is ChartStudyId => Object.hasOwn(STUDIES, id)))].sort()
   if (!ids.length) return null
-  const completed = bars.filter(bar => bar.marketSource ? bar.marketSource === 'canonical' : bar.confirmed !== false)
+  const completed = bars.filter(bar => bar.confirmed !== false && (!bar.marketSource || bar.marketSource === 'canonical'))
   const historical = completed.slice(-MARKET_CHART_STUDY_BAR_LIMIT)
   if (!historical.length || (identity.seriesKind !== 'continuous' && historical.some(
     bar => !bar.physicalContract || !bar.calculationSegmentId,
   ))) return null
+  if (identity.profile === 'newow' && historical.some(bar =>
+    bar.marketSource !== 'canonical' || !bar.sourceBarSha256 || !SHA256.test(bar.sourceBarSha256))) return null
   const query: MarketChartStudyQuery = {
     symbol: identity.symbol, series_kind: identity.seriesKind, frequency: identity.frequency,
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
@@ -171,7 +178,7 @@ export function marketChartStudyRequest(
   return {
     query, ids, bars: historical, truncatedBefore: completed.length > MARKET_CHART_STUDY_BAR_LIMIT,
     key: JSON.stringify([query, canonicalRevision, historical.map(bar => [
-      bar.time, bar.trading_day, bar.physicalContract, bar.open, bar.high, bar.low, bar.close, bar.volume, bar.sourceBarSha256,
+      bar.time, bar.trading_day, bar.physicalContract, bar.calculationSegmentId, bar.open, bar.high, bar.low, bar.close, bar.volume, bar.sourceBarSha256,
     ])]),
   }
 }
@@ -226,6 +233,7 @@ export function marketChartStudyTailRequest(
   allowCompleted: boolean, activity: MarketStudyActivity | null,
 ) {
   const { symbol, series_kind, frequency, contract, profile, studies, last } = history.query
+  if (profile === 'newow') return null
   const completed = allowCompleted ? bars.filter(bar => bar.marketSource === 'completed_live') : []
   const preview = activity?.bar.marketSource === 'active_preview' ? activity : null
   if (!completed.length && !preview) return null
@@ -235,7 +243,7 @@ export function marketChartStudyTailRequest(
   }
   const baseKey = JSON.stringify([history.query, display.sourceRevision])
   const barKeys = completed.map(bar => JSON.stringify([
-    bar.time, bar.trading_day, bar.physicalContract, bar.open, bar.high, bar.low, bar.close, bar.volume,
+    bar.time, bar.trading_day, bar.physicalContract, bar.calculationSegmentId, bar.open, bar.high, bar.low, bar.close, bar.volume,
     bar.turnover, bar.openInterest, bar.sourceBarSha256,
   ]))
   const completedKey = JSON.stringify([baseKey, barKeys])
@@ -345,6 +353,9 @@ export function projectMarketChartStudyDisplay(payload: unknown, request: Market
     || !SHA256.test(body.source_revision)) rejectStudy('MARKET_CHART_STUDY_SOURCE_INVALID')
   const output = emptyDisplay(ids, body.source_revision)
   projectSegments(segments, bars, ids, output, 'canonical')
+  if (query.profile === 'newow' && ids.some(id => output.features[id]?.parametersHash !== WORKSTATION_PARAMETERS[id])) {
+    rejectStudy('MARKET_CHART_STUDY_FEATURE_IDENTITY_MISMATCH', 'catalog_mismatch')
+  }
   return output
 }
 

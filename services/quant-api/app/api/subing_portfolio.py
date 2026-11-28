@@ -187,3 +187,34 @@ def history(index: int | None = Query(default=None, ge=0)):
         raise
     except Exception:
         raise HTTPException(503, detail={"code": "PORTFOLIO_HISTORY_UNAVAILABLE"}) from None
+
+
+def read_committed_fills(trading_day, contract: str, run_id: str | None, native_id: str | None):
+    """Bound one physical contract in a retained continuous Paper Run."""
+    if run_id is None:
+        active = read_registration(ACTIVE_PORTFOLIO)
+        if active is None:
+            return None, False, []
+        run_id = active["run_id"]
+    store = ModelStore(read_private_settings_content(DB_PATH).decode())
+    try:
+        with Session(store.engine, autoflush=False) as session, readonly_transaction(
+            session, timeout_seconds=5
+        ) as connection:
+            row = connection.execute(
+                select(runs.c.identity, runs.c.sequence, runs.c.state["kind"], runs.c.state["sequence"],
+                       runs.c.state["result"]["policy"], runs.c.state["result"]["daily"][trading_day.isoformat()],
+                       runs.c.state["result"]["accounts"][contract]["fills"])
+                .where(runs.c.run_id == run_id)
+            ).one_or_none()
+        if row is None:
+            raise LookupError("PORTFOLIO_RUN_NOT_FOUND")
+        identity, sequence, kind, state_sequence, policy, daily, fills = row
+        if (identity["kind"] not in (KIND, LEGACY_KIND) or kind != identity["kind"]
+                or sequence != state_sequence or policy != identity["policy"]
+                or verified_scope(policy) != EXPANDED_PORTFOLIO_PRODUCTS):
+            raise ValueError("PORTFOLIO_SNAPSHOT_INVALID")
+        return run_id, daily is not None, [fill for fill in (fills or []) if fill["trading_day"] == trading_day.isoformat()
+                        and (native_id is None or fill["fill_id"] == native_id)]
+    finally:
+        store.engine.dispose()

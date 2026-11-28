@@ -290,6 +290,9 @@ const adapter = inject(NEWOW_PRODUCT_CHART_ADAPTER_KEY, {
 })
 
 let host: ChartHost | null = null
+const releaseInspector = detailSession?.attachInspector(() => inspectLayers().filter(layer =>
+  layer.indicatorId !== 'reconciliation_executions' && layer.indicatorId !== 'paper_executions'))
+onUnmounted(() => releaseInspector?.())
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let volume: ISeriesApi<'Histogram'> | null = null
@@ -535,7 +538,7 @@ onMounted(async () => {
   host = mountChartHost(container.value, {
     width: container.value.clientWidth,
     height: container.value.clientHeight,
-    layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text, panes: { enableResize: false, separatorColor: '#EBEDF0' } },
+    layout: { background: { type: ColorType.Solid, color: theme.background }, textColor: theme.text, panes: { enableResize: false, separatorColor: theme.grid } },
     grid: { vertLines: { color: theme.grid }, horzLines: { color: theme.grid } },
     rightPriceScale: { borderColor: theme.axis, scaleMargins: { top: 0.05, bottom: 0.14 } },
     crosshair: { mode: CrosshairMode.Normal },
@@ -787,6 +790,9 @@ function renderModel(value: NewowProductChartModel | null): void {
       } else {
         const written = writePriceWindow(preview.map(bar => ({
           time: detailChartTime(bar, props.priceFrequency ?? '1d'), open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+          physicalContract: bar.confirmed === false ? undefined : bar.physicalContract, volume: bar.volume,
+          marketSource: bar.marketSource, sourceBarSha256: bar.sourceBarSha256, confirmed: bar.confirmed,
+          calculationSegmentId: bar.calculationSegmentId, trading_day: bar.trading_day,
         })), 'preview', historyBarDiagnostics(last), last?.physicalContract)
         reportRenderedEnd(written ? last?.time : undefined, written ? last?.physicalContract : undefined, props.priceFrequency)
       }
@@ -854,6 +860,7 @@ function renderModel(value: NewowProductChartModel | null): void {
     time: chartMarkerTime(bar.barEnd, value.identity.frequency, bar.tradingDay),
     open: bar.open, high: bar.high, low: bar.low, close: bar.close,
     physicalContract: props.displayOnly || props.strategySwitching ? undefined : bar.physicalContract.toUpperCase(),
+    volume: bar.volume, marketSource: 'retained', trading_day: bar.tradingDay, calculationSegmentId: bar.calculationSegmentId,
   })), priceIdentity, {
     ...chartLayerSource(last ? props.response : null, last?.barEnd ?? null),
     frequency: value.identity.frequency, status: last ? 'ready' : chartLayerStatus(props.response, false),

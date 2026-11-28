@@ -20,6 +20,7 @@ export interface KlineDerivedData {
 }
 
 export interface KlineDerivedOptions {
+  hideThsMacd?: boolean
   emaPoints?: MarketChartStudyPoints
   rangeDetector?: {
     enabled: boolean
@@ -66,7 +67,7 @@ export function buildKlineDerivedData(
   return {
     ema,
     emaFacts,
-    macd: calculateThsMacdDisplay(bars),
+    macd: calculateThsMacdDisplay(options.hideThsMacd ? [] : bars),
     htdy: visibleMainIndicators.includes('htdy') ? buildHtdyDerivedData(bars) : null,
     rangeDetector,
   }
