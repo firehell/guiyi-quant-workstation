@@ -47,6 +47,7 @@ const referenceChartLink = computed(() => {
     <main>
       <h1>研究</h1>
       <nav aria-label="研究入口">
+        <RouterLink to="/research/statistics">统计与研究中心</RouterLink>
         <RouterLink to="/backtests">回测中心</RouterLink>
         <RouterLink to="/research/subing-decision?mode=history">苏冰独立量化回放</RouterLink>
       </nav>
