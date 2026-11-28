@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import JSONResponse
+from app.runtime_bindings import ServiceBindingRootUnavailable
 import logging
 import os
 
@@ -59,6 +60,11 @@ def resolve_cors_origins() -> list[str]:
 
 
 app = FastAPI(title="归一量化 API", version=APP_VERSION, lifespan=workstation_lifespan)
+
+
+@app.exception_handler(ServiceBindingRootUnavailable)
+async def unavailable_service_root(_request, _error):
+    return JSONResponse({"detail": {"code": "SERVICE_BINDING_ROOT_UNAVAILABLE"}}, status_code=503)
 
 
 if formal_tick_requested():

@@ -76,6 +76,22 @@ SimNow v7普通完成记录的发布路径来自冻结的`snapshot.preimage.rele
 只维护当前应用实现，不维护旧版兼容矩阵或常驻回滚源码。修复在开发工作区完成、提交并验证后向前发布；现有工具要求的编号/tag由Codex处理，不单开版本管理任务。正式服务绑定受测commit，不移动旧tag或把dirty源码冒充原版本；必要历史源码从Git恢复。
 安装器的原子失败恢复、preflight、身份校验继续保留；结果不明先停止相关mutation并只读核对，不能因清理而盲目重试。
 
+## 仅工作站 API 与 Web 的前向安装
+
+本入口适用于两端口正式服务与原释放目录均已缺席的工作站。它从六项合同和已发布 Git 对象复核原登记，逐项核对本机定义、PID 和 owner 锁，并在部署锁下对整份原登记执行一次 CAS。只有 API 与 Web 的 root、tag、commit、generation 和 label 更新。其他角色原登记与启动状态原样保留。
+
+在已构建、已打 annotated 应用 tag 的独立发布树内运行。正式库须先通过独立迁移流程达到 `20261128_0060`。计划检查 13 张新增表的列、主外键、检查约束和索引，以及六个迁移文件的摘要。
+
+```sh
+./scripts/ops/macos/install-local-services.sh --read-workstation-host --root "$PWD"
+umask 077
+./scripts/ops/macos/install-local-services.sh --plan-workstation-forward --candidate-root "$PWD" --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT" > "$PLAN"
+./scripts/ops/macos/install-local-services.sh --apply-workstation-forward --plan "$PLAN"
+./scripts/ops/macos/install-local-services.sh --read-workstation-forward --plan "$PLAN"
+```
+
+计划有效十五分钟。CAS 前保存原始登记与精确计划，CAS 后通过所有者、监听进程、API 版本和 Web 构建字节核验结果。若中断先使用只读入口。已证实原登记仍在、定义未变、目标端口空闲时，`--cancel-uncommitted-workstation-forward --plan "$PLAN"` 关闭该次尝试。已证实新登记生效时，`--resume-workstation-forward --plan "$PLAN"` 仅继续当前两项的启动。状态与两份登记均不匹配时需核实现场。计划与恢复材料只保存在当前用户私有文件中。
+
 ## 按服务连续交接
 
 新增稳定目录 `~/Library/Application Support/GuiyiQuant/service-bindings.json` 是启用新拓扑后的唯一身份入口。

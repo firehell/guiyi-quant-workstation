@@ -29,6 +29,10 @@ class RuntimeBindingError(ValueError):
     """Bounded error codes; never attach sensitive command output."""
 
 
+class ServiceBindingRootUnavailable(RuntimeBindingError):
+    """The selected declaration is well formed, but its absolute release root is absent."""
+
+
 @dataclass(frozen=True)
 class ServiceBinding:
     service: str
@@ -206,9 +210,35 @@ def write_market_start_bindings(registry: BindingRegistry, *, home: Path | None 
     return _write_bindings(registry, home, expected_sha256, lambda *, home: market_start_preimage(home=home)[1])
 
 
-def _write_bindings(registry, home, expected_sha256, current_digest):
+def write_workstation_pair(bindings: dict[str, ServiceBinding], *, expected_sha256: str, home=None) -> str:
+    """CAS two strictly live identities while preserving each other inventory row."""
+    if set(bindings) != {"api", "web"}:
+        raise RuntimeBindingError("WORKSTATION_PAIR_INVALID")
+    def checked_preimage(*, home):
+        previous, digest, _ = market_start_preimage(home=home)
+        if previous is None or digest != expected_sha256:
+            raise RuntimeBindingError("REGISTRY_DRIFT")
+        return previous
+    old = checked_preimage(home=home)
+    target = BindingRegistry(1, {**old.services, **bindings})
+    def validate_locked(*, home):
+        current = checked_preimage(home=home)
+        if not all(name in current.services and current.services[name] == item
+                   and not os.path.lexists(item.root) for name, item in target.services.items() if name not in bindings):
+            raise RuntimeBindingError("WORKSTATION_PEER_BINDING_DRIFT")
+        for name, item in bindings.items():
+            item.__post_init__()
+            if item.service != name or not item.enabled or item.generation != max(v.generation for v in current.services.values()) + 1:
+                raise RuntimeBindingError("WORKSTATION_PAIR_INVALID")
+        return expected_sha256
+    if len({(v.root, v.commit, v.tag, v.generation) for v in bindings.values()}) != 1:
+        raise RuntimeBindingError("WORKSTATION_PAIR_INVALID")
+    return _write_bindings(target, home, expected_sha256, validate_locked, live_services=bindings)
+
+
+def _write_bindings(registry, home, expected_sha256, current_digest, *, live_services=None):
     registry.__post_init__()
-    for binding in registry.services.values():
+    for binding in (registry.services if live_services is None else live_services).values():
         binding.__post_init__()
     path = registry_path(home)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -248,11 +278,18 @@ def _write_bindings(registry, home, expected_sha256, current_digest):
 def resolve_service_binding(service: str, *, home: Path | None = None) -> ServiceBinding | None:
     if service not in SERVICES:
         raise RuntimeBindingError("INVALID_SERVICE")
-    registry = read_bindings(home=home)
+    registry, _, _ = market_start_preimage(home=home)
     if registry is None:
         return None
     try:
-        return registry.services[service]
+        binding = registry.services[service]
+        try:
+            Path(binding.root).lstat()
+        except FileNotFoundError:
+            raise ServiceBindingRootUnavailable("SERVICE_BINDING_ROOT_UNAVAILABLE") from None
+        except OSError:
+            raise RuntimeBindingError("INVALID_SERVICE_BINDING") from None
+        return ServiceBinding(**asdict(binding))
     except KeyError:
         raise RuntimeBindingError("SERVICE_BINDING_MISSING") from None
 
@@ -351,16 +388,16 @@ def _owners(path: str) -> frozenset[str]:
     return ALL
 
 
-def _tracked(root: Path) -> dict[str, str]:
-    return {line.split("\t", 1)[1]: line.split()[2] for line in _git(root, "ls-tree", "-r", "HEAD").splitlines()}
+def _tracked(root: Path, revision: str = "HEAD") -> dict[str, str]:
+    return {line.split("\t", 1)[1]: line.split()[2] for line in _git(root, "ls-tree", "-r", revision).splitlines()}
 
 
 def _digest(files: dict[str, str]) -> str:
     return hashlib.sha256(json.dumps(files, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def contract_fingerprints(root: Path) -> dict[str, str]:
-    files = _tracked(root)
+def contract_fingerprints(root: Path, *, revision: str = "HEAD") -> dict[str, str]:
+    files = _tracked(root) if revision == "HEAD" else _tracked(root, revision)
     prefixes = {"db": ("services/quant-api/alembic/", "services/quant-api/app/db/", "services/quant-api/app/models/"),
         "live": ("services/quant-api/app/market_data/live",),
         "input": ("services/quant-api/app/market_data/rqdata_adapter",

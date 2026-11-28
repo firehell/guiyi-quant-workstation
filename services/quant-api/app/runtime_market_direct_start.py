@@ -228,7 +228,7 @@ def cancel_uncommitted_market_direct_start(host, plan):
 
 
 class MarketDirectStartHost(MarketCohortHost):
-    def release(self, root, tag, commit, previous):
+    def verify_application_release(self, root, tag, commit, previous):
         from app.runtime_cohort import _require_forward_application_release
 
         require(root == Path(__file__).resolve().parents[3] and not os.path.lexists(root / ".env"),
@@ -244,7 +244,10 @@ class MarketDirectStartHost(MarketCohortHost):
                 and (root / "apps/quant-web/dist/index.html").is_file(), "MARKET_DIRECT_START_BUILD_UNPROVEN")
         self._verify_web_dependencies(root)
         require(not root.is_relative_to(self.directory), "MARKET_DIRECT_START_RELEASE_INVALID")
-        return self.contracts(root), _candidate_market_component(root)
+        return self.contracts(root)
+
+    def release(self, root, tag, commit, previous):
+        return self.verify_application_release(root, tag, commit, previous), _candidate_market_component(root)
 
     def settings(self):
         raw, settings = _private_configuration(self.target_config)

@@ -302,7 +302,7 @@ def _run_port_service(service):
                    '--host', '127.0.0.1', '--port', '8000', '--workers', '1', '--no-access-log']
     else:
         command = ['/opt/homebrew/bin/node', str(PROJECT_ROOT / 'apps/quant-web/node_modules/vite/bin/vite.js'),
-                   'preview', str(PROJECT_ROOT / 'apps/quant-web'), '--host', '127.0.0.1', '--port', '5173']
+                   'preview', str(PROJECT_ROOT / 'apps/quant-web'), '--host', '127.0.0.1', '--port', '5173', '--strictPort']
     def run(owner):
         owner.assert_owned()
         child = subprocess.Popen(command, cwd=PROJECT_ROOT)
@@ -487,7 +487,7 @@ class LaunchdBackend:
             'schema_version': 1, 'phase': 'cancelled', 'service': service, 'request_id': request})
 
 
-def assert_no_unknown_deployment(*, cohort_plan_sha256=None, allow_optional=False):
+def assert_no_unknown_deployment(*, cohort_plan_sha256=None, allow_optional=False, workstation_plan_sha256=None):
     from app.runtime_cohort import terminal_cohort_state
 
     directory = runtime_directory()
@@ -506,6 +506,10 @@ def assert_no_unknown_deployment(*, cohort_plan_sha256=None, allow_optional=Fals
         state = _read(runtime_directory() / f'{service}.scheduled-update.json')
         if state is not None and state.get('phase') not in {'switched', 'scheduled_busy', 'precondition_blocked'}:
             raise DeploymentError('SCHEDULED_RECOVERY_READBACK_REQUIRED')
+    workstation = _read(directory / 'workstation-forward.json')
+    if (workstation is not None and workstation.get('phase') not in {'switched', 'cancelled'}
+            and (workstation_plan_sha256 is None or workstation.get('plan_sha256') != workstation_plan_sha256)):
+        raise DeploymentError('WORKSTATION_CAS_READBACK_REQUIRED')
 
 
 def apply_plan(payload):

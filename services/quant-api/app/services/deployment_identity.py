@@ -9,7 +9,7 @@ from typing import Any
 
 from app.runtime_identity import read_launchd_service as _read_launchd_service, verify_loaded_service as _verify_loaded_service
 from app.runtime_identity import launchd_arguments as _arguments, launchd_environments as _environments, file_snapshot as _snapshot
-from app.runtime_bindings import RuntimeBindingError, authorized_program_arguments, bindings_sha256, read_bindings, verify_release
+from app.runtime_bindings import RuntimeBindingError, authorized_program_arguments, market_start_preimage, verify_release
 
 SERVICE_LABELS = {
     "live_market": "live", "after_market": "after-market", "alert": "alert",
@@ -25,8 +25,7 @@ def deployment_identity_health(*, root: Path, commit: str, home: Path | None = N
     reader = _read_launchd_service if service_reader is None else service_reader
     services: dict[str, dict[str, Any]] = {}
     try:
-        registry = read_bindings(home=account_home)
-        registry_digest = bindings_sha256(home=account_home) if registry is not None else None
+        registry, registry_digest, _ = market_start_preimage(home=account_home)
     except RuntimeBindingError:
         return {"status": "unknown", "services": {name: {
             "status": "unknown", "error_type": "runtime_binding_registry_invalid"
@@ -47,6 +46,12 @@ def deployment_identity_health(*, root: Path, commit: str, home: Path | None = N
             expected_root = root if binding is None else Path(binding.root)
             expected_commit = commit if binding is None else binding.commit
             if binding is not None:
+                if not expected_root.exists():
+                    services[name] = {"status": "unknown", "error_type": "service_binding_root_unavailable",
+                                      "runtime_tag": binding.tag, "runtime_commit": binding.commit,
+                                      "runtime_generation": binding.generation}
+                    continue
+                binding.__post_init__()
                 verify_release(expected_root, binding.tag, binding.commit)
             path = account_home / "Library/LaunchAgents" / f"{label}.plist"
             try:
@@ -138,7 +143,7 @@ def deployment_identity_health(*, root: Path, commit: str, home: Path | None = N
         services[name] = result
     if registry is not None:
         try:
-            if bindings_sha256(home=account_home) != registry_digest:
+            if market_start_preimage(home=account_home)[1] != registry_digest:
                 raise RuntimeBindingError("REGISTRY_DRIFT")
         except RuntimeBindingError:
             return {"status": "unknown", "services": {name: {
