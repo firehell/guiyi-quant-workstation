@@ -401,6 +401,108 @@ def test_pending_controller_requires_original_attempt_and_controller_identity(sc
         control.verify_pending(host, plan)
 
 
+@pytest.mark.parametrize("name", ["market-feed", "live"])
+@pytest.mark.parametrize(
+    "next_result", ["ready", "timeout", "failure", "stale", "pid", "missing", "released-lock"]
+)
+def test_switched_poll_requires_same_fresh_healthy_owner(scenario, monkeypatch, name, next_result):
+    host, plan = scenario
+    item = ServiceBinding(**plan["targets"][name])
+    sample = {
+        "phase": "active",
+        "at": host.now().isoformat(),
+        "generation": item.generation,
+        "pid": 123,
+        "ready": False,
+        "proof": {},
+    }
+    touched = []
+
+    def advance(seconds):
+        touched.append(seconds)
+        if next_result in {"ready", "pid", "stale", "released-lock"}:
+            sample["ready"] = True
+        if next_result == "failure":
+            sample["proof"] = {"failure_code": "FEED_POLL_FAILED"}
+        if next_result == "stale":
+            sample["at"] = (host.now() - timedelta(seconds=40)).isoformat()
+        if next_result == "pid":
+            sample["pid"] = 456
+
+    monkeypatch.setattr(recovery.time, "monotonic", lambda: 10 * len(touched))
+    monkeypatch.setattr(recovery.time, "sleep", advance)
+    monkeypatch.setattr(
+        recovery,
+        "read_launchd_service",
+        lambda *_, **__: None if next_result == "missing" and touched else "same job",
+    )
+    monkeypatch.setattr(host, "verify_loaded", lambda *a: None)
+    monkeypatch.setattr(host, "free", lambda _: next_result == "released-lock" and bool(touched))
+    monkeypatch.setattr(recovery, "read_service_state", lambda *_, **__: dict(sample))
+    monkeypatch.setattr(recovery, "owner_process_matches", lambda *_: True)
+    if next_result == "ready":
+        assert host.prove_running(item) == {"pid": 123, "ready_at": host.now().isoformat()}
+    else:
+        codes = {
+            "timeout": "COMPLETED_POLL_UNPROVEN",
+            "failure": "POLL_FAILURE",
+            "stale": "POLL_OWNER_UNPROVEN",
+            "pid": "POLL_OWNER_CHANGED",
+            "missing": "POLL_OWNER_CHANGED",
+            "released-lock": "POLL_OWNER_UNPROVEN",
+        }
+        with pytest.raises(CohortError, match=codes[next_result]):
+            host.prove_running(item)
+    assert len(touched) == 1
+
+
+def test_in_progress_poll_timeout_never_restarts_running_generation(scenario, monkeypatch):
+    host, plan = scenario
+    recovery.apply(host, plan)
+    pointer = host.directory / "market-recovery.json"
+    _write(pointer, {**_read(pointer), "phase": "starting"})
+
+    def unavailable(*_):
+        raise CohortError("MARKET_COMPLETED_POLL_UNPROVEN_LIVE")
+
+    monkeypatch.setattr(recovery, "verify_switched", unavailable)
+    with pytest.raises(CohortError, match="COMPLETED_POLL_UNPROVEN"):
+        recovery.apply(host, plan, resume=True)
+    assert host.calls.count("start") == 1 and "stop" not in host.calls
+    assert _read(pointer)["phase"] == "starting"
+
+
+def test_independent_read_cannot_resume_or_apply(scenario, monkeypatch, tmp_path):
+    from app import runtime_market_recovery_control as control
+
+    host, plan = scenario
+    file = tmp_path / "read-plan.json"
+    host._private_original(file, json.dumps(plan).encode())
+    monkeypatch.setattr(control, "ReleasedController", lambda *_: host)
+    checked = []
+
+    def verify(h, p, *, switched):
+        assert switched and h is host and p == plan
+        checked.append("controller")
+        return {"controller_tag": "v1.1.2"}
+
+    monkeypatch.setattr(control, "verify_pending", verify)
+
+    def read(h, p):
+        checked.append("read")
+        return {"authority": "new", "phase": "switched"}
+
+    monkeypatch.setattr(control, "readback", read)
+    monkeypatch.setattr(control, "apply", lambda *a, **k: pytest.fail("read issued mutation"))
+    assert (
+        control.main(
+            ["read", "--controller-tag", "v1.1.2", "--controller-commit", "d" * 40, "--plan", str(file)]
+        )
+        == 0
+    )
+    assert checked == ["controller", "read"]
+
+
 def test_atomic_new_alert_at_exact_frozen_tail():
     port = os.getenv("GUIYI_TEST_REDIS_PORT")
     if not port:
