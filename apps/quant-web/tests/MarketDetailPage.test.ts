@@ -70,7 +70,7 @@ test('canonicalizes omitted routes without presenting the retired workspace', ()
 
 test('keeps navigation and one workspace slot mounted while source data changes locally', () => {
   const { source, template } = page()
-  assert.match(template, /<main class="market-detail-page unified-detail-light"/)
+  assert.match(template, /<main class="market-detail-page workstation-market"/)
   assert.doesNotMatch(template, /'newow-detail-light': isNewowView/)
   assert.match(template, /<MarketDetailQuoteHeader[^>]+:unified="isWorkspacePreview"/)
   assert.match(template, /<MarketDetailQuoteHeader[^>]+:newow="true"/)
@@ -85,8 +85,8 @@ test('keeps navigation and one workspace slot mounted while source data changes 
 
 test('gives every market detail route the same full-width layout canvas', () => {
   const source = readFileSync(mainLayoutUrl, 'utf8')
-  assert.match(source, /'content--market-detail': route\.name === 'market-chart'/)
-  assert.match(source, /\.content\.content--market-detail \{ padding: 0; background: var\(--gy-bg-panel\); \}/)
+  assert.match(source, /class="ws-content"/)
+  assert.match(source, /<RouterView v-else v-slot="\{ Component \}">/)
   assert.doesNotMatch(source, /content--newow-detail|route\.query\.view === 'newow'/)
 })
 

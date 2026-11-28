@@ -100,10 +100,11 @@ def _freeze_mapping(values: Mapping[str, object]) -> Mapping[str, object]:
 
 @dataclass(frozen=True, slots=True)
 class NewowDailyBar:
-    """A completed actual-dominant D1 bar supplied by the application layer.
+    """A completed futures bar in the legacy D1 kernel representation.
 
-    ``observation_eligible`` is the upstream rank-1 formal-output eligibility
-    flag. The pure core preserves it and does not query ``MainContractMap``.
+    The application supplies ``observation_eligible`` from the series contract:
+    historical rank-1 eligibility for actual-dominant input, or evaluation
+    membership for an isolated physical-contract research input.
     """
 
     product: str
@@ -126,7 +127,7 @@ class NewowDailyBar:
     def __post_init__(self) -> None:
         if not self.completed:
             raise ValueError("NEWOW_BAR_NOT_COMPLETED")
-        if self.series_kind != "actual_dominant":
+        if self.series_kind not in ("actual_dominant", "physical_futures"):
             raise ValueError("NEWOW_BAR_INVALID_SERIES_KIND")
         if self.frequency != "1d":
             raise ValueError("NEWOW_BAR_INVALID_FREQUENCY")

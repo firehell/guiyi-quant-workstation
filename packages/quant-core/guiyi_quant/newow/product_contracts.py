@@ -123,7 +123,7 @@ class ProductIdentity:
         _text(self.product)
         if (
             self.product != self.product.lower()
-            or self.series_kind != "actual_dominant"
+            or self.series_kind not in ("actual_dominant", "physical_futures")
         ):
             raise ValueError("NEWOW_PRODUCT_INVALID_IDENTITY")
         object.__setattr__(self, "strategy", ProductStrategy(self.strategy))
@@ -176,7 +176,7 @@ class ProductBar:
             and type(self.bar.open_interest) is not int
         ):
             raise ValueError("NEWOW_PRODUCT_INVALID_VOLUME_OR_OI")
-        if self.series_kind != "actual_dominant":
+        if self.series_kind != self.bar.series_kind:
             raise ValueError("NEWOW_PRODUCT_INVALID_SERIES")
         if self.calculation_segment_id is None:
             object.__setattr__(self, "calculation_segment_id", self.bar.segment_id)

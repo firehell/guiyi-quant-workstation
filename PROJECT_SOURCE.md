@@ -24,9 +24,31 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 
 多周期波段路径使用独立展示身份 `guiyi_futures_historical_path_v1`。历史双线与周期样本仅限同物理合约、同计算段，普通参考和 trueup 样本分离；保持公开 v3.4.49 的周期与剩余价格幅度估算，不修改策略或参考收益。剩余时长与预计日期分别验证：日期基于快照行情交易日，通过 MarketDataService 的 Catalog 日历和 Session 证明逐日推进（最长366个自然日），不使用浏览器日期或星期推断。缺历史日历前缀不估算时长；缺未来证明只保留时长及原因；历史快照没有当时捕获的日历身份不借当前日历补日期。日期证明参与快照缓存身份，旧路径身份不视为新模型。无有效 ETA 日期时只画持有清仓目标或空仓吸筹参考，不生成预计日期端点或未来持仓背景；没有同身份止损来源不展示止损距离比。
 
+## 个人工作台
+
+打开工作台默认进入看盘。八页导航、图表布局、自选、指标显示偏好和看盘观察按 `workstation-ui/vX.Y.Z` 独立迭代。指标计算使用 Quant Core，图层使用 Quant Chart，人工观察保存在交易复盘中心。详见[工作台交互合同](openspec/specs/workstation-ui/spec.md)。
+
 ## 策略中心
 
 `/strategies` 按牛哇、火天大有和苏冰展示六个策略身份。`/api/v1/strategies` 提供目录、版本、能力、已登记绑定、运行和原始结果引用。牛哇展示参考动作、提示与交易，火天展示快期模拟读回，苏冰展示一个 16 品种共享 Paper 组合及历史回放登记。支持范围、部署授权和运行读回各有独立来源。详见 [策略中心合同](openspec/specs/strategy-center/spec.md)。
+
+## 回测中心
+
+`/backtests` 提供 RQAlpha Plus 历史研究、增量 Run、逐笔回放与实验验证。按策略和数据组合显示研究资格，历史账户结果绑定独立 Run 与原生输入身份。详见 [回测中心合同](openspec/specs/backtest-center/spec.md)。
+
+## 模拟交易中心
+
+`/simulations` 与 `/api/v1/simulations` 提供账户、策略登记、原生读回和权益采样查询。独立 SimNow 观察宿主沿用 VeighNa CTP，火天大有执行链可在隔离环境验收。见 [模拟交易中心合同](openspec/specs/simulation-center/spec.md)与 [执行启用设计](openspec/changes/add-simulation-center/design.md)。
+
+## 交易日志与复盘中心
+
+`/trade-journal` 支持交易计划与版本、人工归案、操作时间线、五维案例复盘及日周复盘。
+`/api/v1/trade-journal` 保存用户记录，关联 SimNow、苏冰 Paper、可核验的 TQKQ 历史、牛哇参考交易和回测结果。
+具体来源与案例归集见[交易日志与复盘合同](openspec/specs/trade-journal-center/spec.md)。
+
+## 统计与研究中心
+
+`/research/statistics` 提供已发布 Run 统计和原始证据下钻、因子与事件研究、同步截面及样本外方案。离线 AI 助手从已有研究生成带引用的假设草稿。后续样本外实验由用户确认并交给回测中心。详见[统计与研究中心合同](openspec/specs/statistics-research-center/spec.md)。
 
 ## 苏冰决策持续观察与历史回放
 

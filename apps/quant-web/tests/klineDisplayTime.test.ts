@@ -35,6 +35,6 @@ describe('KlineChart opening-time presentation', () => {
   it('reapplies the current EMA palette whenever derived series render', () => {
     assert.match(chartSource, /emaColors = \{ ema_10: theme\.ema10, ema_21: theme\.ema21, ema_60: theme\.ema60 \}/)
     assert.match(chartSource, /for \(const indicator of EMA_INDICATORS\)/)
-    assert.match(chartSource, /series\.applyOptions\(\{ color: emaColors\[indicator\] \}\)/)
+    assert.match(chartSource, /series\.applyOptions\(\{ color: emaColors\[indicator\], lineWidth: indicator === 'ema_21' \? 2 : 1, \.\.\.props\.workstationStyles\?\.\[indicator\] \}\)/)
   })
 })

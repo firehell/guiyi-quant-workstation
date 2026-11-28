@@ -44,7 +44,10 @@ def client(monkeypatch):
     engine.dispose()
 
 
-def test_chart_study_contract_uses_exact_inclusive_bound(client, monkeypatch):
+@pytest.mark.parametrize("profile", [None, "newow"])
+def test_chart_study_contract_uses_exact_inclusive_bound(client, monkeypatch, profile):
+    params = {**PARAMS, **({"profile": profile} if profile else {})}
+    monkeypatch.setattr(market, "retain_chart_study_seed", lambda *args: pytest.fail("unexpected Live seed"))
     requests = []
 
     class Historical:
@@ -57,7 +60,7 @@ def test_chart_study_contract_uses_exact_inclusive_bound(client, monkeypatch):
             return MarketSeriesPageResult({}, (bar,), (END, END), False, None, ())
 
     monkeypatch.setattr(market, "build_market_data_service", lambda *args, **kwargs: Historical())
-    response = client.get(PATH, params=PARAMS)
+    response = client.get(PATH, params=params)
     assert response.status_code == 200
     assert len(requests) == 2
     assert requests[0].before == END
@@ -72,7 +75,7 @@ def test_chart_study_contract_uses_exact_inclusive_bound(client, monkeypatch):
     assert all(feature["points"] == [
         {"status": "WARMING", "values": None, "diagnostic": "LOOKBACK_REQUIRED"},
     ] for feature in features)
-    cached = client.get(PATH, params=PARAMS)
+    cached = client.get(PATH, params=params)
     assert cached.json() == payload
     assert len(requests) == 3
 

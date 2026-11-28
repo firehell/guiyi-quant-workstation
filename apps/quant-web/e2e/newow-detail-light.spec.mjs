@@ -186,7 +186,7 @@ for (const [width, height] of [[1280, 800], [1440, 900], [1920, 1080], [2560, 14
         .find(element => ['auto', 'scroll'].includes(getComputedStyle(element).overflowY) && element.scrollHeight > element.clientHeight + 1)
       if (target) target.scrollTop = 0
     })
-    await expect(page.locator('.market-navigation__brand')).toBeInViewport()
+    await expect(page.locator('.ws-brand')).toBeInViewport()
     await page.mouse.move(0, 0)
     await expect(page).toHaveScreenshot(`newow-light-${width}.png`, { animations: 'disabled', maxDiffPixels: 500 })
     const trigger = mainExplanation(page)

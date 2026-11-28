@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { createWorkstationPaneRenderer } from '../market/detail/newow/workstationPaneRenderer'
+import type { ArchivePane, WorkstationStyles } from '@/utils/workstationChartPanes'
 import { SubingVolumeTierPrimitive } from './subingVolumeTierPrimitive'
 import { CHART_PROFILES, DISPLAY_CATALOG, mountChartHost, type ChartHost, type ChartLayer, type ChartProfileId } from '@guiyi/quant-chart'
 import { volumePresentation, validVolume, VOLUME_DISPLAY_VERSION, VOLUME_SCALE_OPTIONS, type DisplayVolumeBar } from '@guiyi/quant-chart/volume'
@@ -13,6 +15,7 @@ import { inject, nextTick, onMounted, onUnmounted, ref, shallowRef, watch } from
 import { DETAIL_CHART_SESSION, detailChartViewport, placeDetailChartViewport, detailChartVolumeBars, detailChartTime, detailChartPaneLayout, detailChartIndex, detailChartLength, detailChartTimeAt, type DetailChartSession } from '@/utils/detailChartSession'
 import {
   ColorType,
+  PriceScaleMode,
   createChart,
   type IChartApi,
   type ISeriesMarkersPluginApi,
@@ -85,6 +88,9 @@ function latestStudyPoint(
 
 const props = withDefaults(defineProps<{
   chartProfile?: ChartProfileId
+  workstationPanes?: ArchivePane[]
+  workstationStyles?: WorkstationStyles
+  logPrice?: boolean
   dynamicRange?: DynamicRangeDisplay | null
   patternGeometry?: PatternGeometry | null
   bars: BarData[]
@@ -142,6 +148,31 @@ const emit = defineEmits<{
   'toggle-talib-macd': []
 }>()
 
+const paneRenderer = createWorkstationPaneRenderer()
+const workstationHeaders = ref<ReturnType<typeof paneRenderer.headers>>([])
+const enlargedAuxiliary = ref<ArchivePane['id'] | null>(null)
+function toggleAuxiliarySize(component: ArchivePane['id']) {
+  enlargedAuxiliary.value = enlargedAuxiliary.value === component ? null : component
+  syncPaneLayout()
+  requestAnimationFrame(syncMacdLabelTop)
+}
+function renderWorkstationPanes() {
+  if (!host || !props.workstationPanes) return
+  const panes = sharedPriceWritten ? props.workstationPanes
+    : props.workstationPanes.map(pane => ({ ...pane, chart: null, auxiliary: null, message: '主图行情不可用' }))
+  paneRenderer.render(host, panes, sharedPriceWritten ? renderedBars.map(chartTime) : [])
+  syncPaneLayout()
+  syncMacdLabelTop()
+}
+watch(() => props.workstationPanes, () => {
+  if (!host || !chart) return
+  const range = chart.timeScale().getVisibleLogicalRange()
+  renderWorkstationPanes()
+  renderStudyData(resolveChartTheme(container.value ?? document.documentElement))
+  if (range) chart.timeScale().setVisibleLogicalRange(range)
+  detailSession?.restoreInspectionCursor()
+}, { flush: 'post' })
+
 const volumeTierPrimitive = new SubingVolumeTierPrimitive()
 const volumeTierMarkCount = ref(0)
 const container = ref<HTMLElement>()
@@ -192,6 +223,7 @@ watch(() => [props.referenceCallouts, props.referenceSelection], () => {
 }, { deep: true })
 const referenceTargetSegments = ref(0), referenceStopSegments = ref(0)
 let host: ChartHost | null = null
+const releaseInspector = detailSession?.attachInspector(() => (host?.diagnostics() ?? []).filter(d => d.indicatorId !== 'auxiliary_axis'))
 let chart: IChartApi | null = null
 let candles: ISeriesApi<'Candlestick'> | null = null
 let sharedPriceWritten = false
@@ -290,9 +322,12 @@ onMounted(async () => {
     },
   }, detailSession?.acquire ?? createChart)
   chart = host.chart
-  chart.addPane()
+  if (props.workstationPanes) chart.priceScale('right', 0).applyOptions({ mode: props.logPrice ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal })
+  if (!props.workstationPanes) {
+    chart.addPane()
+    host.addAuxiliary('default')
+  }
   syncPaneLayout()
-  host.addAuxiliary('default')
   const price = host.layer('price', 'price', 'main')
   candles = price.candles({
     upColor: theme.candleUp,
@@ -332,6 +367,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  releaseInspector?.()
   if (calloutFrame !== null) cancelAnimationFrame(calloutFrame)
   if (viewportStabilityFrame !== null) cancelAnimationFrame(viewportStabilityFrame)
   rangeCache = null
@@ -350,19 +386,21 @@ watch(() => props.visibleMainIndicators, () => {
   detailSession?.restoreInspectionCursor()
 }, { deep: true })
 watch([() => props.studyDisplay, () => props.studyCompleted, () => props.studyIssue, () => props.studyTailIssue], () => {
-  renderStudyData(resolveChartTheme())
+  renderStudyData(resolveChartTheme(container.value ?? document.documentElement))
   detailSession?.restoreInspectionCursor()
 })
-watch(() => props.studyPreview, () => renderStudyPreview(resolveChartTheme()))
+watch(() => props.studyPreview, () => renderStudyPreview(resolveChartTheme(container.value ?? document.documentElement)))
 watch(() => props.talibMacd, () => {
-  const theme = resolveChartTheme()
-  if (!props.talibMacd) renderThsMacd(theme)
+  const theme = resolveChartTheme(container.value ?? document.documentElement)
+  if (!props.talibMacd && !props.workstationPanes) renderThsMacd(theme)
   renderStudyData(theme)
   renderStudyPreview(theme)
   if (props.talibMacd) removeThsMacd()
 })
 watch(() => props.dynamicRange, () => { renderDynamicRange(); detailSession?.restoreInspectionCursor() })
 watch(() => props.savedReferenceLines, renderSavedReferenceLines)
+watch(() => props.workstationStyles, () => { renderSavedReferenceLines(); renderStudyData(resolveChartTheme(container.value ?? document.documentElement)) })
+watch(() => props.logPrice, log => chart?.priceScale('right', 0).applyOptions({ mode: log ? PriceScaleMode.Logarithmic : PriceScaleMode.Normal }))
 watch(() => props.referenceIndicators, () => { renderDerivedSeries() }, { deep: true })
 watch(() => props.qualityBreaks, () => { renderAllSeries() }, { deep: true })
 watch(() => [props.subingVolumeTiers, props.volumeScoring, props.loading, props.error, props.period], () => { renderAllSeries() })
@@ -388,6 +426,8 @@ function barValues(bars: BarData[]) {
     low: bar.low,
     close: bar.close,
     physicalContract: bar.confirmed === false ? undefined : bar.physicalContract?.toUpperCase(),
+    sourceBarSha256: bar.sourceBarSha256, marketSource: bar.marketSource, calculationSegmentId: bar.calculationSegmentId,
+    trading_day: bar.trading_day, confirmed: bar.confirmed, volume: bar.volume,
   }))
   const occupied = new Set(values.map(item => chartTimeKey(item.time)))
   for (const item of props.qualityBreaks) {
@@ -753,6 +793,8 @@ function renderSavedReferenceLines(): void {
       series ??= layer.line({
         color: line.color, title: line.label, lineWidth: 1, lastValueVisible: false, priceLineVisible: false,
       })
+      const style = props.workstationStyles?.[line.id.split(':')[0] as keyof WorkstationStyles]
+      series.applyOptions({ color: line.color, lineWidth: 1, ...style })
       series.setData(chartValues(line.points, barsByTime))
       const cutoff = lastMatching(line.points, point => barsByTime.has(point.time) && Number.isFinite(point.value))?.time ?? null
       layer.updateDiagnostics({
@@ -802,6 +844,7 @@ function renderAllSeries(): void {
     container.value.dataset.klineFrequency = props.period
   }
   renderVolumeBars()
+  renderWorkstationPanes()
   renderSavedReferenceLines()
   renderDerivedSeries()
 }
@@ -868,6 +911,7 @@ function writeDerivedSeries(): void {
   const rangeKey = JSON.stringify([props.rangeDetectorSourceIdentity, props.rangeDetectorAnchorTime, 'range_detector_lux_v1'])
   const cachedRange = rangeEnabled && rangeCache?.bars === renderedBars && rangeCache.key === rangeKey ? rangeCache.result : null
   derivedData = buildKlineDerivedData(renderedBars, props.visibleMainIndicators, {
+    hideThsMacd: !!props.workstationPanes || props.talibMacd,
     rangeDetector: { enabled: rangeEnabled && !cachedRange, sourceIdentity: props.rangeDetectorSourceIdentity, anchorTime: props.rangeDetectorAnchorTime },
   })
   if (cachedRange) derivedData.rangeDetector = cachedRange
@@ -884,7 +928,7 @@ function writeDerivedSeries(): void {
     const line = host.layer('trade-reference', 'trade_reference', 'main').line({ color: level.kind === 'target' ? '#b28a36' : '#cc6262', lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false, pointMarkersVisible: true, pointMarkersRadius: 2 })
     line.setData(chartValues(level.points))
   }
-  const theme = resolveChartTheme()
+  const theme = resolveChartTheme(container.value ?? document.documentElement)
 
   referenceStudy = referenceIndicatorOverlay(renderedBars, props.referenceIndicators)
   renderStudyData(theme)
@@ -985,7 +1029,7 @@ function renderStudyData(theme: ReturnType<typeof resolveChartTheme>) {
     const last = latestStudyPoint(points, facts)
     const written = host.renderLayer(indicator, indicator, 'main', 'line', layer => {
       const series = emaLines[indicator] ??= layer.line({ color: emaColors[indicator], lineWidth: indicator === 'ema_21' ? 2 : 1, lastValueVisible: false })
-      series.applyOptions({ color: emaColors[indicator] })
+      series.applyOptions({ color: emaColors[indicator], lineWidth: indicator === 'ema_21' ? 2 : 1, ...props.workstationStyles?.[indicator] })
       writeStudyPoints(series, chartValues(points, nativeBars))
       layer.updateDiagnostics(referenceSeries ? { frequency: props.period,
         dataCutoff: last?.time ?? null, status: last?.value != null ? 'ready' : 'missing_input', lastError: null,
@@ -996,6 +1040,7 @@ function renderStudyData(theme: ReturnType<typeof resolveChartTheme>) {
   }
   if (renderBoll(theme, nativeBars)) liveCount += readyCompletedCount('boll')
   if (renderTalibMacd(theme, nativeBars)) liveCount += readyCompletedCount('macd')
+  if (props.workstationPanes) syncMacdLabelTop()
   liveStudyPointCount.value = liveCount
 }
 
@@ -1012,8 +1057,8 @@ function renderBoll(theme: ReturnType<typeof resolveChartTheme>, nativeBars: Rea
     return false
   }
   const written = host.renderLayer('boll', 'boll', 'main', 'band', layer => {
-    const boundary = { color: theme.ema60, lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false } as const
-    const center = { ...boundary, color: theme.ema10, lineStyle: 0 } as const
+    const boundary = { color: theme.ema60, lineWidth: 1, lineStyle: 2, lastValueVisible: false, priceLineVisible: false, ...props.workstationStyles?.boll_edge } as const
+    const center = { ...boundary, color: theme.ema10, lineWidth: 1, lineStyle: 0, ...props.workstationStyles?.boll_mid } as const
     bollLines ??= { ...layer.band(boundary, boundary), middle: layer.line(center) }
     bollLines.upper.applyOptions(boundary)
     bollLines.middle.applyOptions(center)
@@ -1042,7 +1087,9 @@ function renderTalibMacd(theme: ReturnType<typeof resolveChartTheme>, nativeBars
     talibMacdPointCount.value = 0
     return false
   }
-  const written = host.renderLayer('talib-macd', 'macd', AUXILIARY_PANE, 'histogram', layer => {
+  const pane = props.workstationPanes ? { auxiliary: 'macd' } : AUXILIARY_PANE
+  if (props.workstationPanes && !host.hasLayer('workstation-axis:macd')) return false
+  const written = host.renderLayer('talib-macd', 'macd', pane, 'histogram', layer => {
     if (!talibMacdLayers) {
       talibMacdLayers = {
         histogram: layer.histogram({ base: 0, lastValueVisible: false }),
@@ -1050,9 +1097,11 @@ function renderTalibMacd(theme: ReturnType<typeof resolveChartTheme>, nativeBars
         dea: layer.line({ color: '#d4b000', lineWidth: 1, lastValueVisible: false }),
       }
       layer.priceLevel(talibMacdLayers.dif, { price: 0, color: '#888888', lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: '' })
-      chart?.priceScale('right', 1).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
+      chart?.priceScale('right', host!.paneIndex(pane)).applyOptions({ scaleMargins: { top: 0.15, bottom: 0.1 } })
       syncPaneLayout()
     }
+    talibMacdLayers.dif.applyOptions({ color: '#00bfcf', lineWidth: 1, ...props.workstationStyles?.macd_dif })
+    talibMacdLayers.dea.applyOptions({ color: '#d4b000', lineWidth: 1, ...props.workstationStyles?.macd_dea })
     const histogram = studyPoints('macd', 'histogram')
     writeStudyPoints(talibMacdLayers.histogram, chartValues(histogram, nativeBars).map(point => 'value' in point
       ? { ...point, color: point.value >= 0 ? theme.volumeUp : theme.volumeDown } : point))
@@ -1214,7 +1263,7 @@ function renderThsMacd(theme: ReturnType<typeof resolveChartTheme>): void {
 
 function writeMarkersAndMacd(theme: ReturnType<typeof resolveChartTheme>): void {
   if (!host) return
-  if (props.talibMacd) removeThsMacd()
+  if (props.talibMacd || props.workstationPanes) removeThsMacd()
   else renderThsMacd(theme)
   if (props.visibleMainIndicators.includes('htdy')) {
     const written = host.renderLayer('htdy', 'htdy', 'main', 'line', layer => {
@@ -1323,7 +1372,7 @@ function chartValues(points: KlineValuePoint[] | undefined, visibleBars?: Readon
 
 function chartMarkers(markers: KlineMarker[]) {
   const barsByTime = new Map(renderedBars.map((bar) => [markerTimeKey(bar.time), bar]))
-  const theme = resolveChartTheme()
+  const theme = resolveChartTheme(container.value ?? document.documentElement)
   const drawn: KlineMarker[] = []
   const ordinary = markers.flatMap((marker) => {
     const bar = barsByTime.get(markerTimeKey(marker.time))
@@ -1396,6 +1445,7 @@ function isDaily() {
 
 function syncMacdLabelTop() {
   scheduleReferenceCallouts()
+  if (host && props.workstationPanes) workstationHeaders.value = paneRenderer.headers(host, props.workstationPanes)
   const panes = chart?.panes()
   if (!panes || panes.length < 2) return
   macdLabelTop.value = panes[0].getHeight()
@@ -1403,6 +1453,18 @@ function syncMacdLabelTop() {
 
 function syncPaneLayout() {
   if (!container.value || !chart) return
+  if (props.workstationPanes && host) {
+    const panes = chart.panes()
+    if (!props.workstationPanes.some(p => p.id === enlargedAuxiliary.value)) enlargedAuxiliary.value = null
+    const height = props.workstationPanes.reduce((total, pane) => total + pane.height, 0)
+    const available = container.value.clientHeight - 30
+    panes[0]?.setStretchFactor(enlargedAuxiliary.value ? 88 : Math.max(220, available - height))
+    for (const pane of props.workstationPanes) {
+      const size = enlargedAuxiliary.value ? (pane.id === enlargedAuxiliary.value ? Math.max(200, available - 88 - 48 * (props.workstationPanes.length - 1)) : 48) : pane.height
+      if (host.hasLayer('workstation-axis:' + pane.id)) panes[host.paneIndex({ auxiliary: pane.id })]?.setStretchFactor(size)
+    }
+    return
+  }
   const layout = detailSession ? detailChartPaneLayout(container.value.clientHeight, 32) : null
   const panes = chart.panes()
   panes[0]?.setStretchFactor(layout?.mainHeight ?? 6)
@@ -1438,6 +1500,7 @@ defineExpose({
     :data-subing-volume-tiers="subingVolumeTiers"
     :data-alert-marker-count="alertMarkers.length"
     :data-macd-point-count="macdPointCount"
+    :style="workstationPanes ? { height: `calc(clamp(360px, 55vh, 660px) + ${workstationPanes.reduce((n, p) => n + p.height, 0)}px)`, minHeight: 0 } : undefined"
     :data-boll-point-count="bollPointCount"
     :data-live-study-point-count="liveStudyPointCount"
     :data-preview-study-point-count="previewStudyPointCount"
@@ -1466,9 +1529,13 @@ defineExpose({
     <KlineHoverLegend
       :context="hoverContext"
       :period="period"
-      :show-macd="true"
+      :show-macd="!workstationPanes || talibMacd"
     />
-    <component
+    <div v-for="pane in workstationHeaders" :key="pane.id" class="secondary-panel-label" :style="{ top: (pane.top + 3) + 'px' }" :data-workstation-pane="pane.id">
+      <button class="pane-size" type="button" :aria-label="(enlargedAuxiliary === pane.component ? '还原' : '放大') + pane.label" :aria-pressed="enlargedAuxiliary === pane.component" @click="toggleAuxiliarySize(pane.component)">{{ enlargedAuxiliary === pane.component ? '还原' : '放大' }}</button>
+      {{ pane.label }}<span v-if="pane.retrospective"> · 历史回看，会重绘</span><span v-if="pane.note"> · {{ pane.note }}</span>
+    </div>
+    <component v-if="!workstationPanes"
       :is="allowGenericMacd ? 'button' : 'div'"
       class="secondary-panel-label"
       :class="{ 'secondary-panel-label--select': allowGenericMacd }"
@@ -1504,6 +1571,7 @@ defineExpose({
 .reference-callouts { position: absolute; inset: 0; pointer-events: none; z-index: 3; overflow: hidden; }
 .chart { width: 100%; height: 100%; }
 .secondary-panel-label { position: absolute; z-index: 3; left: 10px; min-height: 26px; padding: 3px 8px; background: color-mix(in srgb, var(--gy-bg-panel) 88%, transparent); color: var(--gy-text-primary); font-size: var(--gy-font-size-xs); font-weight: 600; pointer-events: none; }
+.pane-size { pointer-events: auto; cursor: pointer; margin-right: 4px; color: inherit; background: transparent; border: 1px solid var(--gy-border); border-radius: 3px; font: inherit; }
 .secondary-panel-label.secondary-panel-label--select { border: 0; cursor: pointer; pointer-events: auto; text-align: left; font-family: inherit; }
 .htdy-legend { position: absolute; z-index: 2; top: 52px; right: 72px; display: flex; gap: 12px; align-items: center; padding: 5px 9px; border: 1px solid var(--gy-border); border-radius: var(--gy-radius-sm); background: rgba(255, 255, 255, .9); color: var(--gy-text-secondary); font-size: var(--gy-font-size-xs); pointer-events: none; box-shadow: var(--gy-shadow-sm); }
 .htdy-legend span { display: inline-flex; gap: 5px; align-items: center; white-space: nowrap; }

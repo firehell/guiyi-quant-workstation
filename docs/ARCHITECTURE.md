@@ -11,6 +11,8 @@
 | 参考交易 | 纯投影；统一 ReferenceTrading 的历史重算/前向观察仓储与查询 | Order、Fill、Position、PnL |
 | API/Web | app.main 的注册路由；Market 两条页面路由和统一详情控制器 | 重新算公式、配对交易或自选行情事实 |
 | 策略中心 | `app.strategy_center` 读取 ReferenceTrading、TQKQ Monitor 和 SuBing PortfolioJournal | 策略计算、账户、调度、配置写入 |
+| 交易日志与复盘中心 | `app.trade_journal` 保存计划、案例与复盘，读取各领域已有证据 | 交易账户、行情、策略与回测执行 |
+| 统计与研究中心 | `app.research_center` 读取上游正式证据，隔离 worker 计算并发布带指纹的研究结果 | 行情、成交或原生回测事实，策略晋升 |
 | Runtime/Alert | runtime_entry 与既有监督服务；Event 持久化后 one-shot transport | 自行扩大 Scope、重放通知或晋升策略 |
 | 维护工具 | guiyi CLI、部署入口和有界修复脚本复用领域服务 | 另建行情 resolver 或绕过维护锁 |
 
@@ -237,6 +239,13 @@ JM Paper CLI 复用 MarketDataService 的 verified Canonical 与既有 Newow 原
 manage/trade实现有各自执行限制，不能由observe运行推导交易开放。共享行情仍经
 `app.simnow_portfolio_market` 与既有MDS/Calendar/Session入口，原生盘口不写Historical Canonical。
 当前启用模式、exact版本和自然验收以 `STATUS.md` 为准；合同见 [SIMNOW_EXECUTION](SIMNOW_EXECUTION.md#全品种持续宿主simnow_continuous_v1)。
+
+## 模拟交易中心
+
+`app.simulation_center` 从专用 PostgreSQL 读取柜台证据。独立 `services/newow-vnpy/simulation_observer.py`
+复用 VeighNa EventEngine、MainEngine 和锁定版 CTP TD 接口。每个 SimNow 账户对应一个原生目录和账户写入者。
+市场事实、回测及旧模拟归档沿用各自入口。当前候选为账户观察，执行和迁移条件见
+[模拟交易中心设计](../openspec/changes/add-simulation-center/design.md)。
 
 ## 快期模拟执行与监控
 

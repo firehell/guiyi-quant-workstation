@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import ContractStrip from '@/components/workstation/ContractStrip.vue'
+import MarketChartDesk from '@/components/workstation/MarketChartDesk.vue'
 import { useWorkstationAccounts } from '@/composables/useWorkstationAccounts'
 import { tqChartExecutions, subingChartExecutions, locateChartExecutions } from '@/utils/workstationChartActivity'
 import { rememberWorkstationChart, rememberWorkstationNewowMode } from '@/utils/workstationRoutes'
+import { paneOptions, selectPrimaryPane, type PaneId } from '@/utils/workstationChartPanes'
+import { MAX_AUXILIARY_PANES } from '@guiyi/quant-chart'
+import WorkstationChartSettings from '@/components/market/detail/newow/WorkstationChartSettings.vue'
+import { useWorkstationChartPanes } from '@/composables/useWorkstationChartPanes'
 import MarketKlineStage from '@/components/market/detail/MarketKlineStage.vue'
 import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
 import { useMarketDetailQuote, projectMarketDetailQuoteHeader } from '@/composables/useMarketDetailQuote'
@@ -59,12 +64,20 @@ const seriesPreferenceMigrated = ref(false)
 const preferences = ref(loadMarketDetailPreferences(undefined, () => { seriesPreferenceMigrated.value = true }))
 if (seriesPreferenceMigrated.value) saveMarketDetailPreferences(preferences.value)
 const workspaceVisible = ref(true)
+const contractsOpen = ref(false)
 const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
-provide(MARKET_CHART_STUDY_CONTEXT, computed(() => {
+const chartStudyContext = computed(() => {
   const identity = explicitIdentity.value
+  if (identity?.view === 'newow' && newowAfterMarketOnly.value) {
+    return {
+      identity: { ...identity, profile: 'newow' as const }, talibMacd: false, toggleMacd() {},
+      active: controller.studyActivity, allowCompleted: controller.studyCompletedAvailable,
+      revision: controller.studyRevision, revisionPending: controller.studyRevisionPending, allowTail: false,
+    }
+  }
   if (!identity || !isGenericChartProfile(identity.view)) return null
   const profile = identity.view
   const talibMacd = preferences.value.talibMacd?.includes(profile) === true
@@ -85,7 +98,8 @@ provide(MARKET_CHART_STUDY_CONTEXT, computed(() => {
     revisionPending: controller.studyRevisionPending,
     allowTail: !identity.focusBarEnd,
   }
-}))
+})
+provide(MARKET_CHART_STUDY_CONTEXT, chartStudyContext)
 const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
 const newowAfterMarketOnly = computed(() => marketFoundation || explicitIdentity.value?.newowSource === 'after-market')
 const { rows: accountActivity, recentTqRecords, tq, subing, tqAccount, subingAccount } = useWorkstationAccounts()
@@ -220,6 +234,16 @@ const savedChart = computed(() => projectMarketReferenceChart(
   explicitIdentity.value?.symbol ?? '', savedStrategy.value, explicitIdentity.value?.frequency ?? '',
   savedPresentation.value?.sourceRevision ?? null,
 ))
+const singleChartVisible = ref(true)
+const workstationChartScope = computed(() => {
+  const identity = explicitIdentity.value
+  return singleChartVisible.value && newowAfterMarketOnly.value && identity?.view === 'newow'
+    ? { product: identity.symbol, strategy: savedStrategy.value, frequency: identity.frequency } : null
+})
+const { layers: workstationLayers, panes: workstationPanes } = useWorkstationChartPanes(
+  () => workstationChartScope.value, () => savedReference.value?.source ?? null,
+  controller.bars, () => savedChart.value.matched,
+)
 const savedLatest = computed(() => savedChart.value.matched.at(-1))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
   || ((newowAfterMarketOnly.value || explicitIdentity.value.seriesKind === 'actual_dominant') && explicitIdentity.value.frequency !== '1m'
@@ -347,6 +371,12 @@ function selectProduct(option: ProductOption) {
   selectIdentity({ ...identity, symbol: option.symbol, focusBarEnd: undefined })
 }
 
+function addComparison(pane: PaneId) {
+  const layers = workstationLayers.value
+  if (layers.panes.length >= MAX_AUXILIARY_PANES || layers.panes.some(p => p.id === pane)) return
+  workstationLayers.value = { ...layers, panes: [...layers.panes, { id: pane, height: 144 }] }
+}
+
 function updateFreePreferences(free: FreeDetailPreferences) {
   preferences.value = replaceFreeDetailPreferences(preferences.value, free)
   saveMarketDetailPreferences(preferences.value)
@@ -355,6 +385,21 @@ function updateFreePreferences(free: FreeDetailPreferences) {
 function updateHtdyPreferences(htdy: FlexibleDetailPreferences) {
   preferences.value = replaceHtdyDetailPreferences(preferences.value, htdy)
   saveMarketDetailPreferences(preferences.value)
+}
+
+const emaChoices = ['ema_10', 'ema_21', 'ema_60'] as const
+const flexibleView = computed(() => {
+  const view = explicitIdentity.value?.view
+  return view === 'free' || view === 'htdy' ? view : null
+})
+function toggleDeskEma(id: typeof emaChoices[number]) {
+  const view = flexibleView.value
+  if (!view) return
+  const current = preferences.value[view]
+  const ids = current.optionalEmaIndicators
+  const next = { ...current, optionalEmaIndicators: ids.includes(id) ? ids.filter(i => i !== id) : [...ids, id] }
+  if (view === 'free') updateFreePreferences(next)
+  else updateHtdyPreferences(next)
 }
 
 function resolveFocus(focusBarEnd: string) {
@@ -394,8 +439,8 @@ onUnmounted(() => chartSession.dispose())
 </script>
 
 <template>
-  <main class="market-detail-page unified-detail-light" :data-detail-ready="shellReady ? 'true' : 'false'">
-    <MarketNavigation active-tab="market">
+  <main class="market-detail-page workstation-market" :data-detail-ready="shellReady ? 'true' : 'false'">
+    <MarketNavigation active-tab="market" mast>
       <template #search>
         <ProductSelector
           ref="productSelector"
@@ -405,6 +450,9 @@ onUnmounted(() => chartSession.dispose())
           :label="marketFoundation ? '搜索品种' : '搜索60品种'"
           @select="selectProduct"
         />
+      </template>
+      <template v-if="routeResult.kind === 'valid'" #actions>
+        <button type="button" class="ws-button ws-contract-toggle" :aria-expanded="contractsOpen" aria-controls="ws-physical-contracts" @click="contractsOpen = !contractsOpen">合约列表</button>
       </template>
     </MarketNavigation>
     <template v-if="routeResult.kind === 'invalid'">
@@ -419,8 +467,9 @@ onUnmounted(() => chartSession.dispose())
     </template>
 
     <template v-else-if="routeResult.kind === 'valid'">
-      <ContractStrip :active-contract="routeResult.identity.contract ?? header?.displayContract" :active-product="routeResult.identity.symbol"
+      <ContractStrip v-if="contractsOpen" id="ws-physical-contracts" :active-contract="routeResult.identity.contract ?? header?.displayContract" :active-product="routeResult.identity.symbol"
         :activity="accountActivity" :verified-sources="verifiedAccountSources" @select="selectPhysicalContract" />
+      <div class="ws-quote-band">
       <MarketDetailTopBar
         static-identity
         :display-date="header?.tradingDay"
@@ -435,6 +484,7 @@ onUnmounted(() => chartSession.dispose())
         @open-history="openHistory"
       />
       <MarketDetailQuoteHeader v-if="header" :header="header" :source-note="quoteSourceNote" :identity-key="identityKey" :unified="isWorkspacePreview" :newow="true" :hide-extended-facts="['htdy', 'subing', 'free'].includes(routeResult.identity.view)" />
+      </div>
       <MarketDetailViewNav
         :identity="routeResult.identity"
         :products="controller.productCatalog.value"
@@ -462,6 +512,21 @@ onUnmounted(() => chartSession.dispose())
       </MarketDetailViewNav>
       <NewowAiAnalysisDialog v-if="isNewowView && !newowAfterMarketOnly" :open="aiOpen" :product="routeResult.identity.symbol" :as-of="aiAsOf" :identity-key="identityKey" @close="aiOpen = false" @adopt="adoptAiRecommendation" />
         <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
+        <MarketChartDesk :identity="routeResult.identity" :session="chartSession" :products="productOptions" :status="productSelectorStatus"
+          :preferences="{ chart: preferences, workstation: workstationLayers }"
+          :bars="controller.studyActivity.value?.bar ? [...controller.bars.value, controller.studyActivity.value.bar] : controller.bars.value"
+          @single="singleChartVisible = $event" @select="selectProduct" @period="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })">
+          <template #settings>
+            <WorkstationChartSettings v-if="routeResult.identity.view === 'newow' && newowAfterMarketOnly" v-model="workstationLayers" :strategy="savedStrategy" />
+            <fieldset v-else-if="chartStudyContext" class="desk-generic-studies">
+              <legend>Quant Core · 显示设置</legend>
+              <template v-if="flexibleView">
+                <label v-for="id in emaChoices" :key="id"><input type="checkbox" :checked="preferences[flexibleView].optionalEmaIndicators.includes(id)" @change="toggleDeskEma(id)"/>主图 {{ id.replace('_', '').toUpperCase() }}</label>
+              </template>
+              <label v-if="flexibleView === 'free'"><input type="checkbox" :checked="preferences.free.showBoll" @change="updateFreePreferences({ ...preferences.free, showBoll: preferences.free.showBoll ? undefined : true })"/>主图 BOLL (20, 2)</label>
+              <label><input type="checkbox" :checked="chartStudyContext.talibMacd" @change="chartStudyContext.toggleMacd()"/>副图 MACD (12, 26, 9)</label>
+            </fieldset>
+          </template>
         <section
           class="market-detail-page__workspace"
           v-if="workspaceVisible"
@@ -469,8 +534,6 @@ onUnmounted(() => chartSession.dispose())
           :data-active-view="routeResult.identity.view"
           :aria-busy="controller.state.value.loading"
         >
-          <MarketChartProgress v-if="!candidatePreview.enabled" :key="identityKey"
-            :identity="routeResult.identity" :historical="!!newowHistoricalAsOf" />
           <p v-if="controller.state.value.loading && routeResult.identity.view !== 'newow'" class="market-detail-page__loading" role="status">正在加载当前图表…</p>
           <MarketDetailUnavailable
             v-else-if="routeResult.identity.view !== 'newow' && (controller.state.value.error || !header)"
@@ -488,11 +551,11 @@ onUnmounted(() => chartSession.dispose())
           </template>
           <template v-else>
           <template v-if="routeResult.identity.view === 'newow' && newowAfterMarketOnly">
-            <MarketKlineStage
+            <MarketKlineStage :workstation-panes="workstationPanes" :workstation-styles="workstationLayers.strokes" :log-price="workstationLayers.logPrice"
               :identity-key="marketAxisKey" :bars="controller.bars.value" :mutation="controller.mutation.value"
               :loading="controller.state.value.loading" :error="controller.state.value.error"
               :period="routeResult.identity.frequency" :series-kind="routeResult.identity.seriesKind"
-              :visible-main-indicators="[]" range-detector-source-identity="" :range-detector-anchor-time="null"
+              :visible-main-indicators="workstationLayers.overlays" range-detector-source-identity="" :range-detector-anchor-time="null"
               :volume-scoring="false" :show-derived-markers="false" :marker-selection-enabled="false"
               :research-markers="savedChart.markers"
               :saved-reference-lines="savedChart.lines"
@@ -502,6 +565,16 @@ onUnmounted(() => chartSession.dispose())
               :history-error="controller.historyError.value"
               @load-earlier="controller.loadMoreBefore" @focus-resolved="resolveFocus"
             />
+            <div class="workstation-quick-pane" role="group" aria-label="切换首个副图">
+              <button v-for="option in paneOptions.filter(item => item.id !== 'macd')" :key="option.id"
+                type="button" :aria-pressed="workstationLayers.panes[0]?.id === option.id"
+                @click="workstationLayers = selectPrimaryPane(workstationLayers, option.id)">{{ option.label }}</button>
+              <label><select aria-label="添加副图对照" value="" :disabled="workstationLayers.panes.length >= MAX_AUXILIARY_PANES"
+                @change="addComparison(($event.target as HTMLSelectElement).value as PaneId); ($event.target as HTMLSelectElement).value = ''">
+                <option value="" disabled>{{ workstationLayers.panes.length >= MAX_AUXILIARY_PANES ? '已有三个副图' : '＋ 对照' }}</option>
+                <option v-for="option in paneOptions.filter(item => !workstationLayers.panes.some(p => p.id === item.id))" :key="option.id" :value="option.id">{{ option.label }}</option>
+              </select></label>
+            </div>
             <p v-if="routeResult.identity.newowTest" role="status">此历史策略入口不属于盘后系列。</p>
             <p v-else-if="!newowFrequencyOpen" role="status">当前周期没有牛哇盘后结果，保留行情底图。</p>
             <div v-if="newowFrequencyOpen" class="market-detail-page__reference-note">
@@ -586,7 +659,7 @@ onUnmounted(() => chartSession.dispose())
             @focus-resolved="resolveFocus"
           >
             <template #chart-toolbar>
-              <DetailChartToolbar :identity="routeResult.identity" :target-price="toolbarPriceSummary.target?.display_value ?? null"
+              <DetailChartToolbar :show-reference-prices="toolbarPriceSummary.target?.display_value != null || toolbarPriceSummary.absorb?.display_value != null" :identity="routeResult.identity" :target-price="toolbarPriceSummary.target?.display_value ?? null"
                 :absorb-price="toolbarPriceSummary.absorb?.display_value ?? null" :status="toolbarPriceStatus"
                 @select="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })" />
             </template>
@@ -641,7 +714,10 @@ onUnmounted(() => chartSession.dispose())
             </template>
           </SubingDetailWorkspace>
           </template>
+          <MarketChartProgress v-if="!candidatePreview.enabled" :key="identityKey"
+            :identity="routeResult.identity" :historical="!!newowHistoricalAsOf" />
         </section>
+        </MarketChartDesk>
       <section v-if="showExecutions" class="execution-details" aria-label="只读委托与成交">
         <h2>只读委托与成交</h2>
         <p>□ 快期原生委托　■ 快期原生成交　● 苏冰模型成交。图点按原始时间与价格定位，坐标缺乏依据时保留记录。</p>
@@ -711,4 +787,11 @@ onUnmounted(() => chartSession.dispose())
   .market-detail-page { padding-inline: var(--gy-space-3); }
   .market-detail-page > :deep(.market-navigation) { margin-inline: calc(-1 * var(--gy-space-3)); }
 }
+</style>
+
+<style scoped>
+.workstation-quick-pane { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px 8px; }
+.workstation-quick-pane select { background: var(--gy-bg-panel); color: var(--gy-text-primary); border: 1px solid var(--gy-border); border-radius: 4px; padding: 3px 7px; cursor: pointer; }
+.workstation-quick-pane button { cursor: pointer; color: inherit; background: var(--gy-bg-panel); border: 1px solid var(--gy-border); border-radius: 4px; padding: 3px 9px; }
+.workstation-quick-pane button[aria-pressed=true] { border-color: var(--gy-color-primary, #5782cc); }
 </style>
