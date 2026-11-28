@@ -70,7 +70,7 @@ class Writer:
                 """SELECT facts FROM guiyi_simulation.readbacks WHERE alias = %s
                    ORDER BY observed_at DESC LIMIT 1""", (self.alias,)).fetchone()
             if previous:
-                _check_prefix(previous["facts"], snapshot)
+                check_order_prefix(previous["facts"], snapshot)
             self.connection.execute(
                 """INSERT INTO guiyi_simulation.fills (alias, native_id, occurred_at, facts)
                    SELECT %s, item->>'id', (item->>'occurred_at')::timestamptz, item
@@ -91,7 +91,7 @@ class Writer:
                 (self.alias, datetime.fromisoformat(snapshot["observed_at"]), Jsonb(snapshot)))
 
 
-def _check_prefix(previous: dict, current: dict):
+def check_order_prefix(previous: dict, current: dict):
     if (current["trading_day"] < previous["trading_day"]
             or datetime.fromisoformat(current["observed_at"]) <= datetime.fromisoformat(previous["observed_at"])):
         raise ReadbackError("READBACK_REGRESSION")

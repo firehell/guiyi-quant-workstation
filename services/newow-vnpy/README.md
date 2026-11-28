@@ -63,3 +63,13 @@ PYTHONPATH="$PWD/services/quant-api" services/newow-vnpy/.venv/bin/python \
 ```
 
 [验收与后续阶段](../../openspec/changes/add-simulation-center/tasks.md)。
+
+## 火天大有离线执行演练
+
+`simulation_execution.py` 的 `OfflineExecution` 先接受离线双轮柜台结构样本，再收取 HTDY completed 信号与有物理合约证据的执行输入。
+它以 PostgreSQL 记录 reducer 命令、风控决定、VeighNa 请求领取和原生结构证据。`prepare()` 返回 `OrderRequest` 或 `CancelRequest`。
+`reconcile()` 需要输入已匹配的离线回包和有来源的样本费用；同日快照缺已知委托或成交时保留上一次通过读回。
+`realized_trades()` 从可重放账本计算已对账平仓样本损益，统一标记 `OFFLINE_CTP_REHEARSAL`。
+
+测试在一次性空库依序应用 `simulation_schema.sql` 和 `simulation_execution_schema.sql`。使用隔离测试 DSN，
+运行 `tests/test_simulation_execution.py` 和 `quant-api/tests/simulation_center/test_execution_store.py`。离线表独立于现有 SimNow 验收数据库。
