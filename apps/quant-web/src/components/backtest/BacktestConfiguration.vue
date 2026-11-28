@@ -3,6 +3,7 @@ import { computed, onMounted, onScopeDispose, reactive, ref, shallowRef, watch }
 import { useRoute, useRouter } from 'vue-router'
 import { diagnosticCode, readEligibility, readTemplates, saveTemplate, submitRun, type Eligibility, type RunConfig, type Template } from '@/api/backtestCenter'
 import { diagnosticLabel, safeLocalLink, statusLabel } from './backtestDisplay'
+import { pendingRunRequest } from './backtestSubmission'
 
 const route = useRoute()
 const router = useRouter()
@@ -32,7 +33,6 @@ const versionMismatch = computed(() => Boolean(
   || selected.value?.profile_id && fields.profile_id && selected.value.profile_id !== fields.profile_id,
 ))
 const permitted = computed(() => !versionMismatch.value && selected.value !== undefined && ['TRIAL', 'QUALIFIED', 'READY', 'ELIGIBLE', 'AVAILABLE'].includes(selected.value.status))
-const latestSubmit = shallowRef<{ body: string; key: string }>()
 const linkLabels: Record<string, string> = { history: '独立历史回放', paper: '共享 Paper' }
 const strategyOptions = computed(() => [...new Map(items.value.map(item => [item.strategy_id, item.label]))])
 
@@ -87,7 +87,6 @@ function loadTemplate() {
   activeTemplate.value = template.template_id
   templateName.value = template.name
   executionDelay.value = Number(template.config.parameters?.execution_delay_minutes ?? 0)
-  latestSubmit.value = undefined
   error.value = ''
   message.value = ''
 }
@@ -141,13 +140,12 @@ async function submit() {
   if (!permitted.value || submitting.value) return
   const config = effectiveConfiguration()
   if (!config) return
-  const body = JSON.stringify(config)
-  if (latestSubmit.value?.body !== body) latestSubmit.value = { body, key: crypto.randomUUID() }
   submitting.value = true
   message.value = ''
   try {
-    const result = await submitRun(latestSubmit.value.key, config)
-    latestSubmit.value = undefined
+    const pending = await pendingRunRequest('submit', config)
+    const result = await submitRun(pending.key, config)
+    pending.accepted()
     if (!controller.signal.aborted) await router.push({ name: 'backtests', params: { runId: result.run_id } })
   } catch (reason) {
     if (!controller.signal.aborted) error.value = diagnosticCode(reason) ?? '提交结果未确认。再次提交相同配置将沿用原请求。'

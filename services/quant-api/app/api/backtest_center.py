@@ -147,6 +147,14 @@ def rerun(run_id: Key, body: RetryRequest, store: Store):
         raise _error(exc) from None
 
 
+@router.get("/runs/{run_id}/events")
+def events(run_id: Key, store: Store):
+    try:
+        return store.events(run_id)
+    except BacktestError as exc:
+        raise _error(exc) from None
+
+
 @router.get("/runs/{run_id}/report")
 def report(run_id: Key, store: Store):
     try:

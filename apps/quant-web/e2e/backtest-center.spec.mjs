@@ -28,9 +28,10 @@ test('keeps the open result and its Quant Chart replay bound to the selected Run
       items: recent.map(id => run(id)), total: recent.length, counts: { SUCCEEDED: recent.length },
       latest_attempt: run(recent[0]), latest_success: run(recent[0]),
     } })
+    if (path === '/runs/A/events') return route.fulfill({ json: { run_id: 'A', items: [] } })
     if (path === '/runs/A') return route.fulfill({ json: run('A') })
     if (path === '/runs/A/trades') return route.fulfill({ json: {
-      total: 51,
+      run_id: 'A', total: 51,
       items: [searchParams.get('offset') === '50' ? trade : { ...trade, trade_id: 'trade-first', unrealized_pnl: '29' }],
     } })
     if (path === '/runs/A/replay/trade-A') return route.fulfill({ json: {
@@ -100,9 +101,10 @@ test('diagnoses six strategies and submits a frozen historical configuration thr
         return route.abort('failed')
       }
       submitted = route.request().postDataJSON()
-      return route.fulfill({ json: run('new-run', 'QUEUED') })
+      return route.fulfill({ status: 202, json: run('new-run', 'QUEUED') })
     }
     if (path === '/runs') return route.fulfill({ json: { items: [], total: 0, counts: {} } })
+    if (path === '/runs/new-run/events') return route.fulfill({ json: { run_id: 'new-run', items: [] } })
     if (path === '/runs/new-run') return route.fulfill({ json: run('new-run', 'QUEUED') })
     return route.fulfill({ status: 404, json: {detail: {code: 'NOT_FOUND'}} })
   })
@@ -110,16 +112,22 @@ test('diagnoses six strategies and submits a frozen historical configuration thr
   await page.goto('/backtests?view=config&strategy=newow_trend')
   await expect(page.getByLabel('回测接入资格').getByRole('row')).toHaveCount(7)
   await expect(page.getByText('回看重绘', { exact: true })).toBeVisible()
-  await page.getByLabel('物理合约').fill('FU2603')
-  await page.getByLabel('预热开始').fill('2026-01-05')
-  await page.getByLabel('评价开始').fill('2026-02-02')
-  await page.getByLabel('评价结束').fill('2026-02-03')
+  async function fillConfig() {
+    await page.getByLabel('物理合约').fill('FU2603')
+    await page.getByLabel('预热开始').fill('2026-01-05')
+    await page.getByLabel('评价开始').fill('2026-02-02')
+    await page.getByLabel('评价结束').fill('2026-02-03')
+  }
+  await fillConfig()
   const delay = page.getByLabel('执行延迟（分钟）')
   await expect(delay).toHaveValue('0')
   await expect(delay.getByRole('option')).toHaveText(['0', '1', '2', '3'])
   await delay.selectOption('3')
   await page.getByRole('button', { name: '提交回测' }).click()
   await expect(page.getByRole('alert')).toContainText('提交结果未确认')
+  await page.reload()
+  await fillConfig()
+  await delay.selectOption('3')
   await page.getByRole('button', { name: '提交回测' }).click()
   await expect(page).toHaveURL(/\/backtests\/new-run/)
   expect(submitted).toEqual(firstRequest)
@@ -160,6 +168,7 @@ test('submits fixed OOS windows and reads the selected fold and member Run', asy
     if (path === '/experiments/oos-test/evidence') return route.fulfill({ json: {
       ...experiment, metrics: { net_return: '0.029', max_drawdown: '0.004' }, run_ids: ['oos-run'], missing_folds: [],
     } })
+    if (path === '/runs/oos-run/events') return route.fulfill({ json: { run_id: 'oos-run', items: [] } })
     if (path === '/runs/oos-run') return route.fulfill({ json: run('oos-run') })
     return route.fulfill({ status: 404, json: {detail: {code: 'NOT_FOUND'}} })
   })
@@ -221,6 +230,7 @@ test('shows a failed Plus preflight without a report or admission snapshot', asy
     ...run('no-rates', 'FAILED'), qualification: 'UNVERIFIED', snapshot: null, phase: 'ENGINE_STOPPED',
     diagnostic: 'PLUS_POINT_IN_TIME_TRADING_PARAMETERS_UNAVAILABLE',
   } }))
+  await page.route('**/api/v1/backtests/runs/no-rates/events', route => route.fulfill({ json: { run_id: 'no-rates', items: [] } }))
   await page.goto('/backtests/no-rates')
   await expect(page.getByRole('status')).toHaveText('当前 Plus 本地数据缺少按交易日生效的手续费和保证金依据。')
   await expect(page.getByText('研究资格 未核验')).toBeVisible()
@@ -228,4 +238,128 @@ test('shows a failed Plus preflight without a report or admission snapshot', asy
   await expect(page.getByText('引擎准入快照')).toHaveCount(0)
   await expect(page.getByRole('button', { name: '报告', exact: true })).toHaveCount(0)
   await expect(page.getByText('净累计收益', { exact: true })).toHaveCount(0)
+})
+
+test('keeps each partial fill and the old-contract valuation visible through same-Run pagination', async ({ page }) => {
+  const interrupted = {
+    ...trade, trade_id: 'rollover-A', status: 'ROLLOVER_INTERRUPTED', quantity: 3,
+    native_entry_ids: ['open-1', 'open-2'], native_exit_ids: ['close-1'],
+    net_pnl: '12', unrealized_pnl: '35', mark_price: '2807', marked_at: '2026-02-02T15:00:00+08:00',
+  }
+  const fill = (native_trade_id, position_effect, quantity, minute) => ({
+    native_trade_id, native_order_id: 'order-' + native_trade_id, position_effect, quantity, contract: 'FU2603',
+    signal_id: 'signal-' + native_trade_id, price: '2801', fee: '3',
+    modeled_fill_at: `2026-02-02T09:${minute}:00+08:00`, native_fill_at: `2026-02-02T09:${minute}:30+08:00`,
+  })
+  const fills = [fill('open-1', 'OPEN', 1, '06'), fill('open-2', 'OPEN', 2, '07'), fill('close-1', 'CLOSE_TODAY', 1, '08')]
+  const requests = []
+  let newest = 'rollover-run'
+  await page.route('**/api/v1/backtests/**', async route => {
+    const { pathname, searchParams } = new URL(route.request().url())
+    const path = pathname.replace('/api/v1/backtests', '')
+    requests.push([route.request().method(), path])
+    if (path === '/experiments') return route.fulfill({ json: { items: [] } })
+    if (path === '/runs') return route.fulfill({ json: {
+      items: [run(newest)], total: 1, counts: { SUCCEEDED: 1 }, latest_attempt: run(newest), latest_success: run(newest),
+    } })
+    if (path === '/runs/rollover-run') return route.fulfill({ json: run('rollover-run') })
+    if (path === '/runs/rollover-run/events') return route.fulfill({ json: { run_id: 'rollover-run', items: [] } })
+    if (path === '/runs/rollover-run/trades') return route.fulfill({ json: {
+      run_id: 'rollover-run', total: 51,
+      items: [searchParams.get('offset') === '50' ? { ...trade, trade_id: 'trade-on-page-2' } : interrupted],
+    } })
+    if (path === '/runs/rollover-run/replay/rollover-A') return route.fulfill({ json: {
+      run_id: 'rollover-run', contract: 'FU2603', frequency: '5m', revision: 'old-month-revision',
+      available: false, reason: 'RUN_CHART_WINDOW_UNAVAILABLE', trade: interrupted, bars: [], markers: [],
+      native_fills: fills, attempts: [],
+    } })
+    if (path === '/runs/rollover-run/replay/trade-on-page-2') return route.fulfill({ json: {
+      run_id: 'rollover-run', contract: 'FU2603', frequency: '5m', revision: 'old-month-revision',
+      available: true, trade: { ...interrupted, trade_id: 'trade-on-page-2' }, native_fills: fills, attempts: [],
+      bars: [
+        { at: '2026-02-02T09:10:00+08:00', open: '2808', high: '2810', low: '2800', close: '2803', in_position: true },
+        { at: '2026-02-02T15:00:00+08:00', open: '2803', high: '2807', low: '2798', close: '2805', in_position: true },
+      ],
+      markers: [
+        ...fills.map((item, index) => ({
+          native_trade_id: item.native_trade_id, at: '2026-02-02T09:10:00+08:00', event_at: item.modeled_fill_at,
+          kind: index === 2 ? 'EXIT' : 'ENTRY', price: item.price,
+        })),
+        { trade_id: 'trade-on-page-2', at: '2026-02-02T15:00:00+08:00', kind: 'VALUATION', price: '2807' },
+      ],
+    } })
+    return route.fulfill({ status: 404, json: { detail: { code: 'NOT_FOUND' } } })
+  })
+
+  await page.goto('/backtests')
+  await page.getByRole('link', { name: 'rollover-run', exact: true }).first().click()
+  await page.getByRole('button', { name: '交易明细' }).click()
+  await page.getByRole('button', { name: 'rollover-A' }).click()
+  const replay = page.getByRole('region', { name: /逐笔回放 · FU2603/ })
+  await expect(replay.getByText('原修订的归档图窗不可重建。')).toBeVisible()
+  await expect(replay.getByRole('img')).toHaveCount(0)
+  await expect(replay.getByText('换月中断')).toBeVisible()
+  await expect(replay.getByText('估值合约')).toBeVisible()
+  await expect(replay.getByRole('definition').filter({ hasText: /^FU2603$/ })).toBeVisible()
+  await expect(replay.getByText('2807', { exact: true })).toBeVisible()
+  await expect(replay.getByText('35', { exact: true })).toBeVisible()
+  await expect(replay.getByText('12', { exact: true })).toBeVisible()
+  const executions = replay.getByRole('table', { name: '成交时钟与对账' })
+  await expect(executions.getByRole('row')).toHaveCount(4)
+  await expect(executions.getByRole('row').filter({ hasText: 'open-2' }).getByRole('cell', { name: '2 手' })).toBeVisible()
+  await expect(executions.getByRole('row').filter({ hasText: 'close-1' }).getByRole('cell', { name: '1 手' })).toBeVisible()
+
+  newest = 'new-run'
+  await page.getByRole('button', { name: '刷新状态' }).click()
+  await page.getByRole('button', { name: '下一页' }).click()
+  await expect(page.getByRole('button', { name: 'trade-on-page-2' })).toBeVisible()
+  await expect(replay.getByText('2807', { exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/backtests\/rollover-run$/)
+  await page.getByRole('button', { name: 'trade-on-page-2' }).click()
+  await expect(replay.locator('canvas').first()).toBeVisible()
+  const markers = replay.getByRole('list', { name: '图上成交与估值标记' })
+  await expect(markers.getByRole('listitem')).toHaveCount(4)
+  for (const label of ['进场 · 1 手 · 2801', '进场 · 2 手 · 2801', '出场 · 1 手 · 2801', '估值 · 2807']) {
+    await expect(markers.getByText(label, { exact: true })).toBeVisible()
+  }
+  expect(requests.every(([method, path]) => method === 'GET' && !path.includes('new-run'))).toBe(true)
+})
+
+test('persists unconfirmed rerun keys across reload and reads bounded task events', async ({ page }) => {
+  const rerunKeys = []
+  await page.route('**/api/v1/backtests/runs/**', async route => {
+    const path = new URL(route.request().url()).pathname.replace('/api/v1/backtests', '')
+    if (path === '/runs/source') return route.fulfill({ json: run('source', 'CANCELED') })
+    if (path === '/runs/source/events') return route.fulfill({ json: {
+      run_id: 'source', items: [
+        { at: '2026-11-28T11:02:00+08:00', status: 'QUEUED', phase: 'QUEUED' },
+        { at: '2026-11-28T11:03:00+08:00', status: 'CANCELED', phase: 'ENGINE_STOPPED' },
+      ],
+    } })
+    if (path === '/runs/source/rerun') {
+      rerunKeys.push(route.request().postDataJSON().request_key)
+      if (rerunKeys.length === 1) return route.fulfill({ status: 202, json: {} })
+      return route.fulfill({ status: 202, json: { ...run('retry', 'QUEUED'), source_run_id: 'source' } })
+    }
+    if (path === '/runs/retry') return route.fulfill({ json: { ...run('retry', 'QUEUED'), source_run_id: 'source' } })
+    if (path === '/runs/retry/events') return route.fulfill({ json: { run_id: 'retry', items: [] } })
+    return route.fulfill({ status: 404, json: { detail: { code: 'NOT_FOUND' } } })
+  })
+
+  await page.goto('/backtests/source')
+  await page.getByText('任务日志 （最近 2 条）').click()
+  const events = page.getByRole('list', { name: '任务状态事件' })
+  await expect(events.getByRole('listitem')).toHaveCount(2)
+  await expect(events.getByText(/已取消 · ENGINE_STOPPED/)).toBeVisible()
+  await page.getByRole('button', { name: '按原配置重跑' }).click()
+  await expect(page.getByRole('alert')).toContainText('重跑提交未确认')
+  await page.reload()
+  await page.getByRole('button', { name: '按原配置重跑' }).click()
+  await expect(page).toHaveURL(/\/backtests\/retry$/)
+  expect(rerunKeys).toHaveLength(2)
+  expect(rerunKeys[0]).toBe(rerunKeys[1])
+  await page.getByRole('link', { name: '来源 Run source' }).click()
+  await page.getByRole('button', { name: '按原配置重跑' }).click()
+  await expect(page).toHaveURL(/\/backtests\/retry$/)
+  expect(rerunKeys[2]).not.toBe(rerunKeys[0])
 })

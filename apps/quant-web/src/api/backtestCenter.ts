@@ -1,4 +1,5 @@
-import request from './request'
+import request, { type ConditionalRequestConfig } from './request'
+import type { AxiosResponse } from 'axios'
 
 export type RunStatus = 'QUEUED' | 'RUNNING' | 'CANCELING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED'
 export type Amount = string | number
@@ -95,6 +96,17 @@ export interface Rows<T> {
   total: number
 }
 
+export interface RunRows<T> extends Rows<T> {
+  run_id: string
+}
+
+export interface RunEvent {
+  at: string
+  status: RunStatus
+  phase: string
+  diagnostic?: string | null
+}
+
 export interface Trade extends EvidenceFields {
   trade_id: string
   contract: string
@@ -107,6 +119,15 @@ export interface Trade extends EvidenceFields {
   fees?: Amount | null
   net_pnl?: Amount | null
   unrealized_pnl?: Amount | null
+  marked_at?: string | null
+  valuation_at?: string | null
+  mark_price?: Amount | null
+  native_entry_id?: string | null
+  native_exit_id?: string | null
+  native_entry_ids?: string[]
+  native_exit_ids?: string[]
+  entry_signal_id?: string | null
+  exit_signal_id?: string | null
   status: string
 }
 
@@ -130,10 +151,23 @@ export interface ReplayMarker {
   kind: string
   trade_id?: string
   signal_id?: string
+  native_trade_id?: string
+  quantity?: Amount | null
   price?: Amount | null
   label?: string | null
   event_at?: string
   position_end_at?: string
+}
+
+export interface NativeFill extends EvidenceFields {
+  native_trade_id: string
+  native_order_id?: string | null
+  signal_id?: string | null
+  contract?: string | null
+  position_effect?: string | null
+  quantity?: Amount | null
+  price?: Amount | null
+  fee?: Amount | null
 }
 
 export interface Replay {
@@ -143,10 +177,11 @@ export interface Replay {
   contract?: string
   frequency?: string
   revision?: string
+  input_sha256?: string | null
   bars?: ReplayBar[]
   markers?: ReplayMarker[]
   trade?: Trade
-  native_fills?: EvidenceFields[]
+  native_fills?: NativeFill[]
   attempts?: EvidenceFields[]
 }
 
@@ -234,8 +269,17 @@ export const readRuns = (filters: RunFilters, offset: number, limit: number, sig
     params: { ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value)), offset, limit }, signal,
   })
 
+async function acceptRun(path: string, body: { request_key: string; config?: RunConfig }) {
+  const response = await request.post<unknown, AxiosResponse<Run>>(path, body, { preserveResponse: true } as ConditionalRequestConfig)
+  const id = response.data?.run_id
+  if (response.status !== 202 || typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) {
+    throw new Error('BACKTEST_SUBMISSION_UNCONFIRMED')
+  }
+  return response.data
+}
+
 export const submitRun = (request_key: string, config: RunConfig) =>
-  request.post<unknown, Run>(`${root}/runs`, { request_key, config })
+  acceptRun(`${root}/runs`, { request_key, config })
 
 export const readRun = (id: string, signal: AbortSignal) =>
   request.get<unknown, Run>(runPath(id), { signal })
@@ -243,13 +287,16 @@ export const readRun = (id: string, signal: AbortSignal) =>
 export const cancelRun = (id: string) => request.post<unknown, Run>(`${runPath(id)}/cancel`)
 
 export const rerun = (id: string, request_key: string) =>
-  request.post<unknown, Run>(`${runPath(id)}/rerun`, { request_key })
+  acceptRun(`${runPath(id)}/rerun`, { request_key })
+
+export const readRunEvents = (id: string, signal: AbortSignal) =>
+  request.get<unknown, { run_id: string; items: RunEvent[] }>(`${runPath(id)}/events`, { signal })
 
 export const readTrades = (id: string, offset: number, limit: number, signal: AbortSignal) =>
-  request.get<unknown, Rows<Trade>>(`${runPath(id)}/trades`, { signal, params: { offset, limit } })
+  request.get<unknown, RunRows<Trade>>(`${runPath(id)}/trades`, { signal, params: { offset, limit } })
 
 export const readEquity = (id: string, offset: number, limit: number, signal: AbortSignal) =>
-  request.get<unknown, Rows<Equity>>(`${runPath(id)}/equity`, { signal, params: { offset, limit } })
+  request.get<unknown, RunRows<Equity>>(`${runPath(id)}/equity`, { signal, params: { offset, limit } })
 
 export const readReplay = (id: string, trade: string, signal: AbortSignal) =>
   request.get<unknown, Replay>(`${runPath(id)}/replay/${encodeURIComponent(trade)}`, { signal })

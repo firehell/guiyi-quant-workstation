@@ -274,3 +274,105 @@ while True:
         assert store.result(identifier) is None
     finally:
         worker.close()
+
+
+def test_archive_events_follow_atomic_commit_and_recovery(client, store):
+    original = store.submit("without-result", CONFIG)["run_id"]
+    store.claim()
+    store.admit(original, SNAPSHOT)
+    store.phase(original, "PUBLISHING")
+    store.phase(original, "PUBLISHING")
+    with pytest.raises(sqlite3.IntegrityError):
+        store.publish(original, {**RESULT, "trades": [TRADE, TRADE]})
+    assert client.get(f"/api/v1/backtests/runs/{original}/report").status_code == 409
+
+    reopened = RunStore(store.path)
+    reopened.recover()
+    events = client.get(f"/api/v1/backtests/runs/{original}/events").json()["items"]
+    assert [row["phase"] for row in events] == [
+        "QUEUED", "CHECKING_INPUT", "EXECUTING_PLUS", "PUBLISHING", "RECOVERY",
+    ]
+    assert events[-1]["status"] == "FAILED"
+    assert events[-1]["diagnostic"] == "BACKTEST_INTERRUPTED_BEFORE_PUBLICATION"
+    assert client.get("/api/v1/backtests/runs/absent/events").status_code == 404
+
+    later = store.rerun(original, "second-attempt")["run_id"]
+    store.claim()
+    store.admit(later, SNAPSHOT)
+    assert store.publish(later, RESULT)
+    assert store.cancel(later)["status"] == "SUCCEEDED"
+    events = client.get(f"/api/v1/backtests/runs/{later}/events").json()
+    assert events["run_id"] == later
+    assert [row["status"] for row in events["items"]] == ["QUEUED", "RUNNING", "RUNNING", "SUCCEEDED"]
+
+
+def test_partial_native_legs_and_rollover_stay_on_original_contract(client, store):
+    trade = {
+        **TRADE, "trade_id": "roll", "status": "ROLLOVER_INTERRUPTED", "quantity": 3,
+        "mark_price": "2702", "exit_at": None, "unrealized_pnl": "2",
+        "native_entry_ids": ["entry1", "entry2"], "native_exit_ids": ["exit1"],
+    }
+    legs = [
+        ("entry1", "OPEN", 1, "2026-01-06T09:06:00+08:00"),
+        ("entry2", "OPEN", 2, "2026-01-06T09:07:00+08:00"),
+        ("exit1", "CLOSE_TODAY", 1, "2026-01-06T09:08:00+08:00"),
+    ]
+    fills = [
+        {"native_trade_id": fill_id, "contract": "FU2603", "position_effect": effect, "quantity": quantity,
+         "modeled_fill_at": at, "signal_id": f"signal-{fill_id}", "price": "2700"}
+        for fill_id, effect, quantity, at in legs
+    ]
+    foreign = {**fills[2], "contract": "FU2605"}
+    matching_bars = [dict(bar, contract="FU2603", input_sha256=SNAPSHOT["input_sha256"]) for bar in RESULT["bars"]]
+    other_bar = {**matching_bars[-1], "contract": "FU2605", "close": "4444"}
+    markers = [
+        {"at": RESULT["bars"][0]["at"], "kind": "BUILD", "contract": "FU2603"},
+        {"at": RESULT["bars"][0]["at"], "kind": "BUILD", "contract": "FU2605"},
+    ]
+    run_id = store.submit("legs", CONFIG)["run_id"]
+    store.claim()
+    store.admit(run_id, SNAPSHOT)
+    store.publish(run_id, {**RESULT, "bars": [other_bar, *matching_bars], "markers": markers, "trades": [trade], "report": {
+        "native_fills": [foreign, *fills], "attempts": [{"signal_id": f"signal-{item[0]}"} for item in legs],
+    }})
+    replay = client.get(f"/api/v1/backtests/runs/{run_id}/replay/roll").json()
+    assert replay["available"] and replay["contract"] == "FU2603"
+    assert replay["input_sha256"] == SNAPSHOT["input_sha256"]
+    assert replay["native_fills"] == fills and len(replay["attempts"]) == 3
+    assert all(bar["contract"] == "FU2603" for bar in replay["bars"])
+    assert [item["kind"] for item in replay["markers"]] == ["BUILD", "ENTRY", "ENTRY", "EXIT", "VALUATION"]
+    assert [item["quantity"] for item in replay["markers"] if item.get("native_trade_id")] == [1, 2, 1]
+    assert replay["markers"][-1]["event_at"] == trade["marked_at"]
+    assert replay["bars"][-1]["in_position"]
+
+
+@pytest.mark.parametrize("failure", ["no-bars", "other-contract", "other-input", "bad-result-hash"])
+def test_replay_refuses_unbound_chart_and_preserves_the_archived_trade(client, store, failure):
+    changes = {
+        "no-bars": [],
+        "other-contract": [dict(bar, contract="FU2605") for bar in RESULT["bars"]],
+        "other-input": [dict(bar, input_sha256="foreign") for bar in RESULT["bars"]],
+        "bad-result-hash": RESULT["bars"],
+    }
+    run_id = store.submit(failure, CONFIG)["run_id"]
+    store.claim()
+    store.admit(run_id, SNAPSHOT)
+    store.publish(run_id, {**RESULT, "bars": changes[failure]})
+    if failure == "bad-result-hash":
+        with store.connection(write=True) as db:
+            db.execute("UPDATE bt_rows SET payload='{}' WHERE run_id=? AND kind='bars' AND seq=0", (run_id,))
+    replay = client.get(f"/api/v1/backtests/runs/{run_id}/replay/fill_a").json()
+    assert replay["trade"] == TRADE and not replay["available"] and not replay["bars"] and not replay["markers"]
+    assert replay["reason"] == ("RUN_CHART_EVIDENCE_MISMATCH" if failure in ("other-input", "bad-result-hash")
+                                else "RUN_CHART_WINDOW_UNAVAILABLE")
+
+
+def test_single_physical_run_rejects_a_self_consistent_foreign_trade_and_chart(client, store):
+    run_id = store.submit("foreign-trade", CONFIG)["run_id"]
+    store.claim()
+    store.admit(run_id, {**SNAPSHOT, "physical_contract": "FU2603"})
+    trade = {**TRADE, "contract": "FU2605"}
+    store.publish(run_id, {**RESULT, "trades": [trade], "bars": [dict(bar, contract="FU2605") for bar in RESULT["bars"]]})
+    replay = client.get(f"/api/v1/backtests/runs/{run_id}/replay/fill_a").json()
+    assert replay["trade"] == trade and not replay["available"]
+    assert replay["reason"] == "RUN_CHART_EVIDENCE_MISMATCH"

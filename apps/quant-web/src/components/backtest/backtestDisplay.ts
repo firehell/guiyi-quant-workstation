@@ -1,4 +1,4 @@
-import type { Metric } from '@/api/backtestCenter'
+import type { Metric, ReplayMarker } from '@/api/backtestCenter'
 
 export const statusLabels: Record<string, string> = {
   QUEUED: '排队', RUNNING: '运行中', CANCELING: '取消中', SUCCEEDED: '成功', FAILED: '失败',
@@ -55,6 +55,13 @@ export const diagnosticLabels: Record<string, string> = {
   NO_WIN_TRADES: '缺少正净盈亏交易',
   NO_LOSS_TRADES: '缺少负净盈亏交易',
   RUN_CHART_WINDOW_UNAVAILABLE: '原修订的归档图窗不可重建。',
+  RUN_CHART_EVIDENCE_MISMATCH: '归档图窗的输入或范围证据不一致。',
 }
 export const sampleLabels: Record<string, string> = { historical: '历史回测', experiment: '实验成员', train: '训练样本', oos: '样本外' }
 export const diagnosticLabel = (code: string) => diagnosticLabels[code] ?? code
+
+export function replayMarkerLabel(marker: ReplayMarker) {
+  const label = { ENTRY: '进场', EXIT: '出场', VALUATION: '估值' }[marker.kind]
+  if (!label) return marker.label ?? marker.kind
+  return [label, marker.quantity == null ? null : `${marker.quantity} 手`, marker.price].filter(value => value != null).join(' · ')
+}

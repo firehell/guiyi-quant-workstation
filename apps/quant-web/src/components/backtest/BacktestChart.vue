@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { onMounted, onScopeDispose, ref, watch } from 'vue'
 import { mountChartHost, type ChartHost } from '@guiyi/quant-chart'
-import { CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, type UTCTimestamp } from 'lightweight-charts'
+import { CandlestickSeries, ColorType, createChart, createSeriesMarkers, LineSeries, type SeriesMarker, type UTCTimestamp } from 'lightweight-charts'
 import type { Equity, ReplayBar, ReplayMarker } from '@/api/backtestCenter'
 import { formatChartAxisTimeInShanghai, formatChartTimeInShanghai } from '@/utils/barTime'
 
+import { replayMarkerLabel } from './backtestDisplay'
+
 const props = defineProps<{
-  series: { kind: 'equity'; rows: Equity[] } | { kind: 'trades'; bars: ReplayBar[]; markers: ReplayMarker[]; tradeId: string; signalIds: string[] }
+  series: { kind: 'equity'; rows: Equity[] } | { kind: 'trades'; bars: ReplayBar[]; markers: Array<ReplayMarker & { selected: boolean }> }
 }>()
 const canvas = ref<HTMLElement | null>(null)
 const failed = ref(false)
@@ -51,25 +53,32 @@ function render() {
       const times = new Set(rows.map(row => row.time))
       const markers = series.markers.map(marker => ({ ...marker, time: stamp(marker.at) }))
         .filter(marker => times.has(marker.time)).sort((left, right) => left.time - right.time)
-      const rendered = createSeriesMarkers(prices, markers.map(marker => {
+      const rendered = createSeriesMarkers(prices, markers.map((marker): SeriesMarker<UTCTimestamp> => {
         const entry = ['ENTRY', 'BUILD', 'OPEN'].includes(marker.kind)
         const exit = ['EXIT', 'CLEAR', 'CLOSE'].includes(marker.kind)
-        return {
-          time: marker.time, shape: entry ? 'arrowUp' : exit ? 'arrowDown' : 'circle',
-          position: entry ? 'belowBar' : 'aboveBar',
-          color: marker.trade_id === series.tradeId || (marker.signal_id && series.signalIds.includes(marker.signal_id))
-            ? entry ? '#0c7276' : exit ? '#992e37' : '#74521e'
-            : '#70808c',
-          text: marker.kind === 'ENTRY' ? '进场' : marker.kind === 'EXIT' ? '出场' : marker.label ?? marker.kind,
+        const valuation = marker.kind === 'VALUATION'
+        const annotation = {
+          id: marker.native_trade_id,
+          time: marker.time,
+          shape: entry ? 'arrowUp' as const : exit ? 'arrowDown' as const : 'circle' as const,
+          color: marker.selected ? valuation ? '#345d96' : entry ? '#0c7276' : exit ? '#992e37' : '#74521e' : '#70808c',
+          text: replayMarkerLabel(marker),
         }
+        const value = marker.price == null ? NaN : Number(marker.price)
+        if (marker.selected && (marker.native_trade_id || valuation) && Number.isFinite(value)) {
+          return { ...annotation, position: entry ? 'atPriceBottom' : exit ? 'atPriceTop' : 'atPriceMiddle', price: value }
+        }
+        return { ...annotation, position: entry ? 'belowBar' : 'aboveBar' }
       }))
       chartHost.own(() => rendered.detach())
 
-      const selected = markers.filter(marker => marker.trade_id === series.tradeId)
+      const selected = markers.filter(marker => marker.selected)
       const entry = selected.find(marker => marker.kind === 'ENTRY')
-      const exit = selected.find(marker => marker.kind === 'EXIT')
+      const valuation = selected.filter(marker => marker.kind === 'VALUATION').at(-1)
+      const exit = selected.filter(marker => marker.kind === 'EXIT').at(-1)
       const positionEnd = series.bars.filter(bar => bar.in_position).at(-1)?.at
-      const terminal = exit ?? (positionEnd ? { time: stamp(positionEnd) } : undefined)
+      const terminal = valuation ?? (positionEnd ? { time: stamp(positionEnd) } : exit)
+      const terminalPrice = valuation?.price ?? (exit?.time === terminal?.time ? exit?.price : undefined) ?? entry?.price
       if (entry?.price != null && terminal && entry.time < terminal.time) {
         const interval = chartHost.chart.addSeries(LineSeries, {
           color: '#345d96', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
@@ -77,7 +86,7 @@ function render() {
         chartHost.own(() => chartHost.chart.removeSeries(interval))
         interval.setData([
           { time: entry.time, value: Number(entry.price) },
-          { time: terminal.time, value: Number(exit?.price ?? entry.price) },
+          { time: terminal.time, value: Number(terminalPrice) },
         ])
       }
     }

@@ -2,11 +2,13 @@
 import { computed, onMounted, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  cancelRun, diagnosticCode, readEquity, readReplay, readReport, readRun, readTrades, rerun, runInProgress,
-  type Equity, type EvidenceFields, type Replay, type Rows, type Run, type Trade,
+  cancelRun, diagnosticCode, readEquity, readReport, readRun, readRunEvents, readTrades, rerun, runInProgress,
+  type Equity, type EvidenceFields, type Run, type RunEvent, type RunRows, type Trade,
 } from '@/api/backtestCenter'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import BacktestChart from './BacktestChart.vue'
+import BacktestTradeReplay from './BacktestTradeReplay.vue'
+import { pendingRunRequest } from './backtestSubmission'
 import { diagnosticLabel, displayValue, metricLabels, metricValue, sampleLabels, statusLabel } from './backtestDisplay'
 
 const props = defineProps<{ runId: string }>()
@@ -22,16 +24,15 @@ const tabs = [
   ['overview', '概览'], ['equity', '资金曲线'], ['trades', '交易明细'], ['risk', '风险分析'], ['report', '报告'],
 ] as const
 const pageSize = 50
-const equityPage = shallowRef<Rows<Equity>>()
-const tradePage = shallowRef<Rows<Trade>>()
+const equityPage = shallowRef<RunRows<Equity>>()
+const tradePage = shallowRef<RunRows<Trade>>()
 const offset = ref(0)
 const artifactLoading = ref(false)
 const artifactError = ref('')
 const report = shallowRef<EvidenceFields>()
-const replay = shallowRef<Replay>()
 const replayTrade = shallowRef<Trade>()
-const replayError = ref('')
-const rerunKey = ref('')
+const events = shallowRef<RunEvent[]>([])
+const eventsError = ref('')
 const alive = new AbortController()
 
 const overviewMetrics = ['net_return', 'max_drawdown', 'win_rate', 'profit_loss_ratio', 'profit_factor', 'trade_count']
@@ -46,12 +47,7 @@ const requiredMetrics = computed(() => {
   })
 })
 const resultTotal = computed(() => tab.value === 'equity' ? equityPage.value?.total ?? 0 : tradePage.value?.total ?? 0)
-const shownTrade = computed(() => replay.value?.trade ?? replayTrade.value)
-const tradeSignals = computed(() => [shownTrade.value?.entry_signal_id, shownTrade.value?.exit_signal_id]
-  .filter((id): id is string => typeof id === 'string'))
-const tradeClocks = computed(() => (replay.value?.native_fills ?? []).map(fill => ({
-  fill, attempt: replay.value?.attempts?.find(attempt => attempt.signal_id === fill.signal_id),
-})))
+const eventCode = (value: string) => /^[A-Z0-9_]{1,100}$/.test(value) ? diagnosticLabel(value) : '无法显示'
 const evidenceLabels: Record<string, string> = {
   source: '指标来源', sample_type: '样本类型', cost_basis: '成本口径', pairing_basis: '配对口径',
   benchmark: '基准', engine_version: '引擎版本', data_revision: '数据修订',
@@ -61,15 +57,26 @@ watch(update, async (_, __, onCleanup) => {
   const controller = new AbortController()
   onCleanup(() => controller.abort())
   error.value = ''
+  eventsError.value = ''
   loading.value = true
-  try {
-    const value = await readRun(props.runId, controller.signal)
-    if (!controller.signal.aborted) run.value = value
-  } catch (reason) {
+  const details = readRun(props.runId, controller.signal).then(value => {
+    if (controller.signal.aborted) return
+    if (value.run_id !== props.runId) error.value = 'Run 详情身份不一致。'
+    else run.value = value
+  }, reason => {
     if (!controller.signal.aborted) error.value = diagnosticCode(reason) ?? 'Run 读取失败'
-  } finally {
+  }).finally(() => {
     if (!controller.signal.aborted) loading.value = false
-  }
+  })
+  const history = readRunEvents(props.runId, controller.signal).then(value => {
+    if (controller.signal.aborted) return
+    if (value.run_id !== props.runId) eventsError.value = '任务日志的 Run 身份不一致。'
+    else if (!Array.isArray(value.items)) eventsError.value = '任务日志格式无效。'
+    else events.value = value.items.slice(-32)
+  }, reason => {
+    if (!controller.signal.aborted) eventsError.value = diagnosticCode(reason) ?? '任务日志读取失败'
+  })
+  await Promise.all([details, history])
 }, { immediate: true })
 
 watch([tab, offset, () => run.value?.status], async ([section, start, status], _, onCleanup) => {
@@ -83,10 +90,14 @@ watch([tab, offset, () => run.value?.status], async ([section, start, status], _
   try {
     if (section === 'equity') {
       const value = await readEquity(props.runId, start, pageSize, controller.signal)
-      if (!controller.signal.aborted) equityPage.value = value
+      if (controller.signal.aborted) return
+      if (value.run_id !== props.runId) artifactError.value = '权益页的 Run 身份不一致。'
+      else equityPage.value = value
     } else if (section === 'trades') {
       const value = await readTrades(props.runId, start, pageSize, controller.signal)
-      if (!controller.signal.aborted) tradePage.value = value
+      if (controller.signal.aborted) return
+      if (value.run_id !== props.runId) artifactError.value = '交易页的 Run 身份不一致。'
+      else tradePage.value = value
     } else if (section === 'report') {
       const value = await readReport(props.runId, controller.signal)
       if (!controller.signal.aborted) report.value = value
@@ -97,28 +108,6 @@ watch([tab, offset, () => run.value?.status], async ([section, start, status], _
     if (!controller.signal.aborted) artifactLoading.value = false
   }
 }, { immediate: true })
-
-watch(replayTrade, async (selected, _, onCleanup) => {
-  replay.value = undefined
-  replayError.value = ''
-  if (!selected) return
-  const controller = new AbortController()
-  onCleanup(() => controller.abort())
-  try {
-    const value = await readReplay(props.runId, selected.trade_id, controller.signal)
-    if (controller.signal.aborted) return
-    if (value.run_id !== props.runId || value.trade?.trade_id !== selected.trade_id
-      || (value.available && (value.contract !== selected.contract
-        || value.frequency !== run.value?.config.signal_frequency || !value.revision
-        || (run.value?.snapshot?.data_revision && value.revision !== run.value.snapshot.data_revision)))) {
-      replayError.value = '归档图窗的 Run、交易或修订身份不一致。'
-      return
-    }
-    replay.value = value
-  } catch (reason) {
-    if (!controller.signal.aborted) replayError.value = diagnosticCode(reason) ?? '图窗读取失败'
-  }
-})
 
 function change(tabId: string) {
   offset.value = 0
@@ -135,9 +124,9 @@ async function act(action: 'cancel' | 'rerun') {
       await cancelRun(props.runId)
       if (!alive.signal.aborted) update.value += 1
     } else {
-      if (!rerunKey.value) rerunKey.value = crypto.randomUUID()
-      const result = await rerun(props.runId, rerunKey.value)
-      rerunKey.value = ''
+      const pending = await pendingRunRequest('rerun', { source_run_id: props.runId })
+      const result = await rerun(props.runId, pending.key)
+      pending.accepted()
       if (!alive.signal.aborted) await router.push({ name: 'backtests', params: { runId: result.run_id } })
     }
   } catch (reason) {
@@ -184,6 +173,16 @@ onScopeDispose(() => {
     </div>
     <p v-if="run.diagnostic" class="bt-alert" role="status">{{ diagnosticLabel(run.diagnostic) }}</p>
     <p v-if="error || actionError" class="bt-alert" role="alert">{{ diagnosticLabel(actionError || error) }}</p>
+    <details v-if="events.length || eventsError" class="bt-evidence">
+      <summary>任务日志 <span v-if="events.length">（最近 {{ events.length }} 条）</span></summary>
+      <p v-if="eventsError" class="bt-note">{{ diagnosticLabel(eventsError) }}</p>
+      <ol v-if="events.length" class="bt-list" aria-label="任务状态事件">
+        <li v-for="(event, index) in events" :key="[event.at, event.phase, index].join('/')">
+          <span><time :datetime="event.at">{{ formatBeijingInstant(event.at) }}</time> · {{ statusLabel(event.status) }} · {{ eventCode(event.phase) }}</span>
+          <small v-if="event.diagnostic">{{ eventCode(event.diagnostic) }}</small>
+        </li>
+      </ol>
+    </details>
     <nav v-if="run.status === 'SUCCEEDED'" class="bt-tabs bt-result-tabs" aria-label="Run 结果">
       <button v-for="[key, label] in tabs" :key="key" type="button" :aria-pressed="tab === key" @click="change(key)">{{ label }}</button>
     </nav>
@@ -242,47 +241,13 @@ onScopeDispose(() => {
     </template>
 
     <div v-if="(tab === 'trades' || tab === 'equity') && resultTotal > pageSize" class="bt-pager">
-      <button class="bt-button" :disabled="offset === 0 || artifactLoading" @click="replayTrade = undefined; offset -= pageSize">上一页</button>
+      <button class="bt-button" :disabled="offset === 0 || artifactLoading" @click="offset -= pageSize">上一页</button>
       <span>第 {{ Math.floor(offset / pageSize) + 1 }} 页 · {{ resultTotal }} 项</span>
-      <button class="bt-button" :disabled="offset + pageSize >= resultTotal || artifactLoading" @click="replayTrade = undefined; offset += pageSize">下一页</button>
+      <button class="bt-button" :disabled="offset + pageSize >= resultTotal || artifactLoading" @click="offset += pageSize">下一页</button>
     </div>
 
-    <section v-if="tab === 'trades' && shownTrade" class="bt-replay" aria-labelledby="trade-replay-heading">
-      <div class="bt-panel-header">
-        <h3 id="trade-replay-heading">逐笔回放 · {{ shownTrade.contract }} · {{ shownTrade.direction }}</h3>
-        <button type="button" class="bt-button" @click="replayTrade = undefined">关闭回放</button>
-      </div>
-      <p v-if="replayError" class="bt-alert" role="alert">{{ replayError }}</p>
-      <p v-else-if="!replay" class="bt-note" role="status">正在读取同 Run 图窗</p>
-      <template v-else>
-        <p v-if="replay.revision" class="bt-note">{{ replay.contract }} · {{ replay.frequency }} · 数据修订 <code>{{ replay.revision }}</code></p>
-        <BacktestChart v-if="replay.available && replay.bars?.length" :series="{ kind: 'trades', bars: replay.bars, markers: replay.markers ?? [], tradeId: shownTrade.trade_id, signalIds: tradeSignals }" />
-        <p v-else role="status" class="bt-note">{{ replay.reason ? diagnosticLabel(replay.reason) : '原修订的归档图窗不可重建' }}</p>
-      </template>
-      <dl class="bt-facts">
-        <dt>交易身份</dt><dd>{{ shownTrade.trade_id }}</dd>
-        <dt>状态</dt><dd>{{ statusLabel(shownTrade.status) }}</dd>
-        <dt>建模进场</dt><dd>{{ formatBeijingInstant(shownTrade.entry_at) }} · {{ shownTrade.entry_price ?? '—' }}</dd>
-        <dt>建模出场</dt><dd>{{ formatBeijingInstant(shownTrade.exit_at) }} · {{ shownTrade.exit_price ?? '—' }}</dd>
-        <dt>费用</dt><dd>{{ shownTrade.fees ?? '—' }}</dd>
-        <template v-if="shownTrade.status === 'OPEN' || shownTrade.status === 'ROLLOVER_INTERRUPTED'">
-          <dt>未实现盈亏</dt><dd>{{ shownTrade.unrealized_pnl ?? '缺结算估值' }}</dd>
-        </template>
-        <template v-else><dt>净盈亏</dt><dd>{{ shownTrade.net_pnl ?? '—' }}</dd></template>
-      </dl>
-      <div v-if="tradeClocks.length" class="bt-table-scroll">
-        <table class="bt-table" aria-label="成交时钟与对账">
-          <thead><tr><th>原生成交</th><th>信号收线</th><th>信号可用</th><th>原生委托</th><th>建模成交</th><th>原生成交回调</th><th>价格 / 费用</th></tr></thead>
-          <tbody><tr v-for="{ fill, attempt } in tradeClocks" :key="displayValue(fill.native_trade_id)">
-            <td>{{ displayValue(fill.native_trade_id) }} · {{ displayValue(fill.position_effect) }}</td>
-            <td>{{ displayValue(attempt?.signal_bar_end) }}</td><td>{{ displayValue(attempt?.signal_available_at) }}</td>
-            <td>{{ displayValue(fill.native_order_at) }}</td><td>{{ displayValue(fill.modeled_fill_at) }}</td>
-            <td>{{ displayValue(fill.native_fill_at) }}</td><td>{{ displayValue(fill.price) }} / {{ displayValue(fill.fee) }}</td>
-          </tr></tbody>
-        </table>
-      </div>
-      <details class="bt-evidence"><summary>原生成交、信号与配对证据</summary><pre>{{ JSON.stringify({ trade: shownTrade, native_fills: replay?.native_fills, attempts: replay?.attempts }, null, 2) }}</pre></details>
-    </section>
+    <BacktestTradeReplay v-if="tab === 'trades' && replayTrade"
+      :key="replayTrade.trade_id" :run="run" :trade="replayTrade" @close="replayTrade = undefined" />
 
     <template v-if="tab === 'report' && report">
       <details v-for="(fact, key) in report" :key="key" class="bt-evidence" :open="['summary', 'metrics'].includes(key)">

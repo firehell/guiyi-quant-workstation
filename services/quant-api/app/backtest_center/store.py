@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from .codec import digest, encode
 from .contracts import BacktestError, RunConfig
+from .replay import chart_window, fill_roles, scoped_chart
 
 
 _SCHEMA = """
@@ -43,6 +44,15 @@ CREATE TABLE IF NOT EXISTS bt_rows (
     PRIMARY KEY(run_id, kind, seq),
     UNIQUE(run_id, kind, identity)
 );
+CREATE TABLE IF NOT EXISTS bt_events (
+    seq INTEGER PRIMARY KEY,
+    run_id TEXT NOT NULL REFERENCES bt_runs(run_id),
+    at TEXT NOT NULL,
+    status TEXT NOT NULL,
+    phase TEXT NOT NULL,
+    diagnostic TEXT
+);
+CREATE INDEX IF NOT EXISTS bt_events_run ON bt_events(run_id, seq);
 CREATE TABLE IF NOT EXISTS bt_templates (
     template_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -71,6 +81,13 @@ def _run(row):
     for name in ("seq", "request_key", "request_digest", "report"):
         data.pop(name)
     return data
+
+
+def _record_event(db, row) -> None:
+    db.execute(
+        "INSERT INTO bt_events (run_id, at, status, phase, diagnostic) VALUES (?,?,?,?,?)",
+        tuple(row[key] for key in ("run_id", "updated_at", "status", "phase", "diagnostic")),
+    )
 
 
 def _template(row):
@@ -196,6 +213,7 @@ class RunStore:
                     status,phase,config,submission_identity) VALUES (?,?,?,?,?,?,'QUEUED','QUEUED',?,?) RETURNING *
                 """, (uuid4().hex, request_key, identity, source_run_id, now, now, encode(config),
                       encode(submitted) if submitted is not None else None)).fetchone()
+            _record_event(db, row)
             return _run(row)
 
     def rerun(self, run_id: str, request_key: str) -> dict:
@@ -213,7 +231,10 @@ class RunStore:
                     phase=CASE status WHEN 'QUEUED' THEN 'CANCELED' ELSE 'STOPPING_ENGINE' END, updated_at=?
                 WHERE run_id=? AND status IN ('QUEUED','RUNNING') RETURNING *
                 """, (_now(), run_id)).fetchone()
-            row = row or db.execute("SELECT * FROM bt_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is not None:
+                _record_event(db, row)
+            else:
+                row = db.execute("SELECT * FROM bt_runs WHERE run_id=?", (run_id,)).fetchone()
             if row is None:
                 raise BacktestError("BACKTEST_RUN_NOT_FOUND")
             return _run(row)
@@ -221,38 +242,52 @@ class RunStore:
     def recover(self) -> None:
         """Called under the exclusive worker lock after the previous engine has exited."""
         with self.connection(write=True) as db:
-            db.execute("""
+            rows = db.execute("""
                 UPDATE bt_runs SET status=CASE status WHEN 'CANCELING' THEN 'CANCELED' ELSE 'FAILED' END,
                     diagnostic='BACKTEST_INTERRUPTED_BEFORE_PUBLICATION', phase='RECOVERY', updated_at=?
-                WHERE status IN ('RUNNING','CANCELING')
-                """, (_now(),))
+                WHERE status IN ('RUNNING','CANCELING') RETURNING *
+                """, (_now(),)).fetchall()
+            for row in rows:
+                _record_event(db, row)
 
     def claim(self) -> dict | None:
         with self.connection(write=True) as db:
-            return _run(db.execute("""
+            row = db.execute("""
                 UPDATE bt_runs SET status='RUNNING', phase='CHECKING_INPUT', updated_at=?
                 WHERE seq=(SELECT MIN(seq) FROM bt_runs WHERE status='QUEUED') RETURNING *
-                """, (_now(),)).fetchone())
+                """, (_now(),)).fetchone()
+            if row is not None:
+                _record_event(db, row)
+            return _run(row)
 
     def admit(self, run_id: str, snapshot: dict) -> bool:
         with self.connection(write=True) as db:
-            return bool(db.execute("""
+            row = db.execute("""
                 UPDATE bt_runs SET snapshot=?,phase='EXECUTING_PLUS',updated_at=?
-                WHERE run_id=? AND status='RUNNING' AND snapshot IS NULL
-                """, (encode(snapshot), _now(), run_id)).rowcount)
+                WHERE run_id=? AND status='RUNNING' AND snapshot IS NULL RETURNING *
+                """, (encode(snapshot), _now(), run_id)).fetchone()
+            if row is None:
+                return False
+            _record_event(db, row)
+            return True
 
     def phase(self, run_id: str, phase: str) -> None:
         with self.connection(write=True) as db:
-            db.execute("UPDATE bt_runs SET phase=?,updated_at=? WHERE run_id=? AND status='RUNNING'",
-                       (phase, _now(), run_id))
+            row = db.execute("""
+                UPDATE bt_runs SET phase=?,updated_at=? WHERE run_id=? AND status='RUNNING' AND phase<>? RETURNING *
+                """, (phase, _now(), run_id, phase)).fetchone()
+            if row is not None:
+                _record_event(db, row)
 
     def finish_stopped(self, run_id: str, diagnostic: str) -> None:
         with self.connection(write=True) as db:
-            db.execute("""
+            row = db.execute("""
                 UPDATE bt_runs SET status=CASE status WHEN 'CANCELING' THEN 'CANCELED' ELSE 'FAILED' END,
                     phase='ENGINE_STOPPED', diagnostic=?, updated_at=?
-                WHERE run_id=? AND status IN ('RUNNING','CANCELING')
-                """, (diagnostic, _now(), run_id))
+                WHERE run_id=? AND status IN ('RUNNING','CANCELING') RETURNING *
+                """, (diagnostic, _now(), run_id)).fetchone()
+            if row is not None:
+                _record_event(db, row)
 
     def publish(self, run_id: str, result: dict) -> bool:
         result_digest = digest(result)
@@ -260,7 +295,7 @@ class RunStore:
         with self.connection(write=True) as db:
             row = db.execute("""
                 UPDATE bt_runs SET status='SUCCEEDED',phase='PUBLISHED',updated_at=?,result_digest=?,summary=?,report=?
-                WHERE run_id=? AND status='RUNNING' AND snapshot IS NOT NULL RETURNING run_id
+                WHERE run_id=? AND status='RUNNING' AND snapshot IS NOT NULL RETURNING *
                 """, (_now(), result_digest, summary, report, run_id)).fetchone()
             if row is None:
                 return False
@@ -269,7 +304,23 @@ class RunStore:
                     (run_id, kind, seq, payload.get("trade_id") if kind == "trades" else None, encode(payload))
                     for seq, payload in enumerate(result.get(kind, ()))
                 ))
+            _record_event(db, row)
         return True
+
+    def events(self, run_id: str) -> dict:
+        with self.connection() as db:
+            rows = db.execute("""
+                SELECT at,status,phase,diagnostic FROM bt_events WHERE run_id=? ORDER BY seq DESC LIMIT 32
+                """, (run_id,)).fetchall()
+            if not rows:
+                # Runs archived before the event journal still have a persisted last stage.
+                current = db.execute("""
+                    SELECT updated_at AS at,status,phase,diagnostic FROM bt_runs WHERE run_id=?
+                    """, (run_id,)).fetchone()
+                if current is None:
+                    raise BacktestError("BACKTEST_RUN_NOT_FOUND")
+                rows = [current]
+            return {"run_id": run_id, "items": [dict(row) for row in reversed(rows)]}
 
     def _succeeded(self, db, run_id):
         row = db.execute("SELECT * FROM bt_runs WHERE run_id=?", (run_id,)).fetchone()
@@ -316,16 +367,30 @@ class RunStore:
             trade = json.loads(record[0])
             config, snapshot = json.loads(row["config"]), json.loads(row["snapshot"])
             report = json.loads(row["report"])
-            native_ids = {trade[key] for key in ("native_entry_id", "native_exit_id") if trade.get(key)}
-            signal_ids = {trade[key] for key in ("entry_signal_id", "exit_signal_id") if trade.get(key)}
-            fills = [fill for fill in report.get("native_fills", ()) if fill["native_trade_id"] in native_ids]
-            attempts = [item for item in report.get("attempts", ()) if item["signal_id"] in signal_ids]
-            bars = self._rows(db, run_id, "bars")
-            markers = self._rows(db, run_id, "markers")
-        from .replay import chart_window
+            artifact = {"summary": json.loads(row["summary"]), "report": report,
+                        **{kind: self._rows(db, run_id, kind) for kind in _RESULT_FIELDS}}
+            intact = digest(artifact) == row["result_digest"]
 
-        bars, markers = chart_window(bars, markers, trade)
-        return {"run_id": run_id, "trade": trade, "contract": trade["contract"], "frequency": config["signal_frequency"],
-                "revision": snapshot["data_revision"], "available": bool(bars),
-                "reason": None if bars else "RUN_CHART_WINDOW_UNAVAILABLE", "bars": bars, "markers": markers,
+        contract, frequency, revision = trade["contract"], config["signal_frequency"], snapshot["data_revision"]
+        fills, attempts = [], []
+        reason = "RUN_CHART_WINDOW_UNAVAILABLE"
+        try:
+            if not intact:
+                raise ValueError("RUN_CHART_EVIDENCE_MISMATCH")
+            roles = fill_roles(trade)
+            fills = [fill for fill in report.get("native_fills", ()) if fill.get("native_trade_id") in roles
+                     and fill.get("contract") == contract]
+            signal_ids = {trade[key] for key in ("entry_signal_id", "exit_signal_id") if trade.get(key)}
+            signal_ids.update(fill["signal_id"] for fill in fills if fill.get("signal_id"))
+            attempts = [item for item in report.get("attempts", ()) if item.get("signal_id") in signal_ids
+                        and item.get("contract", contract) == contract]
+            series, events = scoped_chart(artifact["bars"], artifact["markers"], contract, config, snapshot)
+            bars, markers = chart_window(series, events, trade, fills, roles, frequency)
+        except (KeyError, TypeError, ValueError):
+            bars, markers = [], []
+            reason = "RUN_CHART_EVIDENCE_MISMATCH"
+
+        return {"run_id": run_id, "trade": trade, "contract": contract, "frequency": frequency,
+                "revision": revision, "input_sha256": snapshot.get("input_sha256"),
+                "available": bool(bars), "reason": None if bars else reason, "bars": bars, "markers": markers,
                 "native_fills": fills, "attempts": attempts}
