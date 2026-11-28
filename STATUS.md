@@ -1,3 +1,12 @@
+## 2026-11-28｜回测中心独立发布
+
+- [Backtest Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/backtest-center/v0.1.0)
+  绑定 `87dad0899a58e5af951366af77a4d8173c952881`。同提交的工作站 API wheel 和 Web 构建
+  已在本机隔离实例通过浏览器验证，包含 Plus 基础 Run、增量续跑和同 Run 逐笔回放。
+- FU2603 两次续跑分别执行 1,035 和 2,415 根新增分钟线，157 笔原生成交和逐日结算与
+  全量结果一致。旧月到期保留原合约估值，FU2604 的首个 HOLD 无开仓。已核验范围为
+  物理合约 TRIAL，缺失当时可知的 rank1 时拒绝主力选约。正式工作站部署另按应用流程记录。
+
 ## 2026-11-28 00:23｜策略中心独立发布
 
 - [Strategy Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/strategy-center/v0.1.0) 与
