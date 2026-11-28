@@ -51,3 +51,25 @@ def test_settlement_uses_verifiable_next_margin_even_when_run_ends_before_the_ne
     assert costs.rows[first]["long_margin_ratio"] == "0.09"
     assert costs.settlement_long_margin(first) == Decimal("0.10")
     assert costs.snapshot()["margin_change_at_preceding_settlement"] == {"2026-01-15": "2026-01-16"}
+
+
+def test_adjacent_cost_profiles_record_their_own_settlement_effective_days(tmp_path, monkeypatch):
+    rows = [
+        {"contract": contract, "trading_date": trading_day, "long_margin_ratio": margin}
+        for contract, trading_day, margin in (
+            ("FU2603", "2026-02-05", "0.10"), ("FU2603", "2026-02-06", "0.11"),
+            ("FU2604", "2026-02-12", "0.11"), ("FU2604", "2026-02-13", "0.14"),
+        )
+    ]
+    monkeypatch.setattr(plus_costs, "ADJACENT_ROWS_SHA256", digest(rows))
+    profile = tmp_path / "adjacent.json"
+    profile.write_text(encode({"source": plus_costs.SOURCE, "rows": rows}))
+    for contract, previous, effective in (
+        ("FU2603", "2026-02-05", "2026-02-06"), ("FU2604", "2026-02-12", "2026-02-13"),
+    ):
+        day = date.fromisoformat(previous)
+        costs = plus_costs.DatedCosts.load(profile, contract, (day,))
+        assert costs.rows[day] != costs.margin_at_settlement[day]
+        assert costs.margin_at_settlement[day]["trading_date"] == effective
+        assert costs.snapshot()["margin_change_at_preceding_settlement"] == {previous: effective}
+        assert costs.snapshot()["cost_profile_id"] == plus_costs.ADJACENT_COST_PROFILE

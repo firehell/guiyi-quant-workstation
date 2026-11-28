@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
 
@@ -85,6 +85,21 @@ class SubmitRequest(BaseModel):
 class RetryRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     request_key: Key
+
+
+class ExtendRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    request_key: Key
+    end: date
+
+    @field_validator("end", mode="before")
+    @classmethod
+    def date_only(cls, value):
+        if type(value) is date:
+            return value
+        if not isinstance(value, str) or date.fromisoformat(value).isoformat() != value:
+            raise ValueError("BACKTEST_EXTENSION_WINDOW_INVALID")
+        return value
 
 
 class TemplateRequest(BaseModel):

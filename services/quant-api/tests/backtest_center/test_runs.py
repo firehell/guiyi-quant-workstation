@@ -306,6 +306,67 @@ def test_archive_events_follow_atomic_commit_and_recovery(client, store):
     assert [row["status"] for row in events["items"]] == ["QUEUED", "RUNNING", "RUNNING", "SUCCEEDED"]
 
 
+def test_rollover_interruption_survives_restart_without_publishing_a_result(client, store):
+    run_id = store.submit("expired-position", CONFIG)["run_id"]
+    store.claim()
+    assert store.admit(run_id, {**SNAPSHOT, "physical_contract": "FU2603"})
+    evidence = {
+        "status": "ROLLOVER_INTERRUPTED", "contract": "FU2603", "trading_day": "2026-01-06",
+        "marked_at": VALUATION, "mark_price": "2700", "quantity": 1, "direction": "LONG",
+        "entry_at": TRADE["entry_at"], "entry_price": TRADE["entry_price"], "unrealized_pnl": "-10",
+    }
+
+    with store.connection(write=True) as db:
+        db.execute("""CREATE TRIGGER interrupt_insert_failure
+            BEFORE INSERT ON bt_run_interruptions
+            BEGIN SELECT raise(ABORT, 'test interruption rollback'); END
+        """)
+    with pytest.raises(sqlite3.IntegrityError, match="test interruption rollback"):
+        store.finish_stopped(run_id, "ROLLOVER_INTERRUPTED", interruption=evidence)
+    assert store.get(run_id)["status"] == "RUNNING"
+    assert store.events(run_id)["items"][-1]["phase"] == "EXECUTING_PLUS"
+    with store.connection(write=True) as db:
+        db.execute("DROP TRIGGER interrupt_insert_failure")
+    store.finish_stopped(run_id, "ROLLOVER_INTERRUPTED", interruption=evidence)
+
+    reopened = RunStore(store.path)
+    reopened.recover()
+    assert reopened.get(run_id)["interruption"] == evidence
+    detail = client.get(f"/api/v1/backtests/runs/{run_id}").json()
+    assert (detail["status"], detail["diagnostic"], detail["interruption"]) == ("FAILED", evidence["status"], evidence)
+    assert detail["summary"] is None
+    assert detail["can_extend"] is False
+    assert reopened.result(run_id) is None
+    assert reopened.extension_source(run_id) is None
+    assert client.get(f"/api/v1/backtests/runs/{run_id}/report").json() == {
+        "detail": {"code": "BACKTEST_RESULT_UNAVAILABLE"},
+    }
+    assert reopened.events(run_id)["items"][-1]["diagnostic"] == evidence["status"]
+
+
+@pytest.mark.parametrize(("snapshot_contract", "canceled", "diagnostic"), [
+    ("FU2604", False, "ROLLOVER_INTERRUPTED"),
+    (None, False, "ROLLOVER_INTERRUPTED"),
+    ("FU2603", False, "PLUS_RUN_FAILED"),
+    ("FU2603", True, "ROLLOVER_INTERRUPTED"),
+])
+def test_rollover_evidence_requires_a_matching_admitted_failed_run(store, snapshot_contract, canceled, diagnostic):
+    run_id = store.submit("unbound-rollover", CONFIG)["run_id"]
+    store.claim()
+    if snapshot_contract:
+        store.admit(run_id, {**SNAPSHOT, "physical_contract": snapshot_contract})
+    if canceled:
+        store.cancel(run_id)
+
+    store.finish_stopped(run_id, diagnostic, interruption={"status": "ROLLOVER_INTERRUPTED", "contract": "FU2603"})
+
+    run = store.get(run_id)
+    assert run["status"] == ("CANCELED" if canceled else "FAILED")
+    assert run["interruption"] is None
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM bt_run_interruptions").fetchone()[0] == 0
+
+
 def test_partial_native_legs_and_rollover_stay_on_original_contract(client, store):
     trade = {
         **TRADE, "trade_id": "roll", "status": "ROLLOVER_INTERRUPTED", "quantity": 3,
@@ -376,3 +437,115 @@ def test_single_physical_run_rejects_a_self_consistent_foreign_trade_and_chart(c
     replay = client.get(f"/api/v1/backtests/runs/{run_id}/replay/fill_a").json()
     assert replay["trade"] == trade and not replay["available"]
     assert replay["reason"] == "RUN_CHART_EVIDENCE_MISMATCH"
+
+
+def test_extend_route_freezes_source_scope_and_keeps_checkpoint_private(client, store):
+    source = store.submit("extend-base", {**CONFIG, "end": "2026-01-06"})
+    source_id = source["run_id"]
+    path = f"/api/v1/backtests/runs/{source_id}"
+    request = {"end": "2026-01-08", "request_key": "extend-once"}
+    checkpoint = {"through": "2026-01-06", "native_state": "private-opaque-state"}
+
+    assert client.post(f"{path}/extend", json=request).json()["detail"]["code"] == "BACKTEST_EXTENSION_SOURCE_UNAVAILABLE"
+    assert store.claim()["run_id"] == source_id
+    assert store.admit(source_id, SNAPSHOT)
+    assert store.publish(source_id, RESULT, checkpoint=checkpoint)
+    assert store.extension_source(source_id) == {
+        "run": store.get(source_id), "checkpoint": checkpoint, "result": RESULT,
+    }
+    published = client.get(path).json()
+    assert published["can_extend"] and "private-opaque-state" not in client.get(path).text
+    assert "private-opaque-state" not in client.get(f"{path}/report").text
+
+    with ThreadPoolExecutor(2) as pool:
+        responses = list(pool.map(lambda _: client.post(f"{path}/extend", json=request), range(2)))
+    first, repeat = (response.json() for response in responses)
+    assert all(response.status_code == 202 for response in responses)
+    assert first == repeat and first["run_id"] != source_id
+    assert first["source_run_id"] == source_id
+    assert first["incremental"] == {"source_run_id": source_id, "through": "2026-01-06"}
+    assert first["config"] == {**published["config"], "end": "2026-01-08"}
+    assert not first["can_extend"] and published == client.get(path).json()
+    conflict = client.post(f"{path}/extend", json={**request, "end": "2026-01-09"})
+    assert conflict.status_code == 409 and conflict.json()["detail"]["code"] == "BACKTEST_REQUEST_KEY_CONFLICT"
+    assert client.post(f"{path}/extend", json={**request, "end": "2026-01-06"}).status_code == 422
+    assert client.post(f"{path}/extend", json={**request, "initial_capital": "1000"}).status_code == 422
+    for invalid_end in (1767830400, "1767830400", "2026-01-08T00:00:00"):
+        assert client.post(f"{path}/extend", json={**request, "end": invalid_end}).status_code == 422
+    assert client.post(f"{path}/extend", json=request, headers={"origin": "https://unrelated.example"}).status_code == 403
+    assert store.claim()["incremental"] == first["incremental"]
+    assert store.claim() is None
+
+
+def test_extension_publication_keeps_original_prefix_and_supports_chaining(store):
+    from datetime import date
+
+    base = store.submit("base-chain", {**CONFIG, "end": "2026-01-06"})["run_id"]
+    store.claim()
+    store.admit(base, SNAPSHOT)
+    store.publish(base, RESULT, checkpoint={"through": "2026-01-06"})
+    child = store.extend(base, date(2026, 1, 7), "first-extension")["run_id"]
+    store.claim()
+    store.admit(child, SNAPSHOT)
+    equity = [*RESULT["equity"], {"at": "2026-01-07T15:30:00+08:00", "trading_day": "2026-01-07", "equity": "100002"}]
+    metadata = {"source_run_id": base, "through": "2026-01-06", "appended_trading_days": ["2026-01-07"],
+                "executed_minutes": 345}
+    extended = {**RESULT, "equity": equity, "report": {"incremental": metadata}}
+    with pytest.raises(BacktestError, match="BACKTEST_EXTENSION_RESULT_INVALID"):
+        store.publish(child, {**extended, "equity": [{**equity[0], "equity": "100003"}, equity[1]]})
+    with pytest.raises(BacktestError, match="BACKTEST_EXTENSION_CHECKPOINT_INVALID"):
+        store.publish(child, extended, checkpoint={"through": "2026-01-06"})
+    assert store.result(child) is None and store.get(child)["status"] == "RUNNING"
+    assert not store.get(child)["can_extend"]
+    assert store.publish(child, extended, checkpoint={"through": "2026-01-07"})
+    assert store.result(base)["equity"] == RESULT["equity"]
+    assert store.extension_source(child)["result"] == extended
+    assert store.get(child)["incremental"] == metadata
+    with pytest.raises(BacktestError, match="BACKTEST_INCREMENTAL_RERUN_UNAVAILABLE"):
+        store.rerun(child, "exact-child-rerun")
+    next_run = store.extend(child, date(2026, 1, 8), "second-extension")
+    assert next_run["incremental"] == {"source_run_id": child, "through": "2026-01-07"}
+
+
+def test_checkpoint_is_atomic_and_detects_result_or_checkpoint_drift(store):
+    run_id = store.submit("checkpoint-integrity", CONFIG)["run_id"]
+    store.claim()
+    store.admit(run_id, SNAPSHOT)
+    checkpoint = {"through": "2026-01-06", "state": "original"}
+    with pytest.raises(sqlite3.IntegrityError):
+        store.publish(run_id, {**RESULT, "trades": [TRADE, TRADE]}, checkpoint=checkpoint)
+    reopened = RunStore(store.path)
+    assert reopened.get(run_id)["status"] == "RUNNING"
+    assert reopened.extension_source(run_id) is None
+    with reopened.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM bt_run_checkpoints").fetchone()[0] == 0
+    assert reopened.publish(run_id, RESULT, checkpoint=checkpoint)
+    assert reopened.extension_source(run_id)["checkpoint"] == checkpoint
+    with reopened.connection(write=True) as db:
+        db.execute("UPDATE bt_rows SET payload=? WHERE run_id=? AND kind='bars' AND seq=0",
+                   ('{"at":"mutated"}', run_id))
+    assert reopened.extension_source(run_id) is None
+    with reopened.connection(write=True) as db:
+        db.execute("UPDATE bt_run_checkpoints SET checkpoint=? WHERE run_id=?",
+                   ('{"through":"2026-01-06","state":"foreign"}', run_id))
+    assert reopened.extension_source(run_id) is None
+    assert not reopened.get(run_id)["can_extend"]
+
+
+def test_non_historical_and_legacy_runs_cannot_supply_extension_sources(store):
+    from datetime import date
+
+    training = store.submit("training", {**CONFIG, "sample_type": "train"})["run_id"]
+    store.claim()
+    store.admit(training, SNAPSHOT)
+    with pytest.raises(BacktestError, match="BACKTEST_EXTENSION_CHECKPOINT_INVALID"):
+        store.publish(training, RESULT, checkpoint={"through": "2026-01-06"})
+    assert store.publish(training, RESULT)
+    historical = store.submit("legacy", CONFIG)["run_id"]
+    store.claim()
+    store.admit(historical, SNAPSHOT)
+    assert store.publish(historical, RESULT)
+    for run_id in (training, historical):
+        assert not store.get(run_id)["can_extend"] and store.extension_source(run_id) is None
+        with pytest.raises(BacktestError, match="BACKTEST_EXTENSION_SOURCE_UNAVAILABLE"):
+            store.extend(run_id, date(2026, 1, 9), "requires-checkpoint")

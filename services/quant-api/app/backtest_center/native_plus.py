@@ -25,7 +25,9 @@ from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
 from guiyi_quant.reference_trading.adapters import strategy_input_fingerprint
 
 from .codec import digest
-from .errors import BacktestError
+from .errors import BacktestError, ExpiryInterrupted
+from .incremental import VERSION as INCREMENTAL_VERSION
+from .incremental import Continuation, capture_native, checkpoint, execution_identity
 from .plus_costs import DatedCostDataSource, DatedCosts
 from .plus_inputs import DAY_SESSIONS, MINUTE, InputSlice, Minute, NativeConfig, finite, local, preflight
 from .plus_reconcile import (
@@ -136,19 +138,19 @@ class SubmissionPrice:
         return getattr(self.native, attribute)
 
 
-def _bar_input(rows: list[Minute], packet: InputSlice, config: NativeConfig, owner: str) -> CompletedMarketPayload:
+def _bar_input(rows: list[Minute], revision: str, config: NativeConfig, owner: str) -> CompletedMarketPayload:
     first, last = rows[0], rows[-1]
     bar = NewowDailyBar(
         product="fu", physical_contract=config.contract, segment_id=owner,
         trading_day=last.session.day, bar_end=last.end, open=first.open,
         high=max(row.high for row in rows), low=min(row.low for row in rows),
         close=last.close, volume=sum(row.volume for row in rows), open_interest=last.open_interest,
-        source_identity=packet.dataset_revision, observation_eligible=last.session.day >= config.start,
+        source_identity=revision, observation_eligible=last.session.day >= config.start,
         completed=True, series_kind="physical_futures",
     )
     return CompletedMarketPayload(
         ProductBar(bar, ProductFrequency.FIVE_MINUTE, series_kind="physical_futures"),
-        MarketSource.RQALPHA_PLUS, packet.dataset_revision, f"{config.contract}:1m:{last.end.isoformat()}", owner,
+        MarketSource.RQALPHA_PLUS, revision, f"{config.contract}:1m:{last.end.isoformat()}", owner,
         (last.session.start, last.session.end), last.end + AVAILABILITY, AVAILABILITY_POLICY,
         confirmed_at=last.end + AVAILABILITY, observed_at=last.end, turnover=sum((row.turnover for row in rows), ZERO),
     )
@@ -161,7 +163,7 @@ def _candidate(payload: CompletedMarketPayload, delay: int = 0) -> datetime | No
     return opening if opening + MINUTE <= payload.session[1] else None
 
 
-def _config(native: NativeConfig, packet: InputSlice):
+def _config(native: NativeConfig, packet: InputSlice, engine_start):
     from rqalpha.const import PERSIST_MODE, RUN_TYPE
     from rqalpha.utils import RqAttrDict
     from rqalpha.utils.config import default_config
@@ -169,7 +171,7 @@ def _config(native: NativeConfig, packet: InputSlice):
     # Use the installed Plus defaults, without local project/user overrides.
     cfg = RqAttrDict(default_config())
     base = cfg.base
-    base.start_date, base.end_date = next(iter(packet.days)), next(reversed(packet.days))
+    base.start_date, base.end_date = engine_start, next(reversed(packet.days))
     base.data_bundle_path = str(packet.root)
     base.frequency, base.run_type = "1m", RUN_TYPE.BACKTEST
     base.accounts, base.init_positions, base.future_info = {"FUTURE": float(native.initial_capital)}, [], {}
@@ -204,13 +206,18 @@ def _input_identity(packet: InputSlice, costs: DatedCosts) -> str:
 
 class NativeRun:
     def __init__(self, packet: InputSlice, config: NativeConfig, run_id: str, admit: Callable[[dict], None],
-                 license_channel: LicenseChannel, costs: DatedCosts):
+                 license_channel: LicenseChannel, costs: DatedCosts, identity: str | None = None,
+                 continuation: Continuation | None = None):
         self.packet = packet
         self.config = config
         self.run_id = run_id
         self.admit = admit
         self.license_channel = license_channel
         self.costs = costs
+        self.execution_identity = identity
+        self.continuation = continuation
+        self.native_checkpoint: dict | None = None
+        self.first_evaluation_state: dict | None = None
         self.contract = config.contract
         self.state = seed_decision_state()
         self.rows: list[Minute] = []
@@ -226,12 +233,15 @@ class NativeRun:
         self.pre_settlement_account: dict | None = None
         self.fills_hash = strategy_input_fingerprint({"run_id": run_id, "native_fills": []})
         self.account_as_of = packet.sessions[0].start
-        self.visited = iter(packet.minutes)
+        self.engine_start = next(day for day in packet.days if continuation is None or day > continuation.through)
+        self.visited = (stamp for stamp, row in packet.minutes.items() if row.session.day >= self.engine_start)
+        self.executed_minutes = 0
         self.peak = config.initial_capital
         self.evaluation_days = [day.isoformat() for day in packet.days if day >= config.start]
         self.initial_session = next(session.start for session in packet.sessions if session.day >= config.start)
         self.started = False
         self.error: str | None = None
+        self.interruption: ExpiryInterrupted | None = None
 
     def checked(self, callback):
         def invoke(*args):
@@ -241,12 +251,14 @@ class NativeRun:
                     return callback(*args)
             except BacktestError as exc:
                 self.error = exc.code
+                if isinstance(exc, ExpiryInterrupted):
+                    self.interruption = exc
                 raise
         return invoke
 
     def init(self, _):
         from rqalpha import api
-        from rqalpha.const import INSTRUMENT_TYPE, MATCHING_TYPE
+        from rqalpha.const import INSTRUMENT_TYPE, MARKET, MATCHING_TYPE
         from rqalpha.core.events import EVENT
         from rqalpha.environment import Environment
         from rqalpha.mod.rqalpha_mod_sys_simulation.simulation_broker import SimulationBroker
@@ -257,7 +269,7 @@ class NativeRun:
             not isinstance(env.data_source, BundleDataSource) or not isinstance(env.broker, SimulationBroker)
             or env.rqdatac_init or env.config.mod.sys_simulation.matching_type is not MATCHING_TYPE.NEXT_BAR_OPEN
             or (env.config.base.start_date, env.config.base.end_date) != (
-                next(iter(self.packet.days)), next(reversed(self.packet.days))
+                self.engine_start, next(reversed(self.packet.days))
             )
         ):
             raise BacktestError("PLUS_NATIVE_RUNTIME_CONTRACT_MISMATCH")
@@ -265,7 +277,7 @@ class NativeRun:
             raise BacktestError("PLUS_LICENSE_UNVERIFIED")
         ins = env.data_proxy.instrument(self.contract)
         if (
-            ins is None or ins.type != INSTRUMENT_TYPE.FUTURE or ins.exchange != "SHFE"
+            ins is None or ins.type != INSTRUMENT_TYPE.FUTURE or ins.exchange != "SHFE" or ins.market is not MARKET.CN
             or ins.order_book_id != self.contract or ins.underlying_symbol != "FU"
             or ins.listed_date.date() > next(iter(self.packet.days))
             or ins.de_listed_date.date() < next(reversed(self.packet.days))
@@ -282,6 +294,13 @@ class NativeRun:
         if multiplier != int(multiplier):
             raise BacktestError("PLUS_NATIVE_CONTRACT_MULTIPLIER_INVALID")
         self.multiplier = int(multiplier)
+        self.instrument_identity = digest({
+            "contract": self.contract, "exchange": ins.exchange, "listed": ins.listed_date.isoformat(),
+            "expiry": ins.de_listed_date.isoformat(), "tick": text(self.tick), "multiplier": self.multiplier,
+            "trading_hours": [[w.start.isoformat(), w.end.isoformat()] for w in ins.trading_hours],
+        })
+        if self.continuation is not None and self.continuation.checkpoint.get("instrument") != self.instrument_identity:
+            raise BacktestError("BACKTEST_INCREMENTAL_PREFIX_CHANGED")
         if any(price % self.tick for row in self.packet.minutes.values()
                for price in (row.open, row.high, row.low, row.close)):
             raise BacktestError("PLUS_INPUT_PRICE_OFF_TICK_GRID")
@@ -306,13 +325,18 @@ class NativeRun:
         env.event_bus.add_listener(EVENT.PRE_SETTLEMENT, self.checked(self.pre_settlement))
         env.event_bus.add_listener(EVENT.POST_SETTLEMENT, self.checked(self.post_settlement))
         api.subscribe(self.contract)
+        if self.continuation is not None:
+            self.continuation.restore(self)
+        if self.execution_identity is not None:
+            env.event_bus.add_listener(EVENT.POST_STRATEGY_RUN, self.checked(self.capture_boundary))
         snapshot = self.packet.snapshot()
         snapshot.update(self.costs.snapshot())
         snapshot["data_files"]["dated_cost_profile.json"] = self.costs.artifact_sha256
         snapshot["input_sha256"] = _input_identity(self.packet, self.costs)
         snapshot.update({
             "evaluation_trading_days": self.evaluation_days,
-            "physical_contract": self.contract, "tick_size": text(self.tick), "contract_multiplier": self.multiplier,
+            "physical_contract": self.contract, "contract_expiry": self.expiry.isoformat(),
+            "tick_size": text(self.tick), "contract_multiplier": self.multiplier,
             "source_instrument": "SHFE", "execution_policy_version": EXECUTION_POLICY_VERSION,
             "roll_policy_version": ROLL_POLICY_VERSION, "money_policy": MONEY_POLICY,
             "availability_policy": AVAILABILITY_POLICY, "execution_delay_minutes": self.config.execution_delay_minutes,
@@ -320,6 +344,12 @@ class NativeRun:
                 name: text(value) if isinstance(value, Decimal) else value for name, value in rates.items()
             } for day, rates in self.rates.items()},
         })
+        if self.execution_identity is not None:
+            snapshot["continuation_policy"] = INCREMENTAL_VERSION
+        if self.continuation is not None:
+            snapshot["incremental"] = {
+                "source_run_id": self.continuation.run_id, "through": self.continuation.through.isoformat(),
+            }
         self.admit(snapshot)
         self.started = True
 
@@ -335,12 +365,21 @@ class NativeRun:
         eligible = payload.bar.bar.observation_eligible
         position = Decimal(self.witness.open_fill is not None)
         context = ExecutionContext(
-            self.run_id, self.packet.slice_hash, (V2Strategy.TREND,), V2Strategy.TREND,
+            self.execution_identity or self.run_id, self.execution_identity or self.packet.slice_hash,
+            (V2Strategy.TREND,), V2Strategy.TREND,
             self.account_as_of, self.fills_hash, self.fills_hash, position, self.contract,
         )
         self.state, (decision,) = step_completed(self.state, payload.completed_input(), context)
         if not eligible:
             return
+        if self.first_evaluation_state is None:
+            self.first_evaluation_state = {
+                "contract": self.contract, "trading_day": payload.bar.bar.trading_day.isoformat(),
+                "completed_at": local(payload.bar.bar.bar_end).isoformat(),
+                "signal_available_at": payload.available_at.isoformat(),
+                "state": decision.state.value,
+                "action": decision.main_action.value if decision.main_action else None,
+            }
         bar = payload.bar.bar
         self.bars.append({"at": local(bar.bar_end).isoformat(), "open": text(bar.open),
                           "high": text(bar.high), "low": text(bar.low), "close": text(bar.close),
@@ -465,6 +504,7 @@ class NativeRun:
         at = local(env.calendar_dt)
         if next(self.visited, None) != at:
             raise BacktestError("PLUS_NATIVE_CALLBACK_MINUTE_COVERAGE_MISMATCH")
+        self.executed_minutes += 1
         source = self.packet.minutes[at]
         bar = bars[self.contract]
         if (
@@ -494,7 +534,7 @@ class NativeRun:
                 self.submit(action, payload, opening, attempt)
         self.rows.append(source)
         if len(self.rows) == 5:
-            self.pending = _bar_input(self.rows, self.packet, self.config, self.owner)
+            self.pending = _bar_input(self.rows, self.execution_identity or self.packet.dataset_revision, self.config, self.owner)
             self.rows.clear()
 
     def pre_settlement(self, _) -> None:
@@ -506,6 +546,18 @@ class NativeRun:
             raise BacktestError("PLUS_SETTLEMENT_WITH_LIVE_ORDER")
         self.pre_settlement_account, _ = self.witness.account(self.account, day, facts.last_close,
                                                               self.rates[day]["margin"], settled=False)
+        if day == self.expiry and self.witness.open_fill is not None:
+            if clock.date() != day or clock.time() < time(15):
+                raise BacktestError("PLUS_NATIVE_SETTLEMENT_CLOCK_MISMATCH")
+            marked = self.witness.terminal(clock, facts.settlement, expired=True)
+            # Plus would generate an expiry close during settlement outside the
+            # strategy's versioned execution policy. Preserve only its old-contract mark.
+            raise ExpiryInterrupted({
+                key: marked[key] for key in (
+                    "status", "contract", "marked_at", "mark_price", "quantity",
+                    "direction", "entry_at", "entry_price", "unrealized_pnl",
+                )
+            } | {"trading_day": day.isoformat()})
         self.cost_data_source.begin_settlement(day, self.instrument)
 
     def post_settlement(self, _) -> None:
@@ -525,6 +577,18 @@ class NativeRun:
             self.peak = max(self.peak, equity)
             self.equity.append({"at": clock.isoformat(), "trading_day": day.isoformat(),
                                 "equity": text(equity), "drawdown": text(1 - equity / self.peak)})
+
+    def capture_boundary(self, event) -> None:
+        if self.continuation is not None:
+            # The executor has finished with the suffix window. The native
+            # analyser restored its portfolio history but constructed the cash
+            # benchmark during init using the suffix dates.
+            self.env.config.base.start_date = next(iter(self.packet.days))
+            self.env.mod_dict["sys_analyser"].generate_benchmark_daily_returns_and_portfolio(event)
+        if self.pending is not None:
+            self.advance(self.pending.available_at, trading=False)
+        if next(reversed(self.packet.days)) != self.expiry:
+            self.native_checkpoint = capture_native(self)
 
     def result(self, native: dict) -> dict:
         if (
@@ -581,15 +645,22 @@ class NativeRun:
                 "native_analysis_scope": "configured_warmup_and_evaluation", "availability_policy": AVAILABILITY_POLICY,
                 "money_policy": MONEY_POLICY, "account_binary_tolerance_cny": text(ACCOUNT_BINARY_TOLERANCE),
                 "input_minute_count": len(self.packet.minutes),
+                "first_evaluation_state": self.first_evaluation_state,
                 "dated_cost_profile": self.costs.snapshot(),
                 "execution_delay_minutes": self.config.execution_delay_minutes,
             },
         }
+        if self.continuation is not None:
+            increment = self.continuation.public(self.packet)
+            if self.executed_minutes != increment["executed_minutes"]:
+                raise BacktestError("BACKTEST_INCREMENTAL_ENGINE_COVERAGE_MISMATCH")
+            output["report"]["incremental"] = increment
         return output
 
 
 def execute(config: dict, run_id: str, bundle: Path, expected_snapshot: dict | None,
-            admit: Callable[[dict], None], *, cost_profile: Path | None = None) -> dict:
+            admit: Callable[[dict], None], *, cost_profile: Path | None = None,
+            source: dict | None = None, checkpoint_out: Callable[[dict], None] | None = None) -> dict:
     """Authorize, freeze local inputs, and execute through the pinned Plus engine."""
     if (
         config["formula_version"] != NEWOW_TREND_D1_PAGE_V2.trend_band_formula
@@ -605,6 +676,8 @@ def execute(config: dict, run_id: str, bundle: Path, expected_snapshot: dict | N
         or expected_snapshot.get("cost_artifact_sha256") != costs.artifact_sha256
     ):
         raise BacktestError("PLUS_ORIGINAL_INPUT_UNREPRODUCIBLE")
+    identity = execution_identity(config, packet, costs) if native.sample_type == "historical" else None
+    continuation = Continuation.verify(source, packet, costs, identity) if source is not None else None
     if not os.environ.get("RQSDK_LICENSE"):
         raise BacktestError("PLUS_LICENSE_NOT_CONFIGURED")
 
@@ -617,18 +690,26 @@ def execute(config: dict, run_id: str, bundle: Path, expected_snapshot: dict | N
     if rqalpha_plus.__version__ != packet.compatibility["rqalpha-plus"]:
         raise BacktestError("PLUS_ENGINE_VERSION_UNVERIFIED")
     channel = LicenseChannel()
-    run = NativeRun(packet, native, run_id, admit, channel, costs)
+    run = NativeRun(packet, native, run_id, admit, channel, costs, identity, continuation)
 
-    cfg = _config(native, packet)
+    cfg = _config(native, packet, run.engine_start)
     clear_all_cached_functions()
     try:
         with channel.guard():
             result = main.run(
                 cfg, user_funcs={"init": run.checked(run.init), "handle_bar": run.checked(run.handle_bar)}
             )
+    except ExpiryInterrupted:
+        packet.verify_unchanged()
+        costs.verify_unchanged()
+        raise
     except BacktestError:
         raise
     except Exception:
+        if run.interruption is not None:
+            packet.verify_unchanged()
+            costs.verify_unchanged()
+            raise run.interruption from None
         if run.error or channel.error:
             raise BacktestError(run.error or channel.error) from None
         if channel.blocked:
@@ -641,4 +722,7 @@ def execute(config: dict, run_id: str, bundle: Path, expected_snapshot: dict | N
     packet.verify_unchanged()
     costs.verify_unchanged()
     with localcontext(MONEY_CONTEXT):
-        return run.result(result)
+        output = run.result(result)
+        if checkpoint_out is not None and run.native_checkpoint is not None:
+            checkpoint_out(checkpoint(run, run.native_checkpoint))
+        return output

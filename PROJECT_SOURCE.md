@@ -28,6 +28,10 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 
 `/strategies` 按牛哇、火天大有和苏冰展示六个策略身份。`/api/v1/strategies` 提供目录、版本、能力、已登记绑定、运行和原始结果引用。牛哇展示参考动作、提示与交易，火天展示快期模拟读回，苏冰展示一个 16 品种共享 Paper 组合及历史回放登记。支持范围、部署授权和运行读回各有独立来源。详见 [策略中心合同](openspec/specs/strategy-center/spec.md)。
 
+## 回测中心
+
+`/backtests` 提供 RQAlpha Plus 历史研究、增量 Run、逐笔回放与实验验证。按策略和数据组合显示研究资格，历史账户结果绑定独立 Run 与原生输入身份。详见 [回测中心合同](openspec/specs/backtest-center/spec.md)。
+
 ## 苏冰独立量化与 L.M.S 研究
 
 苏冰量化的唯一策略是16品种共享资金 Paper。`/research/subing-decision`

@@ -1,7 +1,10 @@
 """Supervise a bounded, separate Plus process from the local workstation."""
 
 from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 import fcntl
+from hmac import compare_digest, digest as hmac_digest
 import json
 import logging
 import os
@@ -9,11 +12,13 @@ from pathlib import Path
 import re
 import signal
 import sqlite3
+from stat import S_ISREG
 import subprocess
-from tempfile import TemporaryDirectory
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from threading import Event, Thread
 from time import monotonic, sleep
 
+from .errors import ExpiryInterrupted
 from .contracts import EXECUTION_POLICY, RESEARCH_PROFILE, BacktestError, RunConfig, admission_code
 from .codec import digest, encode
 from .provenance import code_digest
@@ -31,6 +36,7 @@ _ENV = (
 )
 _MAX_RUNTIME_SECONDS = 900
 _MAX_RESULT_BYTES = 96 * 1024 * 1024
+_MAX_CHECKPOINT_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -138,6 +144,67 @@ def _result(data: dict, run_id: str, snapshot: dict) -> dict:
     return result
 
 
+def _interruption(data: dict, run_id: str, snapshot: dict | None):
+    evidence = data["interruption"]
+    try:
+        if snapshot is None or data.get("run_id") != run_id or data.get("snapshot_sha256") != digest(snapshot):
+            raise ValueError
+        if set(evidence) != {
+            "status", "contract", "trading_day", "marked_at", "mark_price",
+            "quantity", "direction", "entry_at", "entry_price", "unrealized_pnl",
+        }:
+            raise ValueError
+        if (
+            evidence["status"] != "ROLLOVER_INTERRUPTED" or evidence["contract"] != snapshot["physical_contract"]
+            or evidence["trading_day"] != snapshot["contract_expiry"]
+            or evidence["trading_day"] not in snapshot["evaluation_trading_days"]
+            or evidence["direction"] != "LONG" or type(evidence["quantity"]) is not int or evidence["quantity"] != 1
+        ):
+            raise ValueError
+        marked, entered = (datetime.fromisoformat(evidence[k]) for k in ("marked_at", "entry_at"))
+        if (marked.utcoffset() is None or entered.utcoffset() is None or entered >= marked
+                or marked.date().isoformat() != evidence["trading_day"]):
+            raise ValueError
+        mark, entry, pnl = (Decimal(evidence[k]) for k in ("mark_price", "entry_price", "unrealized_pnl"))
+        if (not all(value.is_finite() for value in (mark, entry, pnl)) or min(mark, entry) <= 0
+                or pnl != (mark - entry) * snapshot["contract_multiplier"]):
+            raise ValueError
+        return evidence
+    except (AttributeError, KeyError, TypeError, ValueError, InvalidOperation):
+        raise BacktestError("BACKTEST_INTERRUPTION_EVIDENCE_INVALID") from None
+
+
+def _checkpoint_mac(secret: bytes, run_id: str, snapshot: dict, result: dict, checkpoint: dict) -> str:
+    envelope = {
+        "run_id": run_id, "snapshot_digest": digest(snapshot),
+        "result_digest": digest(result), "checkpoint": checkpoint,
+    }
+    return hmac_digest(secret, encode(envelope).encode(), "sha256").hex()
+
+
+def _local_key(path: Path, *, create: bool) -> bytes:
+    if create and not path.exists():
+        with NamedTemporaryFile(dir=path.parent, prefix=".backtest-key-") as staged:
+            staged.write(os.urandom(32))
+            staged.flush()
+            os.fsync(staged.fileno())
+            try:
+                os.link(staged.name, path)
+            except FileExistsError:
+                pass
+    try:
+        with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK), "rb") as reader:
+            info = os.fstat(reader.fileno())
+            if not S_ISREG(info.st_mode) or info.st_uid != os.geteuid() or info.st_mode & 0o077:
+                raise ValueError
+            data = reader.read(33)
+            if len(data) != 32:
+                raise ValueError
+            return data
+    except (OSError, ValueError):
+        raise BacktestError("BACKTEST_CHECKPOINT_UNAUTHENTICATED") from None
+
+
 def _group_alive(process: subprocess.Popen) -> bool:
     process.poll()
     try:
@@ -178,6 +245,7 @@ class Worker:
         self.settings = settings
         self.store = store
         self.stopping = Event()
+        self.checkpoint_key = store.path.with_name(store.path.name + ".checkpoint-key")
         self.thread = Thread(target=self.run, name="backtest-center", daemon=True)
 
     def start(self):
@@ -214,6 +282,8 @@ class Worker:
                 continue
             try:
                 self._execute(run, fd)
+            except ExpiryInterrupted as exc:
+                self.store.finish_stopped(run["run_id"], exc.code, interruption=exc.evidence)
             except BacktestError as exc:
                 self.store.finish_stopped(run["run_id"], exc.code)
             except (OSError, ValueError, subprocess.SubprocessError):
@@ -237,8 +307,16 @@ class Worker:
                 raise BacktestError("BACKTEST_SUBMITTED_CODE_CHANGED")
             if self.settings.bundle_signature(config.contract) != submitted.get("bundle_signature"):
                 raise BacktestError("BACKTEST_SUBMITTED_DATA_CHANGED")
-        source = self.store.get(run["source_run_id"]) if run["source_run_id"] else None
-        expected = source["snapshot"] if source else None
+        continuation, expected = None, None
+        if run.get("incremental"):
+            continuation, source_snapshot = self._continuation(run["source_run_id"])
+            if continuation["checkpoint"]["through"] != run["incremental"]["through"]:
+                raise BacktestError("BACKTEST_CHECKPOINT_INVALID")
+            if source_snapshot.get("code_sha256") != identity["code_sha256"]:
+                raise BacktestError("BACKTEST_CHECKPOINT_VERSION_CHANGED")
+        elif run["source_run_id"]:
+            source = self.store.get(run["source_run_id"])
+            expected = source["snapshot"] if source else None
         if expected and expected.get("code_sha256") != identity["code_sha256"]:
             raise BacktestError("REPLAY_CODE_REVISION_UNAVAILABLE")
 
@@ -248,6 +326,11 @@ class Worker:
                        "execution_policy": EXECUTION_POLICY, "research_profile_id": RESEARCH_PROFILE,
                        "cost_profile": str(self.settings.cost_profile) if self.settings.cost_profile else None}
             (scratch / "request.json").write_text(encode(request))
+            if continuation is not None:
+                encoded = encode(continuation)
+                if len(encoded.encode()) > _MAX_RESULT_BYTES:
+                    raise BacktestError("BACKTEST_ARTIFACT_LIMIT")
+                (scratch / "continuation.json").write_text(encoded)
             process = subprocess.Popen(
                 [str(python), "-I", "-B", str(_ENTRY), str(scratch), str(bundle.resolve())],
                 cwd=scratch,
@@ -265,12 +348,36 @@ class Worker:
                 raise BacktestError("PLUS_PROCESS_EXITED_WITHOUT_RESULT")
             data = _read(response, _MAX_RESULT_BYTES)
             if error := data.get("error"):
+                if error == "ROLLOVER_INTERRUPTED" and "interruption" in data:
+                    raise ExpiryInterrupted(_interruption(data, run_id, snapshot))
                 raise BacktestError(error if isinstance(error, str) and _CODE.fullmatch(error) else "PLUS_RUN_FAILED")
             if snapshot is None or process.returncode != 0:
                 raise BacktestError("PLUS_ADMISSION_NOT_CONFIRMED")
             result = _result(data, run_id, snapshot)
             self.store.phase(run_id, "PUBLISHING")
-            self._publish(run_id, result)
+            checkpoint = None
+            if (scratch / "checkpoint.json").is_file():
+                content = _read(scratch / "checkpoint.json", _MAX_CHECKPOINT_BYTES)
+                if content.get("through") != result["equity"][-1].get("trading_day") or "hmac" in content:
+                    raise BacktestError("BACKTEST_CHECKPOINT_INVALID")
+                secret = _local_key(self.checkpoint_key, create=True)
+                checkpoint = {**content, "hmac": _checkpoint_mac(secret, run_id, snapshot, result, content)}
+            self._publish(run_id, result, checkpoint=checkpoint)
+
+    def _continuation(self, source_run_id):
+        archived = self.store.extension_source(source_run_id)
+        if archived is None:
+            raise BacktestError("BACKTEST_CHECKPOINT_UNAVAILABLE")
+        checkpoint = dict(archived["checkpoint"])
+        signature = checkpoint.pop("hmac", "")
+        if not isinstance(signature, str) or not _HEX.fullmatch(signature):
+            raise BacktestError("BACKTEST_CHECKPOINT_UNAUTHENTICATED")
+        secret = _local_key(self.checkpoint_key, create=False)
+        snapshot = archived["run"]["snapshot"]
+        result = archived["result"]
+        if not compare_digest(signature, _checkpoint_mac(secret, source_run_id, snapshot, result, checkpoint)):
+            raise BacktestError("BACKTEST_CHECKPOINT_UNAUTHENTICATED")
+        return {"checkpoint": checkpoint, "run_id": source_run_id, "result": result}, snapshot
 
     def _monitor(self, process, scratch, run_id, expected, submitted, contract):
         deadline = monotonic() + _MAX_RUNTIME_SECONDS
@@ -298,9 +405,10 @@ class Worker:
             self.stopping.wait(0.08)
         return snapshot
 
-    def _publish(self, run_id, result):
+    def _publish(self, run_id, result, *, checkpoint=None):
         try:
-            published = self.store.publish(run_id, result)
+            published = (self.store.publish(run_id, result, checkpoint=checkpoint) if checkpoint is not None
+                         else self.store.publish(run_id, result))
         except sqlite3.Error:
             # A separate connection owns the readback. Keep the Run fenced
             # if storage is still unavailable, even when the process is gone.

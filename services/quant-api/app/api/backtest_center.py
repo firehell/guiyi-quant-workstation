@@ -9,8 +9,10 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
+from app.backtest_center import BACKTEST_CENTER_VERSION
 from app.backtest_center.contracts import (
     BacktestError,
+    ExtendRequest,
     Frequency,
     Key,
     RetryRequest,
@@ -76,6 +78,8 @@ def _error(exc: BacktestError) -> HTTPException:
         status = 404
     elif exc.code == "BACKTEST_QUEUE_FULL":
         status = 429
+    elif exc.code == "BACKTEST_EXTENSION_WINDOW_INVALID":
+        status = 422
     else:
         status = 409
     return HTTPException(status, detail={"code": exc.code})
@@ -83,7 +87,7 @@ def _error(exc: BacktestError) -> HTTPException:
 
 @router.get("/eligibility")
 def combinations():
-    return {"items": eligibility()}
+    return {"version": BACKTEST_CENTER_VERSION, "items": eligibility()}
 
 
 @router.get("/templates")
@@ -143,6 +147,14 @@ def cancel(run_id: Key, store: Store):
 def rerun(run_id: Key, body: RetryRequest, store: Store):
     try:
         return store.rerun(run_id, body.request_key)
+    except BacktestError as exc:
+        raise _error(exc) from None
+
+
+@router.post("/runs/{run_id}/extend", status_code=202, dependencies=Writes)
+def extend(run_id: Key, body: ExtendRequest, store: Store):
+    try:
+        return store.extend(run_id, body.end, body.request_key)
     except BacktestError as exc:
         raise _error(exc) from None
 

@@ -375,3 +375,103 @@ test('persists unconfirmed rerun keys across reload and reads bounded task event
   await expect(page).toHaveURL(/\/backtests\/retry$/)
   expect(rerunKeys[2]).not.toBe(rerunKeys[0])
 })
+
+test('extends an eligible Run and keeps the same request key after a lost acknowledgement', async ({ page }) => {
+  const sourceId = 'extend-source'
+  const childId = 'extend-child'
+  const newEnd = '2026-02-06'
+  const accepted = []
+  await page.route('**/api/v1/backtests/runs/**', async route => {
+    const path = new URL(route.request().url()).pathname.replace('/api/v1/backtests/runs/', '')
+    if (path.endsWith('/events')) return route.fulfill({ json: { run_id: path.split('/')[0], items: [] } })
+    if (path === sourceId) return route.fulfill({ json: { ...run(sourceId), can_extend: true } })
+    if (path === 'missing-checkpoint') return route.fulfill({ json: run('missing-checkpoint') })
+    if (path === childId) return route.fulfill({ json: {
+      ...run(childId), config: { ...config, end: newEnd }, source_run_id: sourceId,
+      incremental: {
+        source_run_id: sourceId, through: config.end,
+        appended_trading_days: ['2026-02-04', '2026-02-05', newEnd], executed_minutes: 721,
+      },
+    } })
+    if (path === sourceId + '/extend') {
+      const body = route.request().postDataJSON()
+      if (body.end === '2026-02-04') return route.fulfill({ status: 409, json: { detail: { code: 'BACKTEST_INCREMENTAL_PREFIX_CHANGED' } } })
+      accepted.push(body)
+      if (accepted.length === 1) return route.abort('failed')
+      return route.fulfill({ status: 202, json: { ...run(childId, 'QUEUED'), source_run_id: sourceId } })
+    }
+    return route.fulfill({ status: 404, json: { detail: { code: 'NOT_FOUND' } } })
+  })
+
+  await page.goto('/backtests/missing-checkpoint')
+  await expect(page.getByText('Run missing-checkpoint', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '延长回测', exact: true })).toHaveCount(0)
+
+  await page.goto('/backtests/' + sourceId)
+  await page.getByRole('button', { name: '延长回测', exact: true }).click()
+  const endDate = page.getByLabel('新的评价结束日')
+  await endDate.fill(config.end)
+  await page.getByRole('button', { name: '提交延长' }).click()
+  await expect(page.getByRole('alert')).toContainText('晚于来源 Run 的评价结束日')
+  expect(accepted).toHaveLength(0)
+  await endDate.fill('2026-02-04')
+  await page.getByRole('button', { name: '提交延长' }).click()
+  await expect(page.getByRole('alert')).toContainText('来源 Run 的区间数据已变化')
+  await expect(page.getByText('Run ' + sourceId, { exact: true })).toBeVisible()
+  await endDate.fill(newEnd)
+  await page.getByRole('button', { name: '提交延长' }).click()
+  await expect(page.getByRole('alert')).toContainText('延长提交未确认')
+
+  await page.reload()
+  await page.getByRole('button', { name: '延长回测', exact: true }).click()
+  await endDate.fill(newEnd)
+  await page.getByRole('button', { name: '提交延长' }).click()
+  await expect(page).toHaveURL(new RegExp('/backtests/' + childId + '$'))
+  const scope = page.getByRole('region', { name: '延长范围' })
+  await expect(page.getByRole('button', { name: '按原配置重跑' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: '来源 Run ' + sourceId })).toBeVisible()
+  await expect(scope.getByText(config.end, { exact: true })).toBeVisible()
+  await expect(scope.getByText(/2026-02-04.*2026-02-05.*2026-02-06/)).toBeVisible()
+  await expect(scope.getByText('721 分钟', { exact: true })).toBeVisible()
+  expect(accepted).toHaveLength(2)
+  expect(accepted[0].end).toBe(newEnd)
+  expect(accepted[0]).toEqual(accepted[1])
+})
+
+test('shows the old-contract mark only for a failed rollover Run', async ({ page }) => {
+  const requests = []
+  const interruption = {
+    status: 'ROLLOVER_INTERRUPTED', contract: 'FU2603', trading_day: '2026-03-13',
+    marked_at: '2026-03-13T14:59:47+08:00', mark_price: '2754', quantity: 1, direction: 'LONG',
+    entry_at: '2026-03-12T09:06:00+08:00', entry_price: '2751', unrealized_pnl: '30',
+  }
+  await page.route('**/api/v1/backtests/runs/**', async route => {
+    const [id, resource] = new URL(route.request().url()).pathname.replace('/api/v1/backtests/runs/', '').split('/')
+    requests.push(resource)
+    if (resource === 'events') return route.fulfill({ json: { run_id: id, items: [] } })
+    if (resource) return route.fulfill({ status: 404, json: { detail: { code: 'NOT_FOUND' } } })
+    return route.fulfill({ json: {
+      ...run(id, 'FAILED'), config: { ...config, end: interruption.trading_day }, interruption,
+      diagnostic: id === 'rollover-failed' ? 'ROLLOVER_INTERRUPTED' : 'BACKTEST_CHECKPOINT_VERSION_CHANGED',
+    } })
+  })
+
+  await page.goto('/backtests/rollover-failed')
+  await expect(page.getByRole('status')).toHaveText('原合约仍有未平仓仓位，回测在换月边界中断。')
+  const mark = page.getByRole('region', { name: '换月中断估值' })
+  await expect(mark.getByText('原物理合约')).toBeVisible()
+  await expect(mark.getByText('FU2603', { exact: true })).toBeVisible()
+  await expect(mark.getByText('2026-03-13T14:59:47+08:00', { exact: true })).toBeVisible()
+  await expect(mark.getByText('2754', { exact: true })).toBeVisible()
+  await expect(mark.getByText('未实现盈亏', { exact: true })).toBeVisible()
+  await expect(mark.getByText('30', { exact: true })).toBeVisible()
+  await expect(page.getByText('失败', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '交易明细' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '报告' })).toHaveCount(0)
+  await expect(page.getByText('净累计收益', { exact: true })).toHaveCount(0)
+  expect(requests.every(resource => !resource || resource === 'events')).toBe(true)
+
+  await page.goto('/backtests/checkpoint-version')
+  await expect(page.getByRole('status')).toHaveText('当前执行代码与生成检查点时的版本不同。')
+  await expect(mark).toHaveCount(0)
+})

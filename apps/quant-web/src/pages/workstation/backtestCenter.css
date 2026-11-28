@@ -88,3 +88,5 @@
 .backtest-center .bt-replay-key { display: flex; flex-wrap: wrap; gap: 6px 14px; list-style: none; margin: 8px 0; padding: 0; font-size: 12px; }
 .backtest-center .bt-replay-key li { display: grid; gap: 1px; }
 .backtest-center .bt-replay-key time { color: var(--gy-text-secondary); }
+
+.backtest-center .bt-extension { padding: 10px; margin: 10px 0; border: 1px solid var(--gy-border); border-radius: 7px; }

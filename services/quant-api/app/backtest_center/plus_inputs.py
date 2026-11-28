@@ -124,6 +124,7 @@ class InputSlice:
     dataset_revision: str
     slice_hash: str
     compatibility: dict[str, str]
+    prefix_by_day: dict[date, str]
 
     def snapshot(self) -> dict:
         return {
@@ -240,6 +241,8 @@ def preflight(config: NativeConfig, bundle: Path) -> InputSlice:
         days = {}
         minutes = {}
         selection_hash = sha256()
+        prefix = sha256()
+        prefix_by_day = {}
         with h5py.File(paths[3], "r") as daily, h5py.File(paths[-1], "r") as intraday:
             if config.contract not in daily:
                 raise BacktestError("PLUS_PHYSICAL_DAILY_FACTS_MISSING")
@@ -279,6 +282,13 @@ def preflight(config: NativeConfig, bundle: Path) -> InputSlice:
                     raise BacktestError("PLUS_DAILY_MINUTE_CLOSE_MISMATCH")
                 selection_hash.update(daily_record.tobytes())
                 selection_hash.update(rows.tobytes())
+                prefix.update(day.isoformat().encode())
+                for session in sessions:
+                    prefix.update(session.start.isoformat().encode())
+                    prefix.update(session.end.isoformat().encode())
+                prefix.update(daily_record.tobytes())
+                prefix.update(rows.tobytes())
+                prefix_by_day[day] = prefix.hexdigest()
         common_hash = sha256("\n".join(hashes[:-1]).encode()).hexdigest()
         selection_hash.update(
             f"{common_hash}\n{config.contract}\n{config.warmup_start}\n{config.start}\n{config.end}".encode()
@@ -291,4 +301,4 @@ def preflight(config: NativeConfig, bundle: Path) -> InputSlice:
         raise BacktestError("PLUS_NATIVE_BUNDLE_READ_FAILED") from None
     return InputSlice(root, paths, hashes, stamps, minutes, days, tuple(
         session for sessions in sessions_by_day.values() for session in sessions
-    ), common_hash, selection_hash.hexdigest(), compatibility)
+    ), common_hash, selection_hash.hexdigest(), compatibility, prefix_by_day)

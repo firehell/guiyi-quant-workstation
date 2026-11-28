@@ -39,6 +39,26 @@ export interface Summary extends EvidenceFields {
   pairing_basis?: string
 }
 
+export interface IncrementalRun {
+  source_run_id: string
+  through: string
+  appended_trading_days?: string[]
+  executed_minutes?: number
+}
+
+export interface RunInterruption {
+  status: 'ROLLOVER_INTERRUPTED'
+  contract: string
+  trading_day: string
+  marked_at: string
+  mark_price: string
+  quantity: 1
+  direction: 'LONG'
+  entry_at: string
+  entry_price: string
+  unrealized_pnl: string
+}
+
 export interface Run {
   run_id: string
   status: RunStatus
@@ -48,6 +68,9 @@ export interface Run {
   phase?: string
   diagnostic?: string | null
   source_run_id?: string | null
+  can_extend?: boolean
+  incremental?: IncrementalRun | null
+  interruption?: RunInterruption | null
   qualification?: string | null
   summary?: Summary | null
   snapshot?: EvidenceFields | null
@@ -269,7 +292,7 @@ export const readRuns = (filters: RunFilters, offset: number, limit: number, sig
     params: { ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value)), offset, limit }, signal,
   })
 
-async function acceptRun(path: string, body: { request_key: string; config?: RunConfig }) {
+async function acceptRun(path: string, body: { request_key: string; config?: RunConfig; end?: string }) {
   const response = await request.post<unknown, AxiosResponse<Run>>(path, body, { preserveResponse: true } as ConditionalRequestConfig)
   const id = response.data?.run_id
   if (response.status !== 202 || typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(id)) {
@@ -288,6 +311,9 @@ export const cancelRun = (id: string) => request.post<unknown, Run>(`${runPath(i
 
 export const rerun = (id: string, request_key: string) =>
   acceptRun(`${runPath(id)}/rerun`, { request_key })
+
+export const extendRun = (id: string, end: string, request_key: string) =>
+  acceptRun(`${runPath(id)}/extend`, { end, request_key })
 
 export const readRunEvents = (id: string, signal: AbortSignal) =>
   request.get<unknown, { run_id: string; items: RunEvent[] }>(`${runPath(id)}/events`, { signal })

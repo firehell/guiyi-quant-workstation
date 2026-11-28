@@ -2,7 +2,7 @@
 import { computed, onMounted, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
-  cancelRun, diagnosticCode, readEquity, readReport, readRun, readRunEvents, readTrades, rerun, runInProgress,
+  cancelRun, diagnosticCode, extendRun, readEquity, readReport, readRun, readRunEvents, readTrades, rerun, runInProgress,
   type Equity, type EvidenceFields, type Run, type RunEvent, type RunRows, type Trade,
 } from '@/api/backtestCenter'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
@@ -18,6 +18,16 @@ const update = ref(0)
 const error = ref('')
 const actionError = ref('')
 const busy = ref(false)
+const extensionOpen = ref(false)
+const extensionEnd = ref('')
+const canExtend = computed(() => run.value?.status === 'SUCCEEDED' && run.value.can_extend === true)
+const sourceRunId = computed(() => run.value?.incremental?.source_run_id ?? run.value?.source_run_id)
+const rolloverInterruption = computed(() => {
+  const current = run.value
+  const mark = current?.interruption
+  if (current?.status === 'FAILED' && current.diagnostic === 'ROLLOVER_INTERRUPTED'
+    && mark?.status === 'ROLLOVER_INTERRUPTED' && mark.contract === current.config.contract) return mark
+})
 const loading = ref(false)
 const tab = ref('overview')
 const tabs = [
@@ -139,6 +149,32 @@ async function act(action: 'cancel' | 'rerun') {
   }
 }
 
+async function requestExtension() {
+  const source = run.value
+  if (busy.value || !source || !canExtend.value) return
+  const end = extensionEnd.value
+  actionError.value = ''
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(end) || end <= source.config.end) {
+    actionError.value = '新的评价结束日须晚于来源 Run 的评价结束日。'
+    return
+  }
+  busy.value = true
+  try {
+    const pending = await pendingRunRequest('extend', { source_run_id: source.run_id, end })
+    const child = await extendRun(source.run_id, end, pending.key)
+    const parent = child.incremental?.source_run_id ?? child.source_run_id
+    if (child.run_id === source.run_id || (parent && parent !== source.run_id)) {
+      throw new Error('BACKTEST_SUBMISSION_UNCONFIRMED')
+    }
+    pending.accepted()
+    if (!alive.signal.aborted) await router.push({ name: 'backtests', params: { runId: child.run_id } })
+  } catch (reason) {
+    if (!alive.signal.aborted) actionError.value = diagnosticCode(reason) ?? '延长提交未确认。再次提交相同结束日将沿用原请求。'
+  } finally {
+    busy.value = false
+  }
+}
+
 let timer: number | undefined
 onMounted(() => {
   timer = window.setInterval(() => {
@@ -160,8 +196,10 @@ onScopeDispose(() => {
       </div>
       <div class="bt-actions">
         <button class="bt-button" @click="update += 1">刷新状态</button>
+        <button v-if="canExtend" class="bt-button" type="button" :disabled="busy" :aria-expanded="extensionOpen"
+          @click="extensionOpen = !extensionOpen; actionError = ''">延长回测</button>
         <button v-if="run.status === 'QUEUED' || run.status === 'RUNNING'" class="bt-button" :disabled="busy" @click="act('cancel')">取消任务</button>
-        <button v-if="!runInProgress(run.status)" class="bt-button" :disabled="busy" @click="act('rerun')">按原配置重跑</button>
+        <button v-if="!run.incremental && !runInProgress(run.status)" class="bt-button" :disabled="busy" @click="act('rerun')">按原配置重跑</button>
       </div>
     </div>
     <div class="bt-run-meta">
@@ -169,9 +207,38 @@ onScopeDispose(() => {
       <span>研究资格 {{ statusLabel(run.qualification) }}</span>
       <span v-if="run.phase">阶段 {{ run.phase }}</span>
       <time>{{ formatBeijingInstant(run.updated_at) }}</time>
-      <RouterLink v-if="run.source_run_id" :to="{ name: 'backtests', params: { runId: run.source_run_id } }">来源 Run {{ run.source_run_id }}</RouterLink>
+      <RouterLink v-if="sourceRunId" :to="{ name: 'backtests', params: { runId: sourceRunId } }">来源 Run {{ sourceRunId }}</RouterLink>
+    </div>
+    <form v-if="canExtend && extensionOpen" class="bt-actions bt-extension" aria-label="延长回测" novalidate @submit.prevent="requestExtension">
+      <p class="bt-note">来源 Run 评价结束日 <time :datetime="run.config.end">{{ run.config.end }}</time></p>
+      <label>新的评价结束日 <input v-model="extensionEnd" type="date" required :disabled="busy" /></label>
+      <button class="bt-button bt-primary" type="submit" :disabled="busy">{{ busy ? '正在提交' : '提交延长' }}</button>
+    </form>
+    <div v-if="run.incremental" role="region" aria-label="延长范围">
+      <dl class="bt-facts">
+        <dt>继承边界</dt><dd><time :datetime="run.incremental.through">{{ run.incremental.through }}</time></dd>
+        <dt>评价结束日</dt><dd><time :datetime="run.config.end">{{ run.config.end }}</time></dd>
+        <template v-if="run.incremental.appended_trading_days?.length">
+          <dt>实际追加交易日</dt><dd>{{ run.incremental.appended_trading_days.join('、') }}</dd>
+        </template>
+        <template v-if="run.incremental.executed_minutes != null">
+          <dt>追加执行分钟</dt><dd>{{ run.incremental.executed_minutes }} 分钟</dd>
+        </template>
+      </dl>
     </div>
     <p v-if="run.diagnostic" class="bt-alert" role="status">{{ diagnosticLabel(run.diagnostic) }}</p>
+    <section v-if="rolloverInterruption" aria-labelledby="bt-rollover-heading">
+      <h3 id="bt-rollover-heading">换月中断估值</h3>
+      <dl class="bt-facts">
+        <dt>原物理合约</dt><dd>{{ rolloverInterruption.contract }}</dd>
+        <dt>中断交易日</dt><dd><time :datetime="rolloverInterruption.trading_day">{{ rolloverInterruption.trading_day }}</time></dd>
+        <dt>未平仓仓位</dt><dd>多头 {{ rolloverInterruption.quantity }} 手</dd>
+        <dt>原仓位进场</dt><dd><time :datetime="rolloverInterruption.entry_at">{{ rolloverInterruption.entry_at }}</time> · {{ rolloverInterruption.entry_price }}</dd>
+        <dt>中断估值时点</dt><dd><time :datetime="rolloverInterruption.marked_at">{{ rolloverInterruption.marked_at }}</time></dd>
+        <dt>原合约估值价</dt><dd>{{ rolloverInterruption.mark_price }}</dd>
+        <dt>未实现盈亏</dt><dd>{{ rolloverInterruption.unrealized_pnl }}</dd>
+      </dl>
+    </section>
     <p v-if="error || actionError" class="bt-alert" role="alert">{{ diagnosticLabel(actionError || error) }}</p>
     <details v-if="events.length || eventsError" class="bt-evidence">
       <summary>任务日志 <span v-if="events.length">（最近 {{ events.length }} 条）</span></summary>

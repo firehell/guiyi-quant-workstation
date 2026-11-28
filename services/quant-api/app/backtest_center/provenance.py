@@ -6,7 +6,7 @@ from pathlib import Path
 from .codec import digest
 
 _EXECUTION_FILES = (
-    "codec.py", "errors.py", "native_plus.py", "plus_costs.py", "plus_entry.py", "plus_inputs.py",
+    "codec.py", "errors.py", "incremental.py", "native_plus.py", "plus_costs.py", "plus_entry.py", "plus_inputs.py",
     "plus_reconcile.py", "provenance.py",
 )
 

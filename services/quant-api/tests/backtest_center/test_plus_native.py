@@ -52,7 +52,7 @@ def test_first_clock_and_holiday_coverage_fail_closed():
 def test_5m_information_is_strictly_before_modeled_open_and_stays_in_session():
     session = Session(JAN5, clock(JAN5, 9), clock(JAN5, 9, 10))
     rows = [minute(session, stamp) for stamp in session.minute_ends()]
-    payload = _bar_input(rows[:5], SimpleNamespace(dataset_revision="data"), config(), "owner")
+    payload = _bar_input(rows[:5], "data", config(), "owner")
     assert payload.source is MarketSource.RQALPHA_PLUS
     assert payload.bar.series_kind == "physical_futures"
     assert payload.available_at.isoformat() == "2026-01-05T09:05:02+08:00"
@@ -61,7 +61,7 @@ def test_5m_information_is_strictly_before_modeled_open_and_stays_in_session():
     assert payload.observed_at == clock(JAN5, 9, 5) and payload.confirmed_at == payload.available_at
     nearly_closed = replace(payload, session=(session.start, clock(JAN5, 9, 9)))
     assert _candidate(nearly_closed, 3) is None
-    tail = _bar_input(rows[5:], SimpleNamespace(dataset_revision="data"), config(), "owner")
+    tail = _bar_input(rows[5:], "data", config(), "owner")
     assert _candidate(tail) is None
 
 
@@ -71,7 +71,7 @@ def test_plus_calculation_agrees_with_legacy_batch_formula_on_same_price_prefix(
     minutes = [minute(session, stamp, DEC(price)) for stamp, price in zip(session.minute_ends(), prices, strict=True)]
     packet = SimpleNamespace(dataset_revision="revision")
     payloads = [
-        _bar_input(minutes[begin:begin + 5], packet, config(), "fu:FU2603:research")
+        _bar_input(minutes[begin:begin + 5], packet.dataset_revision, config(), "fu:FU2603:research")
         for begin in range(0, len(minutes), 5)
     ]
     context = ExecutionContext("run", "config", (V2Strategy.TREND,))
