@@ -17,6 +17,8 @@ from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
 from app.api.market_newow import router as market_newow_router
 from app.api.newow_backtests import router as newow_backtests_router
+from app.api.backtest_center import router as backtest_center_router, workstation_lifespan
+from app.api.backtest_experiments import router as backtest_experiments_router
 from app.api.market_messages import router as market_messages_router
 from app.api.market_subing_reference import router as market_subing_reference_router
 from app.api.market_live import router as market_live_router
@@ -53,7 +55,7 @@ def resolve_cors_origins() -> list[str]:
     return origins
 
 
-app = FastAPI(title="归一量化 API", version=APP_VERSION)
+app = FastAPI(title="归一量化 API", version=APP_VERSION, lifespan=workstation_lifespan)
 
 
 if formal_tick_requested():
@@ -99,6 +101,8 @@ app.include_router(simulation_monitor_router)
 app.include_router(market_router)
 app.include_router(market_newow_router)
 app.include_router(newow_backtests_router)
+app.include_router(backtest_center_router)
+app.include_router(backtest_experiments_router)
 app.include_router(market_messages_router)
 app.include_router(market_subing_reference_router)
 app.include_router(market_live_router)

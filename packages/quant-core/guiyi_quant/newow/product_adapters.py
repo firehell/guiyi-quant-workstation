@@ -120,6 +120,7 @@ def build_product_identity(
     *,
     input_quality_policy: InputQualityPolicy | str = InputQualityPolicy.V1,
     reference_price_policy: str | None = None,
+    series_kind: str = "actual_dominant",
 ) -> ProductIdentity:
     """Build a price-versioned identity; existing consumers default to threshold pricing."""
 
@@ -135,6 +136,7 @@ def build_product_identity(
         normalized,
         ProductFrequency(frequency),
         tuple(formulas),
+        series_kind=series_kind,
         input_quality_policy=input_quality_policy,
     )
 
@@ -171,6 +173,7 @@ def _iter_validated_inputs(
     expected = build_product_identity(
         identity.product, identity.strategy, identity.frequency,
         input_quality_policy=identity.input_quality_policy,
+        series_kind=identity.series_kind,
         reference_price_policy=GAP_FILL_PRICE_POLICY if has_gap_fill(identity.formula_versions) else None,
     )
     if identity.formula_versions != expected.formula_versions:
