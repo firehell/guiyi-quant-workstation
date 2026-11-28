@@ -100,7 +100,7 @@ async def isolate_legacy_newow_calculation(request, call_next):
     path = request.url.path.rstrip("/")
     prefix = "/api/v1/market/newow/"
     if (market_reference_receipts_only() and path.startswith(prefix)
-            and path not in {prefix + "product-capabilities", prefix + "home-projection"}):
+            and path not in {prefix + "product-capabilities", prefix + "home-projection", prefix + "historical-chart"}):
         return JSONResponse({"detail": {"code": "NEWOW_AFTER_MARKET_ONLY"}}, status_code=409)
     return await call_next(request)
 

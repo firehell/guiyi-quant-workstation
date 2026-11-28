@@ -4,9 +4,11 @@ import MarketChartDesk from '@/components/workstation/MarketChartDesk.vue'
 import { useWorkstationAccounts } from '@/composables/useWorkstationAccounts'
 import { tqChartExecutions, subingChartExecutions, locateChartExecutions } from '@/utils/workstationChartActivity'
 import { rememberWorkstationChart, rememberWorkstationNewowMode } from '@/utils/workstationRoutes'
-import { paneOptions, selectPrimaryPane, type PaneId } from '@/utils/workstationChartPanes'
+import { archiveReadError, paneOptions, selectPrimaryPane, type PaneId } from '@/utils/workstationChartPanes'
 import { MAX_AUXILIARY_PANES } from '@guiyi/quant-chart'
 import WorkstationChartSettings from '@/components/market/detail/newow/WorkstationChartSettings.vue'
+import { newowRecordingWindow } from '@/utils/newowRecording'
+import { useNewowHistoricalChart } from '@/composables/useNewowHistoricalChart'
 import { useWorkstationChartPanes } from '@/composables/useWorkstationChartPanes'
 import MarketKlineStage from '@/components/market/detail/MarketKlineStage.vue'
 import DetailPricePreview from '@/components/market/detail/DetailPricePreview.vue'
@@ -69,13 +71,19 @@ const productSelector = ref<InstanceType<typeof ProductSelector> | null>(null)
 const controller = useMarketDetailController({ routeQuery: () => ({ ...route.query }) })
 const routeResult = computed(() => parseMarketDetailRoute({ ...route.query }))
 const explicitIdentity = computed(() => routeResult.value.kind === 'valid' ? routeResult.value.identity : null)
+const historical = useNewowHistoricalChart(explicitIdentity)
+const historyMode = historical.enabled
+const chartBars = computed(() => historyMode.value ? historical.window.value?.bars ?? [] : controller.bars.value)
+const historicalMutation = computed(() => ({ kind: 'replace' as const, bars: chartBars.value }))
 const chartStudyContext = computed(() => {
   const identity = explicitIdentity.value
   if (identity?.view === 'newow' && newowAfterMarketOnly.value) {
     return {
       identity: { ...identity, profile: 'newow' as const }, talibMacd: false, toggleMacd() {},
-      active: controller.studyActivity, allowCompleted: controller.studyCompletedAvailable,
-      revision: controller.studyRevision, revisionPending: controller.studyRevisionPending, allowTail: false,
+      active: historyMode.value ? ref(null) : controller.studyActivity,
+      allowCompleted: historyMode.value ? ref(false) : controller.studyCompletedAvailable,
+      revision: historyMode.value ? computed(() => historical.window.value?.evidence.revision ?? null) : controller.studyRevision,
+      revisionPending: historyMode.value ? historical.loading : controller.studyRevisionPending, allowTail: false,
     }
   }
   if (!identity || !isGenericChartProfile(identity.view)) return null
@@ -101,7 +109,7 @@ const chartStudyContext = computed(() => {
 })
 provide(MARKET_CHART_STUDY_CONTEXT, chartStudyContext)
 const marketFoundation = import.meta.env?.VITE_GUIYI_MARKET_FOUNDATION === '1'
-const newowAfterMarketOnly = computed(() => marketFoundation || explicitIdentity.value?.newowSource === 'after-market')
+const newowAfterMarketOnly = computed(() => marketFoundation || !!explicitIdentity.value?.newowSource)
 const { rows: accountActivity, recentTqRecords, tq, subing, tqAccount, subingAccount } = useWorkstationAccounts()
 const verifiedAccountSources = computed(() => ({
   htdy: tq.status.value === 'ready' && tqAccount.value.verified,
@@ -110,7 +118,7 @@ const verifiedAccountSources = computed(() => ({
 const showExecutions = ref(typeof window !== 'undefined' && window.history.state?.showWorkstationExecutions === true)
 const executions = computed(() => {
   const identity = explicitIdentity.value
-  if (!identity || !showExecutions.value) return []
+  if (!identity || historyMode.value || !showExecutions.value) return []
   const bars = controller.bars.value
   const contracts = new Set(bars.map(bar => bar.physicalContract?.toUpperCase()))
   const tq = recentTqRecords.status.value === 'ready' && recentTqRecords.value.value?.coverage !== 'unavailable'
@@ -134,7 +142,8 @@ const chartSession = createDetailChartSession({ createChart })
 provide(DETAIL_CHART_SESSION, chartSession)
 const marketAxisKey = computed(() => {
   const identity = explicitIdentity.value
-  return identity ? [identity.symbol, identity.seriesKind, identity.contract ?? '', identity.frequency].join(':') : 'invalid'
+  return identity ? [identity.symbol, identity.seriesKind, identity.contract ?? '', identity.frequency,
+    ...(historyMode.value ? ['canonical-recompute', identity.newowTradingDay ?? 'latest', identity.newowRevision ?? ''] : [])].join(':') : 'invalid'
 })
 watch(marketAxisKey, key => chartSession.setIdentity(key), { immediate: true, flush: 'sync' })
 watch([positionedExecutions, showExecutions], ([points, enabled]) => {
@@ -170,7 +179,7 @@ const detailPricePreview = {
 }
 const newowHistoricalAsOf = ref<string | null>(null)
 const detailQuote = useMarketDetailQuote({ identity: explicitIdentity,
-  enabled: computed(() => !candidatePreview.enabled), snapshotBefore: computed(() => newowHistoricalAsOf.value) })
+  enabled: computed(() => !candidatePreview.enabled && !historyMode.value), snapshotBefore: computed(() => newowHistoricalAsOf.value) })
 const aiOpen = ref(false)
 const aiAsOf = ref<string | null>(null)
 function adoptAiRecommendation(combo: AiCombo) {
@@ -187,9 +196,11 @@ const newowWeeklyQuoteContext = ref<{ asOf: string | null; physicalContract: str
 const newowCapabilities = useNewowCapabilities()
 const newowOpenFrequencies = computed(() => newowAfterMarketOnly.value
   ? NEWOW_FREQUENCIES : newowCapabilities.openFrequenciesFor(explicitIdentity.value?.symbol ?? ''))
+const archiveNotice = ref<string | null>('正在读取盘后归档')
 const savedReference = ref<{ source: MarketAfterCloseReference; snapshot: string } | null>(null)
 const savedPresentation = ref<(MarketAfterClosePresentation & { sourceRevision: string }) | null>(null)
 const savedChartStatus = ref<'waiting' | 'loading' | 'ready' | 'unavailable'>('waiting')
+const savedChartError = ref<string | null>(null)
 const savedVisibleFrom = ref<string | null>(null)
 const savedStrategy = computed(() => explicitIdentity.value?.newowMode === 'dual' ? 'dual_fusion' : explicitIdentity.value?.strategy ?? 'trend')
 const savedChartSpan = computed(() => {
@@ -208,6 +219,7 @@ const savedChartSpan = computed(() => {
 watch([savedReference, savedChartSpan], async ([selection, span], _, onCleanup) => {
   savedPresentation.value = null
   savedChartStatus.value = 'waiting'
+  savedChartError.value = null
   if (!selection || !span) return
   const signal = new AbortController()
   onCleanup(() => signal.abort())
@@ -217,13 +229,16 @@ watch([savedReference, savedChartSpan], async ([selection, span], _, onCleanup) 
     if (signal.signal.aborted) return
     savedPresentation.value = { ...presentation, sourceRevision: selection.source.revision_id }
     savedChartStatus.value = presentation.main_status === 'saved' ? 'ready' : 'unavailable'
-  } catch {
-    if (!signal.signal.aborted) savedChartStatus.value = 'unavailable'
+  } catch (failure) {
+    if (!signal.signal.aborted) {
+      savedChartStatus.value = 'unavailable'
+      savedChartError.value = archiveReadError(failure)
+    }
   }
 })
 watch(() => {
   const id = explicitIdentity.value
-  return id ? [id.view, id.symbol, id.frequency, id.contract, savedStrategy.value].join(':') : ''
+  return id ? [id.view, id.symbol, id.frequency, id.contract, id.newowSource, savedStrategy.value].join(':') : ''
 }, () => {
   savedVisibleFrom.value = null
   savedReference.value = null
@@ -234,6 +249,15 @@ const savedChart = computed(() => projectMarketReferenceChart(
   explicitIdentity.value?.symbol ?? '', savedStrategy.value, explicitIdentity.value?.frequency ?? '',
   savedPresentation.value?.sourceRevision ?? null,
 ))
+const archiveChartNotice = computed(() => {
+  if (archiveNotice.value || savedChartError.value) return archiveNotice.value ?? savedChartError.value
+  if (!savedReference.value) return null
+  if (savedChartStatus.value === 'loading') return '正在读取已保存的牛哇主图'
+  if (savedChartStatus.value === 'unavailable') return '本次归档尚未保存主图'
+  if (!savedChartSpan.value) return '当前行情窗口与归档日期没有交集'
+  if (savedPresentation.value?.frames.length && !savedChart.value.matched.length) return '归档主图与行情的 Bar 哈希或物理合约不一致'
+  return null
+})
 const singleChartVisible = ref(true)
 const workstationChartScope = computed(() => {
   const identity = explicitIdentity.value
@@ -242,8 +266,22 @@ const workstationChartScope = computed(() => {
 })
 const { layers: workstationLayers, panes: workstationPanes } = useWorkstationChartPanes(
   () => workstationChartScope.value, () => savedReference.value?.source ?? null,
-  controller.bars, () => savedChart.value.matched,
+  chartBars, () => savedChart.value.matched, historical, () => archiveChartNotice.value,
 )
+const newowProjection = computed(() => historyMode.value ? historical.window.value?.projection : savedChart.value)
+const sourceEvidence = computed(() => {
+  if (historyMode.value) return historical.window.value?.evidence
+  const source = savedReference.value?.source
+  if (!isNewowView.value || !newowAfterMarketOnly.value || !source || !savedChart.value.matched.length) return undefined
+  return { kind: 'formal_archive' as const, trading_day: source.through, cutoff: source.cutoff,
+    revision: source.revision_id, receipt: source.receipt ?? null }
+})
+function chooseChartSource(recompute: boolean, day?: string) {
+  const identity = explicitIdentity.value
+  if (!identity || (day && day > newowRecordingWindow().through)) return
+  selectIdentity({ ...identity, newowSource: recompute ? 'canonical-recompute' : 'after-market',
+    newowTradingDay: recompute ? day || undefined : undefined, newowRevision: undefined, focusBarEnd: undefined })
+}
 const savedLatest = computed(() => savedChart.value.matched.at(-1))
 const newowFrequencyOpen = computed(() => explicitIdentity.value?.view !== 'newow'
   || ((newowAfterMarketOnly.value || explicitIdentity.value.seriesKind === 'actual_dominant') && explicitIdentity.value.frequency !== '1m'
@@ -261,12 +299,16 @@ const productSelectorStatus = computed(() => productOptions.value.length > 0
   ? 'ready' as const
   : controller.state.value.loading ? 'loading' as const : 'error' as const)
 const quoteSourceNote = computed(() => {
+  if (historyMode.value) return 'Canonical 历史复算 · 行情截止 ' + (historical.window.value?.evidence.trading_day ?? '待读取')
   const quote = detailQuote.quote.value
   return quote ? `${quote.source === 'completed_1m' ? '分钟报价' : '日线报价'} ${formatBeijingInstant(quote.asOf)}${quote.daily ? ` · 日行情 ${quote.daily.tradingDay}` : ' · 日行情待确认'}` : '详情报价不可用'
 })
 const header = computed(() => {
   const identity = explicitIdentity.value
   const product = controller.productCatalog.value.find(item => item.product === identity?.symbol)
+  if (historyMode.value) return identity && product && chartBars.value.length ? buildMarketDetailHeaderModel({ identity,
+    dominant: null, product, bars: chartBars.value, research: null, marketState: null, overlaySource: 'none',
+    canonicalCoverage: null, hasMoreBefore: false, stale: false }) : null
   const base = controller.state.value.header ?? (identity && product ? buildMarketDetailHeaderModel({ identity,
     dominant: null, product, bars: [], research: null, marketState: null, overlaySource: 'none', canonicalCoverage: null,
     hasMoreBefore: false, stale: true }) : null)
@@ -286,7 +328,7 @@ const migrationNotice = ref<string | null>(
 const identityKey = computed(() => {
   const identity = explicitIdentity.value
   return identity
-    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.newowMode ?? '', identity.newowTest ?? '', identity.newowSource ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
+    ? [identity.view, identity.symbol, identity.strategy ?? '', identity.newowMode ?? '', identity.newowTest ?? '', identity.newowSource ?? '', identity.newowTradingDay ?? '', identity.newowRevision ?? '', identity.seriesKind, identity.contract ?? '', identity.frequency].join(':')
     : 'invalid'
 })
 watch(identityKey, chartSession.restoreInspectionCursor, { flush: 'post' })
@@ -334,6 +376,9 @@ function switchNewowToOpenFrequency() {
 function selectIdentity(identity: MarketDetailIdentity) {
   migrationNotice.value = null
   if (identity.view === 'newow') {
+    if (identity.newowRevision && (identity.symbol !== explicitIdentity.value?.symbol || identity.frequency !== explicitIdentity.value?.frequency
+      || identity.strategy !== explicitIdentity.value?.strategy || identity.newowMode !== explicitIdentity.value?.newowMode))
+      identity = { ...identity, newowRevision: undefined }
     if (identity.newowSource === 'after-market') rememberWorkstationNewowMode(identity)
     preferences.value = replaceNewowDetailPreferences(preferences.value, {
       strategy: identity.strategy,
@@ -424,6 +469,8 @@ function selectPhysicalContract(item: { product: string; contract: string }) {
   const identity = explicitIdentity.value
   if (!identity) return
   selectIdentity({ ...identity, symbol: item.product, contract: item.contract, seriesKind: 'contract',
+    ...(historyMode.value ? { view: 'free' as const, strategy: undefined, newowMode: undefined,
+      newowSource: undefined, newowTradingDay: undefined, newowRevision: undefined } : {}),
     focusBarEnd: undefined, homeContext: undefined })
 }
 
@@ -502,11 +549,11 @@ onUnmounted(() => chartSession.dispose())
         @ai-analysis="aiOpen = true"
       >
         <template #display-controls>
-          <label class="execution-toggle"><input v-model="showExecutions" type="checkbox"> 委托/成交</label>
+          <label v-if="!historyMode" class="execution-toggle"><input v-model="showExecutions" type="checkbox"> 委托/成交</label>
           <div v-if="isWorkspacePreview" class="chart-navigation" role="group" aria-label="图表视窗">
-            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.zoom('out')">缩小</button>
-            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.zoom('in')">放大</button>
-            <button type="button" :disabled="!controller.bars.value.length" @click="chartSession.scrollToLatest()">回到最新</button>
+            <button type="button" :disabled="!chartBars.length" @click="chartSession.zoom('out')">缩小</button>
+            <button type="button" :disabled="!chartBars.length" @click="chartSession.zoom('in')">放大</button>
+            <button type="button" :disabled="!chartBars.length" @click="chartSession.scrollToLatest()">回到最新</button>
           </div>
         </template>
       </MarketDetailViewNav>
@@ -514,7 +561,8 @@ onUnmounted(() => chartSession.dispose())
         <p v-if="migrationNotice" class="market-detail-page__notice" data-testid="market-detail-migration-notice" role="status">{{ migrationNotice }}</p>
         <MarketChartDesk :identity="routeResult.identity" :session="chartSession" :products="productOptions" :status="productSelectorStatus"
           :preferences="{ chart: preferences, workstation: workstationLayers }"
-          :bars="controller.studyActivity.value?.bar ? [...controller.bars.value, controller.studyActivity.value.bar] : controller.bars.value"
+          :newow-evidence="sourceEvidence"
+          :bars="historyMode ? chartBars : controller.studyActivity.value?.bar ? [...controller.bars.value, controller.studyActivity.value.bar] : controller.bars.value"
           @single="singleChartVisible = $event" @select="selectProduct" @period="selectIdentity({ ...routeResult.identity, frequency: $event, focusBarEnd: undefined })">
           <template #settings>
             <WorkstationChartSettings v-if="routeResult.identity.view === 'newow' && newowAfterMarketOnly" v-model="workstationLayers" :strategy="savedStrategy" />
@@ -551,19 +599,37 @@ onUnmounted(() => chartSession.dispose())
           </template>
           <template v-else>
           <template v-if="routeResult.identity.view === 'newow' && newowAfterMarketOnly">
-            <MarketKlineStage :workstation-panes="workstationPanes" :workstation-styles="workstationLayers.strokes" :log-price="workstationLayers.logPrice"
-              :identity-key="marketAxisKey" :bars="controller.bars.value" :mutation="controller.mutation.value"
-              :loading="controller.state.value.loading" :error="controller.state.value.error"
+            <div class="workstation-quick-pane" role="group" aria-label="牛哇数据来源">
+              <button type="button" :aria-pressed="!historyMode" @click="chooseChartSource(false)">盘后归档</button>
+              <button type="button" :disabled="routeResult.identity.seriesKind !== 'actual_dominant'" :aria-pressed="historyMode"
+                @click="chooseChartSource(true, routeResult.identity.newowTradingDay)">Canonical 历史复算</button>
+              <template v-if="historyMode">
+                <label>交易日 <input type="date" aria-label="复算交易日" :max="newowRecordingWindow().through"
+                  :value="routeResult.identity.newowTradingDay ?? historical.window.value?.evidence.trading_day ?? ''"
+                  @change="chooseChartSource(true, ($event.target as HTMLInputElement).value)" /></label>
+                <button type="button" @click="chooseChartSource(true)">最近完成日</button>
+              </template>
+            </div>
+            <p v-if="historyMode" role="status" data-testid="newow-recompute-source">
+              <template v-if="historical.loading.value">正在核对 Canonical 行情与牛哇复算输入…</template>
+              <template v-else-if="historical.error.value">{{ historical.error.value }}</template>
+              <template v-else-if="historical.window.value">Canonical 历史复算 · {{ historical.window.value.evidence.trading_day }} ·
+                {{ historical.window.value.bars.at(-1)?.physicalContract }} · {{ historical.window.value.bars.length }} 根已核验
+                · 输入 {{ historical.window.value.evidence.revision.slice(0, 12) }}</template>
+            </p>
+            <MarketKlineStage v-if="!historyMode || historical.window.value" :workstation-panes="workstationPanes" :workstation-styles="workstationLayers.strokes" :log-price="workstationLayers.logPrice"
+              :key="marketAxisKey" :identity-key="marketAxisKey" :bars="chartBars" :mutation="historyMode ? historicalMutation : controller.mutation.value"
+              :loading="historyMode ? historical.loading.value : controller.state.value.loading" :error="historyMode ? historical.error.value : controller.state.value.error"
               :period="routeResult.identity.frequency" :series-kind="routeResult.identity.seriesKind"
               :visible-main-indicators="workstationLayers.overlays" range-detector-source-identity="" :range-detector-anchor-time="null"
               :volume-scoring="false" :show-derived-markers="false" :marker-selection-enabled="false"
-              :research-markers="savedChart.markers"
-              :saved-reference-lines="savedChart.lines"
-              @visible-from-change="savedVisibleFrom = $event"
+              :research-markers="historyMode ? [] : savedChart.markers"
+              :saved-reference-lines="newowProjection?.lines ?? []"
+              @visible-from-change="!historyMode && (savedVisibleFrom = $event)"
               :focus-bar-end="routeResult.identity.focusBarEnd"
-              :has-more-before="controller.hasMoreBefore.value" :loading-before="controller.loadingBefore.value"
+              :has-more-before="!historyMode && controller.hasMoreBefore.value" :loading-before="controller.loadingBefore.value"
               :history-error="controller.historyError.value"
-              @load-earlier="controller.loadMoreBefore" @focus-resolved="resolveFocus"
+              @load-earlier="!historyMode && controller.loadMoreBefore()" @focus-resolved="resolveFocus"
             />
             <div class="workstation-quick-pane" role="group" aria-label="切换首个副图">
               <button v-for="option in paneOptions.filter(item => item.id !== 'macd')" :key="option.id"
@@ -577,11 +643,13 @@ onUnmounted(() => chartSession.dispose())
             </div>
             <p v-if="routeResult.identity.newowTest" role="status">此历史策略入口不属于盘后系列。</p>
             <p v-else-if="!newowFrequencyOpen" role="status">当前周期没有牛哇盘后结果，保留行情底图。</p>
-            <div v-if="newowFrequencyOpen" class="market-detail-page__reference-note">
+            <div v-if="newowFrequencyOpen && !historyMode" class="market-detail-page__reference-note">
               <p role="status" :data-saved-newow-chart-status="savedChartStatus">
-                <template v-if="savedChartStatus === 'loading'">正在读取已保存的牛哇主图事实。</template>
+                <template v-if="archiveChartNotice">{{ archiveChartNotice }}。</template>
                 <template v-else-if="savedChart.matched.length">已绑定 {{ savedChart.matched.length }} 根权威行情与 {{ savedChart.markers.length }} 个盘后参考动作。</template>
                 <template v-else>当前图表范围没有与权威行情版本匹配的盘后主图事实。</template>
+                <button v-if="!savedChart.matched.length && !archiveChartNotice?.startsWith('正在') && savedChartStatus !== 'loading'
+                   && routeResult.identity.seriesKind === 'actual_dominant'" type="button" @click="chooseChartSource(true)">改用 Canonical 历史复算</button>
               </p>
               <details v-if="savedLatest">
                 <summary>盘后主图事实与版本</summary>
@@ -591,9 +659,9 @@ onUnmounted(() => chartSession.dispose())
               </details>
               <p>跨周期综合解释暂未开放。盘后视图只读取已保存结果。</p>
             </div>
-            <NewowMarketReferencePanel v-if="newowFrequencyOpen && !routeResult.identity.newowTest"
+            <NewowMarketReferencePanel v-if="!historyMode && newowFrequencyOpen && !routeResult.identity.newowTest"
               :product="routeResult.identity.symbol" :frequency="routeResult.identity.frequency"
-              :strategy="savedStrategy" @selected="savedReference = $event" />
+              :strategy="savedStrategy" :require-receipt="marketFoundation" @notice="archiveNotice = $event" @selected="savedReference = $event" />
           </template>
           <NewowProductWorkspace
             v-else-if="routeResult.identity.view === 'newow' && newowCapabilities.capabilities.value && newowFrequencyOpen"
@@ -718,7 +786,7 @@ onUnmounted(() => chartSession.dispose())
             :identity="routeResult.identity" :historical="!!newowHistoricalAsOf" />
         </section>
         </MarketChartDesk>
-      <section v-if="showExecutions" class="execution-details" aria-label="只读委托与成交">
+      <section v-if="showExecutions && !historyMode" class="execution-details" aria-label="只读委托与成交">
         <h2>只读委托与成交</h2>
         <p>□ 快期原生委托　■ 快期原生成交　● 苏冰模型成交。图点按原始时间与价格定位，坐标缺乏依据时保留记录。</p>
         <p v-if="recentTqRecords.status.value === 'error' || subing.status.value === 'error'" role="status">部分账户记录读取失败。</p>

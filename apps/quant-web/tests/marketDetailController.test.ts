@@ -162,6 +162,24 @@ function deferredSeries() {
   return { series, requests }
 }
 
+test('fixed Canonical recomputation clears the latest subscription and only requests directory metadata', async () => {
+  const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
+  const series = fakeSeries()
+  let researchCalls = 0
+  const controller = useMarketDetailController({ routeQuery: () => ({}), createSeries: () => series,
+    fetchDirectory: async () => ({ items: [dominant('jm')] }),
+    fetchResearch: async () => { researchCalls++; return research('jm') } })
+  await controller.switchIdentity(newowIdentity)
+  await controller.switchIdentity({ ...newowIdentity, newowSource: 'canonical-recompute', newowTradingDay: '2026-11-06' })
+  assert.equal(series.clearCalls, 1)
+  assert.equal(series.replaceCalls, 1)
+  assert.equal(researchCalls, 1)
+  assert.equal(controller.state.value.header, null)
+  await controller.switchIdentity(newowIdentity)
+  assert.equal(series.replaceCalls, 2)
+  controller.dispose()
+})
+
 test('research transport is cancelled on identity change and dispose', async () => {
   const { useMarketDetailController } = await import('../src/composables/useMarketDetailController.ts')
   const signals: AbortSignal[] = []

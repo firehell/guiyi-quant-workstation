@@ -5,8 +5,18 @@ import type { MarketDetailIdentity } from '../types/marketDetail'
 import type { BarData } from '../types/market'
 import { detailChartTime, type DetailChartSession, type ManualChartLevel } from './detailChartSession.ts'
 
+export interface NewowObservationSource {
+  kind: 'canonical_recompute' | 'formal_archive'
+  trading_day: string
+  cutoff: string
+  revision: string
+  receipt?: string | null
+  market_input_sha256?: string
+}
+
 export function captureObservationPane(session: DetailChartSession, identity: MarketDetailIdentity,
-  candidates: readonly BarData[], levels: readonly ManualChartLevel[], preferences: Record<string, unknown>) {
+  candidates: readonly BarData[], levels: readonly ManualChartLevel[], preferences: Record<string, unknown>,
+  newow?: NewowObservationSource) {
   const viewport = session.captureViewport()
   if (!viewport) throw new Error('图表尚无可保存的行情视窗。')
   const byTime = new Map(candidates.map(b => [JSON.stringify(detailChartTime(b, identity.frequency)), b]))
@@ -36,11 +46,13 @@ export function captureObservationPane(session: DetailChartSession, identity: Ma
       rendered.volume === bar.volume && rendered.drawnVolume === bar.volume && !!bar.sourceBarSha256 &&
       rendered.hash === bar.sourceBarSha256
   })
+  if (identity.newowSource === 'canonical-recompute' && (!onlyCanonical || newow?.kind !== 'canonical_recompute'
+    || Date.parse(last.time) > Date.parse(newow.cutoff))) throw new Error('复算图表输入尚未核验完成。')
   const pane: ObservationPane = {
     id: identity.frequency, frequency: identity.frequency, series_kind: identity.seriesKind,
     physical_contract: last.physicalContract!, window: { from: first.time, to: last.time },
     source: { view: identity.view, strategy: identity.strategy ?? null, mode: identity.newowMode ?? null,
-      trading_day: last.trading_day, gap_coordinates: viewport.gaps,
+      ...(newow ? { newow: { ...newow } } : {}), trading_day: last.trading_day, gap_coordinates: viewport.gaps,
       historical: onlyCanonical, preview_layers: preview.map(d => ({ id: d.indicatorId, cutoff: d.dataCutoff })), stages: [...new Set([...viewport.points.map(p => p.stage ?? 'unknown'), ...(preview.length ? ['active_preview'] : [])])],
       bars: onlyCanonical && ordered.length <= 500 ? ordered.map(({bar,x}) =>
         [bar.time, bar.sourceBarSha256, x, bar.physicalContract]) : [],
@@ -83,7 +95,10 @@ export async function freezeObservation(product: string, captured: PaneCapture[]
   captured.forEach(({ canvas: image, pane }, i) => {
     const x = (i % cols) * width, y = Math.floor(i / cols) * height
     ctx.fillStyle = '#dee8f5'; ctx.font = '16px sans-serif'
-    ctx.fillText([product.toUpperCase(), pane.physical_contract, pane.frequency, pane.source.view, pane.source.strategy].filter(Boolean).join(' · '), x + 8, y + 18)
+    const source = pane.source.newow as NewowObservationSource | undefined
+    const sourceLabel = source ? [source.kind === 'canonical_recompute' ? 'Canonical 历史复算' : '盘后归档',
+      source.trading_day, source.revision.slice(0, 12)].join(' · ') : ''
+    ctx.fillText([product.toUpperCase(), pane.physical_contract, pane.frequency, pane.source.view, pane.source.strategy, sourceLabel].filter(Boolean).join(' · '), x + 8, y + 18)
     ctx.font = '12px sans-serif'
     ctx.fillText(pane.indicators.map(d => (DISPLAY_CATALOG[d.id]?.label ?? d.id) + (d.source.retrospective ? '（回看重绘）' : '')).join(' · '), x + 8, y + 37, width - 16)
     ctx.drawImage(image, x, y + header)

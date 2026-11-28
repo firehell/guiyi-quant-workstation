@@ -413,8 +413,8 @@ def main() -> int:
                 wake.wait(seconds)
             worker.serve(should_stop=should_stop, wait=wait)
     from app.runtime_handover import run_supervised
-    from app.runtime_bindings import read_bindings
-    if read_bindings() is not None and os.getenv("GUIYI_RUNTIME_LEGACY_MODE") != "1":
+    from app.runtime_bindings import resolve_service_binding
+    if resolve_service_binding("reference-worker") is not None and os.getenv("GUIYI_RUNTIME_LEGACY_MODE") != "1":
         run_supervised("reference-worker", run, stop_requested=lambda: stopped)
     else:
         run()

@@ -4,6 +4,9 @@ import { getMarketBarsPage } from '@/api/market'
 import type { ObservationSnapshot } from '@/api/journalObservations'
 import { historicalDisplayBar } from '@/utils/marketBarDisplay'
 import { validObservationBars, verifiedObservationPoints } from '@/utils/observationReplay'
+import type { NewowObservationSource } from '@/utils/observationCapture'
+import { isRecordingTradingDay } from '@/utils/newowRecording'
+import { NEWOW_PRODUCT_STRATEGIES } from '@/types/newowProduct'
 import type { BarData } from '@/types/market'
 
 const props = defineProps<{ snapshot: ObservationSnapshot; imageUrl: string }>()
@@ -13,6 +16,19 @@ const selected = ref(''),
   cursor = ref(0)
 const points = shallowRef<{ x: number; bar: BarData }[]>([])
 const pane = computed(() => props.snapshot.panes.find((p) => p.id === selected.value))
+const newowSource = computed(() => {
+  const value = pane.value?.source.newow as Partial<NewowObservationSource> | undefined
+  return value && (value.kind === 'canonical_recompute' || value.kind === 'formal_archive')
+    && isRecordingTradingDay(value.trading_day) && typeof value.revision === 'string' ? value : null
+})
+const sameInput = computed(() => {
+  const p = pane.value, evidence = newowSource.value
+  const strategy = NEWOW_PRODUCT_STRATEGIES.find(s => s === p?.source.strategy)
+  if (!p || !strategy || evidence?.kind !== 'canonical_recompute' || !evidence.revision || !/^[0-9a-f]{64}$/.test(evidence.revision)) return null
+  return { path: '/market/chart', query: { view: 'newow', symbol: props.snapshot.product.toLowerCase(),
+    series_kind: p.series_kind, frequency: p.frequency, strategy, newow_source: 'canonical-recompute',
+    trading_day: evidence.trading_day, source_revision: evidence.revision } }
+})
 const rect = computed(() => pane.value?.ranges.image_rect as number[] | undefined)
 const point = computed(() => points.value[cursor.value])
 let request: AbortController | null = null
@@ -86,6 +102,9 @@ function inspect(event: PointerEvent) {
   <section aria-label="观察原图与复核">
     <div class="actions">
       <strong>观察原图</strong>
+      <span v-if="newowSource">{{ newowSource.kind === 'canonical_recompute' ? 'Canonical 历史复算' : '盘后归档' }} ·
+        {{ newowSource.trading_day }} · {{ newowSource.revision?.slice(0, 12) }}</span>
+      <RouterLink v-if="sameInput" :to="sameInput">打开同日同版本图表</RouterLink>
       <select v-if="snapshot.panes.length > 1" v-model="selected" aria-label="回看周期">
         <option v-for="p in snapshot.panes" :key="p.id" :value="p.id">{{ p.frequency }}</option>
       </select>

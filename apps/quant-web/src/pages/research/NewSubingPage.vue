@@ -9,6 +9,10 @@ import type { NewSubingEquityCurve, NewSubingMetadata, NewSubingPage, NewSubingP
 import { appendResearchPage, normalizeResearchVisit, decisionMatches, researchCurvePoints, matchingProfile, matchingRun, metricText, runStateText, selectionToken } from '@/utils/newSubingResearch'
 
 const visitKey = 'guiyi.research.new-subing.visit.v1'
+const studyPage = ref<HTMLElement>()
+function scrollOwner() {
+  return studyPage.value?.closest?.<HTMLElement>('.ws-content') ?? (typeof window === 'undefined' ? undefined : window)
+}
 function storedVisit() {
   try { return normalizeResearchVisit(JSON.parse(sessionStorage.getItem(visitKey) ?? 'null')) } catch { return normalizeResearchVisit(null) }
 }
@@ -185,18 +189,21 @@ function formatCell(value: unknown, field?: string): string {
 }
 
 function saveVisit() {
-  try { sessionStorage.setItem(visitKey, JSON.stringify({ version: selectedVersion.value, capital: selectedCapital.value, product: selectedProduct.value, scenario: selectedScenario.value, kind: pageKind.value, action: actionFilter.value, query: query.value, scroll: window.scrollY })) } catch { /* optional visit preferences */ }
+  if (typeof window === 'undefined') return
+  const owner = scrollOwner()
+  const scroll = owner && 'scrollTop' in owner ? owner.scrollTop : owner?.scrollY ?? 0
+  try { sessionStorage.setItem(visitKey, JSON.stringify({ version: selectedVersion.value, capital: selectedCapital.value, product: selectedProduct.value, scenario: selectedScenario.value, kind: pageKind.value, action: actionFilter.value, query: query.value, scroll })) } catch { /* optional visit preferences */ }
 }
 function resetVisit() {
   selectedVersion.value = 'new_subing_v2'; selectedCapital.value = '100000'; selectedProduct.value = 'AL'; selectedScenario.value = 'baseline'
   pageKind.value = 'decisions'; actionFilter.value = 'ALL'; query.value = ''
   void selectRun()
-  window.scrollTo(0, 0)
+  scrollOwner()?.scrollTo(0, 0)
   saveVisit()
 }
 watch([selectedVersion, selectedCapital, selectedProduct, selectedScenario, pageKind, actionFilter, query], saveVisit)
 onBeforeUnmount(() => { saveVisit(); mounted = false; generation++; controller.abort() })
-onMounted(async () => { await loadCatalog(); await nextTick(); if (mounted && typeof window !== 'undefined') window.scrollTo(0, initialVisit.scroll) })
+onMounted(async () => { await loadCatalog(); await nextTick(); if (mounted && typeof window !== 'undefined') scrollOwner()?.scrollTo(0, initialVisit.scroll) })
 </script>
 
 <template>
@@ -204,7 +211,7 @@ onMounted(async () => { await loadCatalog(); await nextTick(); if (mounted && ty
     <template #badges>
       <span class="badge">历史回放</span><span class="badge">自动交易关闭</span><span class="badge">案例一致性待验</span><span class="badge">独立 OOS 未证明</span>
     </template>
-    <div class="research-page">
+    <div ref="studyPage" class="research-page">
       <section class="card intro">
         <h3>规则与来源</h3>
         <p v-if="selectedVersion === 'new_subing_v2'">V2 按交易阶段记录试探、突破确认、回调和趋势；5m 切入、15m 确认，1m 完成事实用于硬止损，模型成交只在严格后续可交易 1m 开盘。10 万元为主结果；100 万元仅供方法诊断，不是主结果。</p>
@@ -252,5 +259,5 @@ onMounted(async () => { await loadCatalog(); await nextTick(); if (mounted && ty
 </template>
 
 <style scoped>
-.research-page{display:grid;gap:18px;max-width:1440px;margin:auto}.card{background:var(--gy-bg-surface,var(--gy-bg-panel));border:1px solid var(--gy-border,#e2e8f0);border-radius:12px;padding:20px;box-shadow:0 3px 12px rgba(18,39,64,.04)}h3{margin:0 0 12px;font-size:17px}p{line-height:1.65}.muted,small{color:var(--gy-text-muted,#64748b)}.badge{font-size:12px;color:#475569;background:#eef3f8;border-radius:6px;padding:4px 8px}.chooser,.filters,.tabs,.run-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.run-head{justify-content:space-between;margin:20px 0 12px}.chooser label,.filters label{display:flex;align-items:center;gap:6px}select,input,button{font:inherit;border:1px solid var(--gy-border,#e2e8f0);border-radius:6px;padding:6px 9px;background:var(--gy-bg-panel);color:var(--gy-text-primary,#303133)}button{cursor:pointer}.tabs{margin:10px 0}.tabs .active{background:var(--gy-primary,#ff8a00);color:white;border-color:var(--gy-primary,#ff8a00)}.filters{margin-bottom:10px}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metrics>div{display:grid;min-width:0;gap:4px;background:var(--gy-bg-muted,#f7f8fa);padding:12px;border-radius:8px}.metrics strong{font-size:18px;overflow-wrap:anywhere}.notice{border-left:3px solid #d99320;background:#fff8e9;padding:10px}.empty{color:#64748b;padding:20px 0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;vertical-align:top;padding:9px;border-bottom:1px solid #e5ebf0;max-width:360px;overflow-wrap:anywhere}th{background:var(--gy-bg-muted,#f7f8fa)}.more{margin-top:12px}.curve-readout{display:flex;gap:12px;align-items:center;flex-wrap:wrap}details{margin-top:12px}summary{cursor:pointer;color:var(--gy-primary,#ff8a00)}pre{max-height:300px;overflow:auto;background:var(--gy-bg-muted,#f7f8fa);padding:12px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}dl{display:grid;grid-template-columns:140px 1fr;gap:6px 10px;font-size:13px}dd{margin:0;overflow-wrap:anywhere}@media(max-width:800px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.research-page{display:grid;gap:18px;max-width:1440px;margin:auto}.card{background:var(--gy-bg-surface,var(--gy-bg-panel));border:1px solid var(--gy-border,#e2e8f0);border-radius:12px;padding:20px;box-shadow:0 3px 12px rgba(18,39,64,.04)}h3{margin:0 0 12px;font-size:17px}p{line-height:1.65}.muted,small{color:var(--gy-text-muted,#64748b)}.badge{font-size:12px;color:var(--gy-text-secondary);background:var(--gy-bg-panel-strong);border-radius:6px;padding:4px 8px}.chooser,.filters,.tabs,.run-head{display:flex;gap:12px;align-items:center;flex-wrap:wrap}.run-head{justify-content:space-between;margin:20px 0 12px}.chooser label,.filters label{display:flex;align-items:center;gap:6px}select,input,button{font:inherit;border:1px solid var(--gy-border,#e2e8f0);border-radius:6px;padding:6px 9px;background:var(--gy-bg-panel);color:var(--gy-text-primary,#303133)}button{cursor:pointer}.tabs{margin:10px 0}.tabs .active{background:var(--gy-primary,#ff8a00);color:white;border-color:var(--gy-primary,#ff8a00)}.filters{margin-bottom:10px}.metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metrics>div{display:grid;min-width:0;gap:4px;background:var(--gy-bg-panel-strong);padding:12px;border-radius:8px}.metrics strong{font-size:18px;overflow-wrap:anywhere}.notice{border-left:3px solid #d99320;color:var(--gy-status-warning);background:var(--gy-bg-panel-strong);padding:10px}.empty{color:var(--gy-text-muted);padding:20px 0}.table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;vertical-align:top;padding:9px;border-bottom:1px solid var(--gy-border);max-width:360px;overflow-wrap:anywhere}th{background:var(--gy-bg-panel-strong)}.more{margin-top:12px}.curve-readout{display:flex;gap:12px;align-items:center;flex-wrap:wrap}details{margin-top:12px}summary{cursor:pointer;color:var(--gy-primary,#ff8a00)}pre{max-height:300px;overflow:auto;background:var(--gy-bg-panel-strong);padding:12px;border-radius:6px;white-space:pre-wrap;overflow-wrap:anywhere}dl{display:grid;grid-template-columns:140px 1fr;gap:6px 10px;font-size:13px}dd{margin:0;overflow-wrap:anywhere}@media(max-width:800px){.metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 </style>

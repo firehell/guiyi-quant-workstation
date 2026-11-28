@@ -130,7 +130,7 @@ def run_receipt(
 
         result["sections"] = materialize_sections(
             sandbox, receipt, session_factory=session_factory, verify_publication=verify_publication,
-            canonical_root=canonical_root, stop_requested=stop_requested,
+            canonical_root=canonical_root, formal=formal, stop_requested=stop_requested,
         )
     return result
 

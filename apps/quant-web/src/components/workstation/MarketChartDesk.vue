@@ -3,7 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch 
 import { useRouter } from 'vue-router'
 import { CHART_PROFILES, DISPLAY_CATALOG, type ChartProfileId } from '@guiyi/quant-chart'
 import PricePeriodPane from './PricePeriodPane.vue'
-import { captureObservationPane, fixedParameters, freezeObservation } from '@/utils/observationCapture'
+import { captureObservationPane, fixedParameters, freezeObservation, type NewowObservationSource } from '@/utils/observationCapture'
 import { chartLayerStatusLabels } from '@/utils/chartLayerStatus'
 import { saveObservation } from '@/api/journalObservations'
 import { type DetailChartSession, type ManualChartLevel } from '@/utils/detailChartSession'
@@ -13,6 +13,7 @@ import type { ProductOption } from '@/utils/productSearch'
 
 const props = defineProps<{
   identity: MarketDetailIdentity
+  newowEvidence?: NewowObservationSource
   session: DetailChartSession
   bars: BarData[]
   products: ProductOption[]
@@ -99,7 +100,9 @@ const products = computed(() =>
       (p.name + p.symbol + (p.contract ?? '')).toLowerCase().includes(search.value.trim().toLowerCase()),
   ),
 )
-const quad = ref(read('quad') === true),
+const quadPreference = ref(read('quad') === true)
+const fixedHistory = computed(() => props.identity.newowSource === 'canonical-recompute')
+const quad = computed(() => !fixedHistory.value && quadPreference.value),
   periods = ['1w', '1d', '15m', '5m'] as const
 const lastQuadPeriod = read('activeQuadPeriod')
 const activePeriod = ref<MarketFrequency>(
@@ -207,8 +210,8 @@ function pick() {
 function layout() {
   drawing.value = false
   props.session.startPricePick()
-  quad.value = !quad.value
-  persist('quad', quad.value)
+  quadPreference.value = !quad.value
+  persist('quad', quadPreference.value)
 }
 function expand(p: MarketFrequency) {
   if (quad.value) layout()
@@ -241,7 +244,7 @@ async function capture() {
           if (!chart) throw new Error('等待四周期图表就绪。')
           return chart.capture()
         })
-      : [captureObservationPane(props.session, props.identity, props.bars, levels.value, props.preferences)]
+      : [captureObservationPane(props.session, props.identity, props.bars, levels.value, props.preferences, props.newowEvidence)]
     const result = await freezeObservation(
       props.identity.symbol,
       rows,
@@ -310,7 +313,7 @@ onBeforeUnmount(() => document.removeEventListener('keydown', keys))
       </div>
       <button type="button" :aria-pressed="dock === 'watch'" @click="toggleDock('watch')">自选列表 W</button>
       <button type="button" :aria-pressed="dock === 'layers'" @click="toggleDock('layers')">指标库 I</button>
-      <button type="button" :aria-pressed="quad" @click="layout">{{ quad ? '返回单图' : '四周期' }}</button>
+      <button type="button" :disabled="fixedHistory" :title="fixedHistory ? '历史复算绑定当前周期' : undefined" :aria-pressed="quad" @click="layout">{{ quad ? '返回单图' : '四周期' }}</button>
       <button type="button" :disabled="quad" :aria-pressed="drawing" @click="pick">水平线</button>
       <button v-if="levels.length && !quad" type="button" @click="levels = levels.slice(0, -1)">
         撤销画线

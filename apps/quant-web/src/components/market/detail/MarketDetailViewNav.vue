@@ -75,7 +75,9 @@ function chooseView(view: AnalysisChoice) {
     const restored = resolveViewSwitchIdentity('newow', props.identity.symbol, props.identity, props.restore)
     emit('select', {
       ...restored, strategy: view === 'dual' ? 'trend' : view,
-      newowSource: props.marketFoundation ? undefined : props.afterMarket ? 'after-market' : restored.newowSource,
+      newowSource: props.identity.newowSource === 'canonical-recompute' ? 'canonical-recompute'
+        : props.marketFoundation ? undefined : props.afterMarket ? 'after-market' : restored.newowSource,
+      newowTradingDay: props.identity.newowTradingDay,
       newowTest: undefined, newowMode: view === 'dual' ? 'dual' : undefined,
       homeContext: undefined, focusBarEnd: undefined,
     })

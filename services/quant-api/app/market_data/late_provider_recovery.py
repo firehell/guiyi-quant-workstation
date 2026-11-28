@@ -542,10 +542,10 @@ def run_runtime_scheduled(manager) -> dict:
     updater = build_after_market_updater(manager, failure_notification=False, late_recovery=formal_tick)
 
     def verify() -> None:
-        from app.runtime_bindings import authorized_program_arguments, read_bindings, verify_release
+        from app.runtime_bindings import authorized_program_arguments, verify_release
         from app.runtime_identity import launchd_arguments, launchd_environments, read_launchd_service
 
-        if read_bindings() != registry or registry is None:
+        if current_registry() != registry or registry is None:
             raise ValueError("LATE_RECOVERY_RUNTIME_CHANGED")
         services = ("api", "live", "after-market", "late-provider-recovery")
         if formal_tick:
@@ -589,9 +589,13 @@ def run_runtime_scheduled(manager) -> dict:
 
     from app.runtime_bindings import read_bindings
 
+    def current_registry():
+        services = ("api", "live", "after-market", "late-provider-recovery")
+        return read_bindings(services=(*services, "market-feed") if formal_tick else services)
+
     registry = None
     with after_market_recovery_guard(wait=False):
-        registry = read_bindings()
+        registry = current_registry()
         verify()
         status_path = Path(registry.services["after-market"].root) / ".run/after-market-status.json"
         result = run_scheduled(

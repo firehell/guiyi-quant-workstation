@@ -65,6 +65,9 @@ def get_store(request: Request) -> RunStore:
         # Browsing the workbench must not create a database or start an executor.
         try:
             return RunStore.open_reader(settings.path)
+        except FileNotFoundError:
+            code = "BACKTEST_STORE_UNAVAILABLE" if os.getenv("GUIYI_BACKTEST_STORE") else "BACKTEST_DEFAULT_STORE_MISSING"
+            raise HTTPException(503, detail={"code": code}) from None
         except OSError:
             raise HTTPException(503, detail={"code": "BACKTEST_STORE_UNAVAILABLE"}) from None
     return _setup(request.app, settings)

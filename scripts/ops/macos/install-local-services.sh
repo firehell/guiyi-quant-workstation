@@ -22,6 +22,11 @@ ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
 # These entrypoints do not render files or mutate a service until an apply mode.
 case "$MODE" in
+  --audit-market-recovery|--plan-market-recovery|--apply-market-recovery|--resume-market-recovery|--read-market-recovery)
+    operation="${MODE#--}"
+    shift
+    exec "$PYTHON_BIN" -m app.runtime_market_recovery "${operation%-market-recovery}" "$@"
+    ;;
   --read-workstation-host) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward audit "$@" ;;
   --plan-workstation-forward) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward plan "$@" ;;
   --apply-workstation-forward) shift; exec "$PYTHON_BIN" -m app.runtime_workstation_forward apply "$@" ;;

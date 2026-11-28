@@ -1,4 +1,4 @@
-export const workstationUiVersion = 'workstation-ui/v0.1.0'
+export const workstationUiVersion = 'workstation-ui/v0.1.1'
 
 export const workstationPages = [
   { name: 'market-chart', title: '我的看盘', group: '工作台', icon: 'chart' },
@@ -13,6 +13,6 @@ export const workstationPages = [
 
 export function workstationSection(name: unknown) {
   if (name === 'market') return 'market-chart'
-  if (name === 'statistics-research' || name === 'subing-decision') return 'research'
+  if (name === 'statistics-research' || name === 'subing-decision' || name === 'new-subing-research') return 'research'
   return name
 }

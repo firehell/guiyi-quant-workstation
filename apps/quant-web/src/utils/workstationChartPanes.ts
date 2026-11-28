@@ -1,3 +1,4 @@
+import { projectNewowAuxiliaryReadiness } from './newowDetailPresentation.ts'
 import { MAX_AUXILIARY_PANES } from '@guiyi/quant-chart'
 import { NEWOW_EXTRA_AUXILIARY_OPTIONS, type NewowAuxiliaryPaneComponent } from './newowAdditionalPanes.ts'
 import type { MarketAfterCloseFrame, MarketAfterCloseSection } from '../types/referenceTrading.ts'
@@ -52,6 +53,28 @@ export function readWorkstationLayers(raw: unknown): WorkstationLayers {
   return { overlays, panes, ...(Object.keys(strokes).length ? { strokes } : {}), ...(source?.logPrice === true ? { logPrice: true } : {}) }
 }
 
+export function archiveReadError(error: unknown) {
+  const response = (error as { response?: { status?: number; data?: { detail?: { code?: string } } } })?.response
+  const raw = response?.data?.detail?.code ?? (error instanceof Error ? error.message : '')
+  const reason = /^[A-Z][A-Z0-9_]{1,79}$/.test(raw) ? ' · ' + raw : ''
+  if (response?.status === 503) return '盘后归档服务暂不可用（503）' + reason
+  if (response?.status === 409 || raw === 'REFERENCE_SNAPSHOT_CHANGED') return '盘后回执或快照版本冲突' + reason
+  return '盘后归档读取失败' + (response?.status ? '（' + response.status + '）' : '') + reason
+}
+
+export function paneAvailability(chart: NewowProductSectionResponse<'chart'>, auxiliary: NewowProductSectionResponse<'auxiliary'>) {
+  const latest = chart.value?.bars.at(-1)
+  const readiness = projectNewowAuxiliaryReadiness(auxiliary.value, latest)
+  const status = readiness?.currentStatus ?? (auxiliary.value ? 'unavailable' : auxiliary.status.status)
+  const reason = readiness?.reason ?? auxiliary.status.reason_code
+  const code = reason && /^(?:[A-Z][A-Z0-9_]{1,79}|warming_up)$/.test(reason) ? ' · ' + reason : ''
+  const labels = { warming: '当前合约段预热中', unavailable: '当前合约段指标不可用',
+    not_applicable: '当前组合不适用', evidence_required: '当前指标缺少可核验证据' }
+  const partial = auxiliary.value?.segments.filter(s => s.status.status !== 'ready').length ?? 0
+  if (status === 'ready') return partial ? '当前合约段就绪，历史有 ' + partial + ' 个区段数据不完整' : null
+  return labels[status] + code
+}
+
 export interface ArchivePane extends PaneSpec {
   chart: NewowProductSectionResponse<'chart'> | null
   auxiliary: NewowProductSectionResponse<'auxiliary'> | null
@@ -60,8 +83,8 @@ export interface ArchivePane extends PaneSpec {
 
 /** Market's matched frames already prove the Canonical SHA. Require the archived
  * section to carry the same completed OHLCV, historical owner and calculation segment. */
-export function matchedArchiveChart(section: MarketAfterCloseSection, frames: readonly MarketAfterCloseFrame[], bars: readonly BarData[]) {
-  if (section.status !== 'ready' || !section.chart.value) return null
+export function matchedArchiveChart(section: Pick<MarketAfterCloseSection, 'status' | 'chart'>, frames: readonly MarketAfterCloseFrame[], bars: readonly BarData[]) {
+  if (section.status !== 'ready' || !section.chart?.value) return null
   const current = new Map(bars.map(bar => [Date.parse(bar.time), bar]))
   const matched = new Map(frames.map(frame => [Date.parse(frame.bar_end), frame]))
   const verified = section.chart.value.bars.filter(row => {

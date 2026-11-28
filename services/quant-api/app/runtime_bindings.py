@@ -182,8 +182,17 @@ def _parse_bindings(content: bytes | None, *, inventory=False) -> BindingRegistr
         raise RuntimeBindingError("INVALID_BINDING_REGISTRY") from None
 
 
-def read_bindings(*, home: Path | None = None) -> BindingRegistry | None:
-    return _parse_bindings(_read(registry_path(home)))
+def read_bindings(*, home: Path | None = None, services=None) -> BindingRegistry | None:
+    content = _read(registry_path(home))
+    if services is None:
+        return _parse_bindings(content)
+    inventory = _parse_bindings(content, inventory=True)
+    if inventory is None:
+        return None
+    wanted = frozenset(services)
+    if not wanted or not wanted <= inventory.services.keys():
+        raise RuntimeBindingError("SERVICE_BINDING_MISSING")
+    return BindingRegistry(1, {name: ServiceBinding(**asdict(inventory.services[name])) for name in wanted})
 
 
 def market_start_preimage(*, home: Path | None = None) -> tuple[BindingRegistry | None, str | None, bytes | None]:
@@ -214,6 +223,21 @@ def write_workstation_pair(bindings: dict[str, ServiceBinding], *, expected_sha2
     """CAS two strictly live identities while preserving each other inventory row."""
     if set(bindings) != {"api", "web"}:
         raise RuntimeBindingError("WORKSTATION_PAIR_INVALID")
+    return _write_selected_services(bindings, expected_sha256, home)
+
+
+MARKET_RECOVERY_SERVICES = frozenset({
+    "api", "web", "live", "market-feed", "after-market", "late-provider-recovery", "reference-worker", "alert"
+})
+
+
+def write_recovered_market(bindings, *, expected_sha256, home=None):
+    if bindings.keys() != MARKET_RECOVERY_SERVICES:
+        raise RuntimeBindingError("MARKET_RECOVERY_SCOPE_INVALID")
+    return _write_selected_services(bindings, expected_sha256, home)
+
+
+def _write_selected_services(bindings, expected_sha256, home):
     def checked_preimage(*, home):
         previous, digest, _ = market_start_preimage(home=home)
         if previous is None or digest != expected_sha256:

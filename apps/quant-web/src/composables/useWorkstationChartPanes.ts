@@ -1,9 +1,10 @@
+import type { useNewowHistoricalChart } from './useNewowHistoricalChart'
 import { computed, ref, shallowRef, watch, type Ref } from 'vue'
 import { getMarketAfterCloseSection } from '../api/referenceTrading'
 import type { MarketAfterCloseFrame, MarketAfterCloseReference, MarketAfterCloseSection } from '../types/referenceTrading.ts'
 import type { BarData } from '../types/market.ts'
 import { NEWOW_PRODUCT_FREQUENCIES, NEWOW_PRODUCT_STRATEGIES } from '../types/newowProduct.ts'
-import { matchedArchiveChart, readWorkstationLayers, type ArchivePane, type PaneId } from '../utils/workstationChartPanes.ts'
+import { archiveReadError, paneAvailability, matchedArchiveChart, readWorkstationLayers, type ArchivePane, type PaneId } from '../utils/workstationChartPanes.ts'
 
 const storageKey = 'guiyi.workstation.chart.layers.v1'
 function preferences(strategy?: string) {
@@ -14,7 +15,8 @@ function preferences(strategy?: string) {
   } catch { return readWorkstationLayers(null) }
 }
 export function useWorkstationChartPanes(scope: () => { product: string; strategy: string; frequency: string } | null,
-  source: () => MarketAfterCloseReference | null, bars: Ref<BarData[]>, frames: () => readonly MarketAfterCloseFrame[]) {
+  source: () => MarketAfterCloseReference | null, bars: Ref<BarData[]>, frames: () => readonly MarketAfterCloseFrame[],
+  historical?: ReturnType<typeof useNewowHistoricalChart>, archiveNotice: () => string | null = () => null) {
   const activeStrategy = computed(() => scope()?.strategy)
   const layers = ref(preferences(activeStrategy.value))
   watch(activeStrategy, strategy => {
@@ -50,19 +52,26 @@ export function useWorkstationChartPanes(scope: () => { product: string; strateg
         const compatible = identity.strategy === 'dual_fusion' ? sameReceipt
           : sameStream && (!published.receipt || sameReceipt)
         result = section.status === 'ready' && compatible ? { section, message: null }
-          : { message: section.status === 'pending' ? '盘后快照待生成' : '缺少同一归档批次的已保存指标' }
-      } catch { result = { message: '盘后指标读取失败' } }
+          : { message: section.status === 'pending' ? '已有盘后主图，此副图尚待归档'
+            : section.status === 'unavailable' ? '当前组合没有可用的已归档副图' : '副图回执与主图归档版本不一致' }
+      } catch (failure) { result = { message: archiveReadError(failure) } }
       if (!controller.signal.aborted) reads.value = { ...reads.value, [id]: result }
     }))
   }, { immediate: true, flush: 'sync' })
   const panes = computed(() => layers.value.panes.map((spec): ArchivePane => {
+    if (historical?.enabled.value && spec.id !== 'macd') {
+      const window = historical.window.value
+      const auxiliary = window?.auxiliaries[spec.id] ?? null
+      return { ...spec, chart: window?.chart ?? null, auxiliary,
+        message: window && auxiliary ? paneAvailability(window.chart, auxiliary) : historical.error.value ?? '正在读取历史复算' }
+    }
     const saved = reads.value[spec.id]
     const section = saved?.section
     const chart = section ? matchedArchiveChart(section, frames(), bars.value) : null
     const auxiliary = chart && section?.result?.section === 'auxiliary' ? section.result : null
     return { ...spec, chart, auxiliary, message: spec.id === 'macd' ? null : saved?.message ??
-      (chart && auxiliary ? null : section ? '当前窗口没有同合约、同计算段的已验证指标'
-       : source() ? '正在读取盘后指标' : '尚无盘后快照') }
+      (chart && auxiliary ? paneAvailability(chart, auxiliary) : archiveNotice() ?? (section ? '归档与行情的 Bar 哈希、价格或合约段未能匹配'
+       : source() ? '正在读取盘后指标' : '当前没有已核验的盘后归档')) }
   }))
   return { layers, panes }
 }

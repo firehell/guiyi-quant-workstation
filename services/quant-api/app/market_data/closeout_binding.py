@@ -170,7 +170,7 @@ class RuntimeDataBinding:
             self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
         self.root, self.commit = root, commit
         self.home = home if home is not None else Path.home()
-        self._registry = read_bindings(home=self.home)
+        self._registry = read_bindings(home=self.home, services=("api", "web", "live", "alert", "after-market"))
         if self._registry is not None:
             binding = self._registry.services.get("after-market")
             if binding is None or binding.root != str(root) or binding.commit != commit:
@@ -418,7 +418,7 @@ class RuntimeDataBinding:
     def _verify_runtime_identity_bounded(self) -> None:
         registry = getattr(self, "_registry", None)
         if registry is not None:
-            if read_bindings(home=self.home) != registry:
+            if read_bindings(home=self.home, services=("api", "web", "live", "alert", "after-market")) != registry:
                 self._fail("RUNTIME_RECOVERY_IDENTITY_DRIFT")
             for service in ("api", "web", "live", "alert", "after-market"):
                 binding = registry.services.get(service)

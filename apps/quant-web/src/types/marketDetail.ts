@@ -33,7 +33,9 @@ export interface MarketDetailIdentity {
   strategy?: NewowStrategy
   /** Presentation mode; fusion is not a fourth strategy kernel. */
   newowMode?: 'dual'
-  newowSource?: 'after-market'
+  newowSource?: 'after-market' | 'canonical-recompute'
+  newowTradingDay?: string
+  newowRevision?: string
   newowTest?: 'osc-test' | 'osc-test2' | 'osc-test3' | 'osc-test4' | 'osc-test5'
   seriesKind: DetailSeriesKind
   contract?: string

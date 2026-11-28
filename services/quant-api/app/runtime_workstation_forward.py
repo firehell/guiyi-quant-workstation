@@ -85,7 +85,7 @@ class WorkstationHost(MarketDirectStartHost):
         known = self._loaded_inventory(root)
         return disabled, known
 
-    def evidence(self, previous, root, *, peers_only=False):
+    def evidence(self, previous, root, *, peers_only=False, skip_names=()):
         require(REQUIRED_SERVICES <= previous.services.keys(), "WORKSTATION_INVENTORY_INCOMPLETE")
         disabled, loaded = self.authorities(root)
         permitted = {b.label for b in previous.services.values()}
@@ -95,7 +95,7 @@ class WorkstationHost(MarketDirectStartHost):
         rows = {}
         historic_contracts = {}
         for name, binding in sorted(previous.services.items()):
-            if peers_only and name in PAIR:
+            if (peers_only and name in PAIR) or name in skip_names:
                 continue
             key = (binding.tag, binding.commit)
             if key not in historic_contracts:

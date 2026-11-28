@@ -77,7 +77,7 @@ def archived_tick_frontier(client, archive_root, *, day, products, archive_commi
             "rank1_sha256": cleanup["formal_rank1_sha256"], "streams": streams}
 
 
-def _tick_journals(client, day, products):
+def _tick_journals(client, day, products, *, completed_consumers=()):
     subscriptions = {}
     allowed = set(products)
     deadline = monotonic() + 30
@@ -108,7 +108,7 @@ def _tick_journals(client, day, products):
             ObservationStream(client, kind=kind), day, consumers,
             retain=lambda _: None, check_budget=check_budget, validate_event=validate,
         )
-        for kind, consumers in (("source", ("live",)), ("completed", ()))
+        for kind, consumers in (("source", ("live",)), ("completed", completed_consumers))
     }
     return streams, subscriptions[day]
 
@@ -366,7 +366,7 @@ def _retained_subscription_key(day):
     return f"live:scope-cutover:{day.isoformat()}:prior-subscriptions"
 
 
-def _same_day_tick_proof(client, day, subscriptions):
+def _same_day_tick_proof(client, day, subscriptions, *, completed_consumers=()):
     source = ObservationStream(client, kind="source")
     require(source.registered_day("live") == day, _JOURNAL_REQUIRED)
     key = RedisLiveStore._subscription_key(day)
@@ -379,7 +379,7 @@ def _same_day_tick_proof(client, day, subscriptions):
             and {p: mapping[p] for p in subscriptions} == subscriptions
             and (retained is None or active is not None and json.loads(active) == subscriptions),
             _JOURNAL_REQUIRED)
-    streams, journal_mapping = _tick_journals(client, day, prior_products)
+    streams, journal_mapping = _tick_journals(client, day, prior_products, completed_consumers=completed_consumers)
     require(journal_mapping == mapping, _JOURNAL_REQUIRED)
     original = _text(original)
     proof = {"selection_sha256": sha256(original.encode()).hexdigest(),
@@ -415,6 +415,16 @@ class QuietWindowMarketStartHost(JournalPreservingMarketStartHost):
 
     def authority(self, settings, root, day):
         previous_sha, archive_commit, old_plan = self._previous_start()
+        facts = self.closed_day_authority(settings, day)
+        subscriptions = facts["subscriptions"]
+        proof, staged = self._quiet_proof(settings, day, subscriptions)
+        require(proof["redis_instance"] == old_plan["target_instance"]
+                and proof["initial_day"] == old_plan["day"]
+                and (self.prior is not None or not staged), _JOURNAL_REQUIRED)
+        return {**facts, "retained_tick": {**proof, "previous_plan": previous_sha,
+                "archive_commit": archive_commit, "quiet_window": True}}
+
+    def closed_day_authority(self, settings, day):
         products = load_operational_products()
         old_products = prior_tick_scope(products)
         now = self.now()
@@ -449,15 +459,9 @@ class QuietWindowMarketStartHost(JournalPreservingMarketStartHost):
                 upcoming.append(future[0].start)
             require(observed_prefix, _QUIET_REQUIRED)
             facts = catalog_day_fingerprint(session, products, day)
-        proof, staged = self._quiet_proof(settings, day, subscriptions)
-        require(proof["redis_instance"] == old_plan["target_instance"]
-                and proof["initial_day"] == old_plan["day"]
-                and (self.prior is not None or not staged), _JOURNAL_REQUIRED)
         return {"prior_day": day.isoformat(), "first_session": min(upcoming).isoformat(),
                 "subscriptions": subscriptions, "phases": phases, "sessions_sha256": _evidence_hash(windows),
-                "catalog_sha256": facts, "mode": "closed_idle",
-                "retained_tick": {**proof, "previous_plan": previous_sha, "archive_commit": archive_commit,
-                                  "quiet_window": True}}
+                "catalog_sha256": facts, "mode": "closed_idle"}
 
     def _quiet_proof(self, settings, day, subscriptions):
         database, canonical = self._storage(settings)

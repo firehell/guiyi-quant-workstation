@@ -55,6 +55,7 @@ const sources = ref<Source[]>([])
 const worker = ref(false)
 const version = ref('')
 const catalogError = ref('')
+const runError = ref('')
 const taskError = ref('')
 const listError = ref('')
 const runs = ref<Run[]>([])
@@ -111,8 +112,9 @@ const followupChoices = computed(() => assistantReferences.value.filter(origin =
 const followupTitle: Partial<Record<Kind, string>> = { backtest: '配置样本外验证', event: '配置事件稳健检验',
   event_test: '复查事件稳健性', panel: '复查横截面稳健性' }
 function selectMode(kind: Kind) {
-  mode.value = kind
-  followup.value = undefined
+  if (kind === mode.value) return
+  void router.push({ name: 'statistics-research', params: route.params,
+    query: { ...route.query, mode: kind, run: undefined, case: undefined } })
 }
 function startFollowup(origin: AssistantReference) {
   if (!active.value) return
@@ -218,15 +220,25 @@ async function loadSources() {
     worker.value = data.worker
   } catch (error) { catalogError.value = message(error) }
 }
+let runSequence = 0
 async function loadRuns(offset = 0) {
-  catalogError.value = ''
+  const sequence = ++runSequence
+  runError.value = ''
   try {
     const data = await request.get<unknown, { items: Run[]; total: number }>(root + '/backtests', { params: { offset, limit: 20, product: productFilter.value || undefined, strategy_id: strategyFilter.value || undefined,
       frequency: frequencyFilter.value || undefined } })
+    if (sequence !== runSequence) return
     runs.value = data.items
     runTotal.value = data.total
     runOffset.value = offset
-  } catch (error) { runs.value = []; catalogError.value = message(error) }
+  } catch (error) {
+    if (sequence !== runSequence) return
+    runs.value = []
+    runOffset.value = 0
+    runTotal.value = 0
+    const code = message(error)
+    runError.value = code === 'BACKTEST_STORE_NOT_CONFIGURED' ? '尚未找到已发布的回测结果库。' : code
+  }
 }
 async function loadTasks() {
   try { recent.value = (await request.get<unknown, { items: Task[] }>(root + '/tasks')).items; listError.value = '' }
@@ -257,12 +269,11 @@ async function chooseGroup(group: string) {
   if (active.value?.status === 'SUCCEEDED') await loadSamples(active.value)
 }
 watch(() => [route.query.mode, route.query.run, route.query.case, route.params.taskId], ([kind, run, caseKey, taskId]) => {
-  if (taskId) return
-  const requested = modes.find(([value]) => value === kind)
-  if (!requested) return
-  selectMode(requested[0])
-  if (requested[0] === 'backtest' && typeof run === 'string') runId.value = run
-  if (requested[0] === 'case' && typeof caseKey === 'string') caseId.value = caseKey
+  if (taskId && !kind) return
+  mode.value = modes.find(([value]) => value === kind)?.[0] ?? 'backtest'
+  followup.value = undefined
+  if (mode.value === 'backtest') runId.value = typeof run === 'string' ? run : ''
+  if (mode.value === 'case') caseId.value = typeof caseKey === 'string' ? caseKey : ''
 }, { immediate: true })
 watch(() => route.params.taskId, async (value) => {
   const id = typeof value === 'string' ? value : ''
@@ -287,7 +298,11 @@ watch(() => route.params.taskId, async (value) => {
     }
   } catch (error) { if (route.params.taskId === id) taskError.value = message(error) }
 }, { immediate: true })
-onMounted(() => { void loadSources(); void loadRuns(); void loadTasks() })
+watch(() => mode.value === 'backtest' || mode.value === 'search', needsRuns => {
+  runSequence++
+  if (needsRuns) void loadRuns()
+}, { immediate: true })
+onMounted(() => { void loadSources(); void loadTasks() })
 async function submit(rerun = false) {
   if (pending.value) return
   pending.value = crypto.randomUUID()
@@ -327,6 +342,7 @@ async function cancel() {
         <div><RouterLink to="/research">研究</RouterLink><h1>统计与研究中心</h1></div>
         <span v-if="version">v{{ version }}</span>
       </header>
+      <p v-if="catalogError" role="status">来源状态读取失败 · {{ catalogError }}</p>
       <div class="sources" aria-label="来源状态">
         <span v-for="source in sources" :key="source.kind">{{ ({ backtest: '历史回测', case: '交易日志', factor: '因子', event: '事件', paper: 'Paper', simnow: 'SimNow', reference: '页面参考', advanced: '高级研究', assistant: 'AI 助手' } as Record<string, string>)[source.kind] }}
           <small>{{ ({ AVAILABLE: '可用', NOT_CONFIGURED: '未配置', EXACT_CASE_REQUIRED: '指定案例', LOCAL_MODEL_NOT_CONFIGURED: '待配置本地模型', EXACT_PUBLISHED_RESEARCH_REQUIRED: '选择已发布样本', EXACT_ACCOUNT_SCOPE_REQUIRED: '指定来源范围', EXACT_MARKET_WINDOW_REQUIRED: '指定窗口', VERIFIED_ACCOUNT_SETTLEMENT_REQUIRED: '缺已核验账户结算' } as Record<string, string>)[source.status] }}</small>
@@ -343,7 +359,7 @@ async function cancel() {
           <button>筛选</button>
         </form>
         <div v-if="mode === 'backtest' || mode === 'search'" class="scroll">
-          <p v-if="catalogError" role="status">{{ catalogError }}</p>
+          <p v-if="runError" role="status">{{ runError }}</p>
           <table v-if="runs.length && !followup">
             <thead><tr><th>合约</th><th>策略 / 周期</th><th>窗口</th><th>资格</th><th>原始 Run</th><th>选择</th></tr></thead>
             <tbody><tr v-for="run in runs" :key="run.run_id">

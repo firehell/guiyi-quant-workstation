@@ -1534,6 +1534,9 @@ defineExpose({
     <div v-for="pane in workstationHeaders" :key="pane.id" class="secondary-panel-label" :style="{ top: (pane.top + 3) + 'px' }" :data-workstation-pane="pane.id">
       <button class="pane-size" type="button" :aria-label="(enlargedAuxiliary === pane.component ? '还原' : '放大') + pane.label" :aria-pressed="enlargedAuxiliary === pane.component" @click="toggleAuxiliarySize(pane.component)">{{ enlargedAuxiliary === pane.component ? '还原' : '放大' }}</button>
       {{ pane.label }}<span v-if="pane.retrospective"> · 历史回看，会重绘</span><span v-if="pane.note"> · {{ pane.note }}</span>
+      <span v-if="hoverContext && pane.component !== 'macd'" :data-newow-hover="pane.component">
+        · {{ hoverContext.bar.trading_day }} · {{ hoverContext.bar.physicalContract }} · {{ paneRenderer.readout(pane.component, hoverContext.bar) }}
+      </span>
     </div>
     <component v-if="!workstationPanes"
       :is="allowGenericMacd ? 'button' : 'div'"

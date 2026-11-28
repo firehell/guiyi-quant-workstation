@@ -45,14 +45,24 @@ def _path(sandbox: Path, reference: dict) -> Path:
             or not isinstance(revision, str) or not re.fullmatch(r"[a-zA-Z0-9_-]{1,64}", revision)
             or type(sequence) is not int or sequence < 1):
         raise ValueError("MARKET_REFERENCE_SECTION_IDENTITY_INVALID")
-    return sandbox / "newow-archive-sections" / stream / f"{revision}-{sequence}.json"
+    directory = sandbox / "newow-archive-sections" / stream
+    receipt = reference.get("receipt")
+    if receipt is not None:
+        if not isinstance(receipt, str) or not re.fullmatch(r"[0-9a-f]{64}", receipt):
+            raise ValueError("MARKET_REFERENCE_SECTION_IDENTITY_INVALID")
+        directory /= receipt
+    return directory / f"{revision}-{sequence}.json"
 
 
 def _load(sandbox: Path, reference: dict) -> dict | None:
     try:
         data = json.loads(_bytes(_path(sandbox, reference), max_bytes=MAX_HISTORY_BYTES))
     except FileNotFoundError:
-        return None
+        # An immutable v1 section remains readable only under the receipt that created it.
+        if reference.get("receipt") is None:
+            return None
+        legacy = _load(sandbox, {k: v for k, v in reference.items() if k != "receipt"})
+        return legacy if legacy and legacy["receipt"] == reference["receipt"] else None
     if not isinstance(data, dict) or set(data) != {"schema", "receipt", "stream_id", "revision_id",
             "seq", "cutoff", "chart", "sections", "sha256"}:
         raise ValueError("MARKET_REFERENCE_SECTION_IDENTITY_INVALID")
@@ -62,6 +72,7 @@ def _load(sandbox: Path, reference: dict) -> dict | None:
             or not isinstance(data["cutoff"], str) or datetime.fromisoformat(data["cutoff"]) != reference["cutoff"]
             or not isinstance(data["receipt"], str) or re.fullmatch(r"[0-9a-f]{64}", data["receipt"]) is None
             or not isinstance(data["chart"], dict) or not isinstance(data["sections"], dict)
+            or reference.get("receipt", data["receipt"]) != data["receipt"]
             or _digest(data) != content_hash):
         raise ValueError("MARKET_REFERENCE_SECTION_IDENTITY_INVALID")
     return data
@@ -134,7 +145,7 @@ def _compute_sections(session, product: str, strategy: str, frequency: str, *,
 
 def materialize_sections(
     sandbox: Path, receipt: MarketArchiveReceipt, *, session_factory, verify_publication: Callable[[str], None],
-    canonical_root: Path | None = None, stop_requested: Callable[[], bool] = lambda: False,
+    canonical_root: Path | None = None, formal: bool = False, stop_requested: Callable[[], bool] = lambda: False,
 ) -> dict:
     """One fixed default 500-bar chart window per active series and revision."""
     from app.db.readonly import readonly_transaction
@@ -157,10 +168,12 @@ def materialize_sections(
                         # Existing dual presentation uses the trend / oscillator sections.
                         if strategy == "dual_fusion" or cancelled():
                             continue
-                        reference = latest_reference(product, strategy, frequency, session_factory=session_factory)
-                        if reference is None or reference["cutoff"] > receipt.finished_at:
-                            continue
                         try:
+                            reference = latest_reference(product, strategy, frequency, session_factory=session_factory)
+                            if reference is None or reference["cutoff"] > receipt.finished_at:
+                                continue
+                            if formal:
+                                reference = {**reference, "receipt": receipt.identity}
                             if _load(sandbox, reference) is None:
                                 with session_factory() as session:
                                     lease = MarketCatalog(session, data_root).acquire_maintenance_lock(
