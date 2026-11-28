@@ -926,14 +926,14 @@ pre { white-space:pre-wrap; overflow-wrap:anywhere; }
 </style>
 
 <style>
-.unified-detail-light .detail-view-nav__views { overflow:visible; flex-wrap:wrap; }
+.workstation-market .detail-view-nav__views { overflow:visible; flex-wrap:wrap; }
 .newow-test-menu { position:relative; color:#888; font-size:14px; }
 .newow-test-menu summary { list-style:none; cursor:pointer; display:flex; align-items:center; gap:4px; height:36px; padding:0 12px; border-radius:6px; background:#f0f0f5; font-weight:600; }
 .newow-test-menu summary::-webkit-details-marker { display:none; }
 .newow-test-menu summary:focus-visible { outline:2px solid var(--gy-accent); outline-offset:2px; }
 .newow-test-menu summary.is-active { background:#ff6b2c; color:var(--gy-bg-panel); }
 .newow-test-menu__popup { position:absolute; z-index:100; top:calc(100% + 4px); left:0; width:88px; padding:4px 0; border-radius:8px; background:var(--gy-bg-panel); box-shadow:0 4px 16px #00000026; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button { display:block; width:100%; min-height:32px; padding:0 14px; text-align:left; border-radius:0; background:var(--gy-bg-panel); color:#222; font-size:13px; font-weight:400; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button:hover { background:#f5f5f7; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button[aria-pressed=true] { color:#ff6b2c; }
+.workstation-market .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button { display:block; width:100%; min-height:32px; padding:0 14px; text-align:left; border-radius:0; background:var(--gy-bg-panel); color:var(--gy-text-primary); font-size:13px; font-weight:400; }
+.workstation-market .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button:hover { background:var(--gy-bg-hover); }
+.workstation-market .detail-view-nav .detail-view-nav__views .newow-test-menu__popup button[aria-pressed=true] { color:#ff6b2c; }
 </style>

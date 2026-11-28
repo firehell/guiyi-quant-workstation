@@ -60,7 +60,7 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
   }
 
   if (query.newow_source !== undefined && (!isNewow || query.newow_source !== 'after-market'
-    || query.newow_test !== undefined || strategy === 'main_rise' || query.home_context !== undefined)) {
+    || query.newow_test !== undefined || query.home_context !== undefined)) {
     return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
   if (query.strategy_model !== undefined) {

@@ -58,7 +58,16 @@ async def workstation_lifespan(app):
 
 def get_store(request: Request) -> RunStore:
     store = getattr(request.app.state, "backtest_store", None)
-    return store if store is not None else _setup(request.app, Settings.local())
+    if store is not None:
+        return store
+    settings = Settings.local()
+    if request.method in {"GET", "HEAD"}:
+        # Browsing the workbench must not create a database or start an executor.
+        try:
+            return RunStore.open_reader(settings.path)
+        except OSError:
+            raise HTTPException(503, detail={"code": "BACKTEST_STORE_UNAVAILABLE"}) from None
+    return _setup(request.app, settings)
 
 
 def require_local_write(request: Request) -> None:

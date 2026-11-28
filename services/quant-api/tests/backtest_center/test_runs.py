@@ -56,6 +56,24 @@ def client(store):
         yield test_client
 
 
+def test_open_workbench_reads_only_and_never_creates_a_run_store(tmp_path, monkeypatch):
+    path = tmp_path / "runs.db"
+    monkeypatch.setenv("GUIYI_BACKTEST_STORE", str(path))
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as client:
+        reply = client.get("/api/v1/backtests/runs")
+        assert reply.status_code == 503
+        assert reply.json()["detail"]["code"] == "BACKTEST_STORE_UNAVAILABLE"
+        assert not path.exists()
+        saved = RunStore(path).submit("first", CONFIG)
+        result = client.get("/api/v1/backtests/runs/" + saved["run_id"])
+        assert result.status_code == 200
+        assert result.json()["run_id"] == saved["run_id"]
+        assert not hasattr(app.state, "backtest_worker")
+        assert not hasattr(app.state, "backtest_store")
+
+
 def test_concurrent_duplicate_and_rerun(store):
     with ThreadPoolExecutor(8) as pool:
         runs = list(pool.map(lambda _: store.submit("same-request", CONFIG), range(16)))

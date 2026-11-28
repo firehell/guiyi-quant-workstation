@@ -1,145 +1,90 @@
-/* One visual shell for every unified detail view; data semantics remain view-owned. */
-.market-detail-page.unified-detail-light.unified-detail-light {
-  --gy-bg-panel:#fff; --gy-bg-app:#fff; --gy-bg-elevated:#f8f9fb; --gy-bg-overlay:#fff;
-  --gy-text-primary:#20242b; --gy-text-secondary:#667085; --gy-text-muted:#667085;
-  --gy-border:#ebedf0; --gy-border-subtle:#ebedf0; --gy-accent:#ff6b2c; --gy-detail-accent:#ff6b2c;
-  --gy-border-focus:#365af5; --gy-up:#ff403a; --gy-down:#22b95d; --gy-bg-hover:#fff4ee;
-  --gy-detail-page-bg:#fff; --gy-detail-section-bg:#f8f9fb; --gy-detail-accent-soft:#fff4ee;
-  padding:0 24px 32px; background:#fff; color:#20242b; font-variant-numeric:tabular-nums;
-  display:flex; flex-direction:column; min-width:0;
+/* The chart canvas reads this palette from its own mounted element. */
+.ws-content .market-detail-page.workstation-market {
+  --gy-chart-bg: #101720; --gy-chart-grid: #24313e; --gy-chart-axis: #364451;
+  --gy-chart-text: #aabace; --gy-chart-candle-up: #ef7179; --gy-chart-candle-down: #4db7a2;
+  --gy-chart-volume-up: #9e5864; --gy-chart-volume-down: #408679;
+  --gy-chart-ema-10: #7aa5ff; --gy-chart-ema: #e6b963; --gy-chart-ema-60: #bc98ef;
+  --gy-chart-macd-dif: #f8a16d; --gy-chart-macd-dea: #80a5ff;
+  --gy-chart-htdy-zk1: #60c9b4; --gy-chart-htdy-zd1: #74cce7; --gy-chart-htdy-zd2: #ebad62;
+  --gy-detail-page-bg: var(--gy-bg-app); --gy-detail-section-bg: var(--gy-bg-panel);
+  --gy-up: #ef7179; --gy-down: #4db7a2; --gy-text-on-accent: #102136;
+  color-scheme: dark; min-width: 0; min-height: var(--ws-content-height);
+  padding: 0 7px 6px; color: var(--gy-text-primary); background: var(--gy-bg-app);
+  font-variant-numeric: tabular-nums;
 }
-.market-detail-page.unified-detail-light.unified-detail-light > .market-navigation { margin-inline:-24px; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views { gap:6px; padding-block:2px; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views button,
-.unified-detail-light .detail-view-nav .detail-view-nav__views .newow-test-menu summary {
-  flex-shrink:0; min-height:28px; height:28px; padding:0 12px; border:0; border-radius:6px;
-  background:#f2f2f7; color:#999; font-size:13px; line-height:20px; font-weight:600;
+.workstation-market .ws-quote-band {
+  display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 16px;
+  padding: 6px 8px; border-bottom: 1px solid var(--gy-border);
 }
-.unified-detail-light .detail-view-nav .detail-view-nav__views button:hover { background:#eaeaf0; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views button.is-active { background:#ff6b2c; color:#fff; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views button.detail-view-nav__ai { background:linear-gradient(135deg,#007aff,#45c8ff); color:#fff; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views button.detail-view-nav__ai:hover { filter:brightness(1.04); }
-.unified-detail-light select { min-height:44px; max-width:200px; padding:0 12px; background:#fff; color:#20242b; border:1px solid #ebedf0; border-radius:7px; }
-.unified-detail-light .quote-header--unified { display:grid; gap:8px; padding:8px 0; }
-.unified-detail-light .quote-header__primary { min-width:0; display:flex; align-items:center; justify-content:space-between; gap:16px; }
-.unified-detail-light .quote-header__price { margin:0; }
-.unified-detail-light .quote-header__price span { padding:5px 10px; border-radius:7px; background:#f8f9fb; }
-.unified-detail-light .quote-header__price--up span { background:#fff0ef; }
-.unified-detail-light .quote-header__price--down span { background:#eaf8ef; }
-.unified-detail-light .quote-header__meta { display:flex; align-items:center; justify-content:space-between; gap:16px; min-width:0; }
-.unified-detail-light .quote-header__facts-row { display:flex; align-items:center; justify-content:flex-end; gap:12px; min-width:0; }
-.unified-detail-light .quote-header__facts { flex:1; min-width:320px; }
-.unified-detail-light .quote-header__asof { margin:0; font-size:12px; }
-.unified-detail-light .quote-header__facts-label { margin:0; white-space:nowrap; }
-.unified-detail-light .quote-header__status { font-size:12px; }
-.unified-detail-light .market-detail-page__workspace { padding:0; min-width:0; }
-.unified-detail-light button { cursor:pointer; min-height:36px; }
-.unified-detail-light :focus-visible { outline:2px solid #365af5; outline-offset:2px; }
-.unified-detail-light code { overflow-wrap:anywhere; }
-@media(max-width:640px) { .market-detail-page.unified-detail-light.unified-detail-light { padding-inline:12px; } .market-detail-page.unified-detail-light.unified-detail-light > .market-navigation { margin-inline:-12px; } .unified-detail-light .quote-header__meta, .unified-detail-light .quote-header__facts-row { align-items:flex-start; flex-direction:column; } .unified-detail-light .quote-header__facts { min-width:0; flex-basis:100%; } .unified-detail-light button { min-height:44px; } }
-
-.unified-detail-light .quote-header__price--up strong { color:#ff403a; }
-.unified-detail-light .quote-header__price--down strong { color:#22b95d; }
-.unified-detail-light .quote-header__price--neutral strong { color:#20242b; }
-
-@media(min-width: 641px) {
-  .unified-detail-light .detail-view-nav { padding:12px 0; }
-  .unified-detail-light .quote-header--unified { gap:10px; padding:8px 0; }
-  .unified-detail-light .quote-header__price { gap:8px; }
-  .unified-detail-light .quote-header__price strong { font-size:28px; }
-  .unified-detail-light .quote-header__facts { display:flex; justify-content:space-around; gap:12px; min-width:300px; }
-  .unified-detail-light .quote-header__facts div { display:flex; align-items:center; gap:8px; padding:0; background:none; }
-  .unified-detail-light .quote-header__facts dd { margin:0; }
-  .unified-detail-light .newow-summary { padding:4px 0; }
-  .unified-detail-light .newow-summary__facts button { min-height:32px; padding-inline:4px; }
+.workstation-market .detail-topbar--stock-title { display: flex; flex-direction: column; align-items: start; gap: 0; }
+.workstation-market .detail-topbar__actions { gap: 4px; flex-wrap: wrap; }
+.workstation-market .detail-topbar--stock-title .detail-topbar__name { color: var(--gy-text-primary); font-size: 17px; }
+.workstation-market .detail-topbar--stock-title .detail-topbar__contract { color: var(--gy-text-secondary); font: 12px var(--gy-font-mono); }
+.workstation-market .detail-topbar__date { color: var(--gy-text-muted); }
+.workstation-market .detail-topbar__action { min-height: 20px; padding: 0 4px; font-size: 11px; }
+.workstation-market .quote-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 3px 20px; padding: 0; border: none; }
+.workstation-market .quote-header__primary { justify-content: flex-start; gap: 8px; }
+.workstation-market .quote-header__price { gap: 5px; align-items: baseline; }
+.workstation-market .quote-header__price strong { flex-basis: auto; font-size: 24px; }
+.workstation-market .quote-header__price span { font: 12px var(--gy-font-mono); }
+.workstation-market .quote-header__price--up strong { color: var(--gy-up); }
+.workstation-market .quote-header__price--down strong { color: var(--gy-down); }
+.workstation-market .quote-header__status { gap: 3px; padding: 1px 6px; font-size: 11px; }
+.workstation-market .quote-header__status svg { width: 12px; height: 12px; }
+.workstation-market .quote-header__meta { display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
+.workstation-market .quote-header__asof { order: 1; margin: 0; font-size: 10px; color: var(--gy-text-muted); }
+.workstation-market .quote-header__newow-facts, .workstation-market .quote-header__facts { display: flex; flex-wrap: wrap; gap: 0 10px; }
+.workstation-market .quote-header__facts div { display: flex; align-items: baseline; gap: 4px; padding: 0; background: transparent; }
+.workstation-market .quote-header__facts :is(dt,dd) { margin: 0; font-size: 11px; }
+.workstation-market .detail-view-nav { gap: 3px; padding: 3px 4px; }
+.workstation-market .detail-view-nav :is(button, summary) { min-height: 25px; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+.workstation-market .detail-view-nav__views { gap: 3px; }
+.workstation-market .detail-view-nav__views :is(button,summary) { background: transparent; color: var(--gy-text-secondary); }
+.workstation-market .detail-view-nav__views :is(.is-active, [aria-selected=true]) { background: var(--gy-detail-accent-soft); color: var(--gy-link); }
+.workstation-market .chart-navigation button { min-height: 24px; }
+.workstation-market .market-detail-page__workspace { min-width: 0; padding: 0; }
+.workstation-market .chart-progress { margin: 2px 6px; font-size: 11px; }
+.workstation-market .free-workspace__toolbar { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: 2px 8px; border-bottom: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
+.workstation-market .free-workspace__toolbar .chart-reference-toolbar { flex: 1 1 auto; border: none; }
+.workstation-market .free-workspace { gap: 3px; }
+.workstation-market .free-workspace__indicators { min-height: 29px; padding: 2px 5px; gap: 4px; border: 0; border-radius: 0; }
+.workstation-market .free-workspace__indicators > button { min-height: 24px; padding: 2px 5px; }
+.workstation-market .indicator-chip--ema10, .workstation-market .indicator-chip--range { --indicator-color: var(--gy-chart-ema-10); }
+.workstation-market .indicator-chip--ema21 { --indicator-color: var(--gy-chart-ema); }
+.workstation-market .indicator-chip--ema60 { --indicator-color: var(--gy-chart-ema-60); }
+.workstation-market .indicator-chip--patterns { --indicator-color: var(--gy-down); }
+.workstation-market .kline-shell, .workstation-market .newow-product-chart-stage {
+  background: var(--gy-chart-bg); border: 0;
 }
-
-.unified-detail-light .newow-return-badge { display:inline-block; padding:3px 9px; border-radius:7px; font-variant-numeric:tabular-nums; color:#667085; background:#f3f4f6; }
-.unified-detail-light .newow-return-badge[data-direction="up"] { color:#ff403a; background:#fff0ef; }
-.unified-detail-light .newow-return-badge[data-direction="down"] { color:#22b95d; background:#eaf8ef; }
-
-/* Newow quote facts follow the price, matching the compact two-row reference layout. */
-.unified-detail-light .quote-header--newow .quote-header__meta { flex-direction:column; align-items:flex-start; gap:4px; margin-top:0; }
-.unified-detail-light .quote-header--newow .quote-header__facts-row { order:0; justify-content:flex-start; width:100%; }
-.unified-detail-light .quote-header--newow .quote-header__asof { order:1; margin-top:2px; }
-.unified-detail-light .quote-header--newow .quote-header__newow-facts { display:grid; gap:3px; max-width:100%; }
-.unified-detail-light .quote-header--newow .quote-header__facts { display:flex; flex-wrap:wrap; justify-content:flex-start; gap:4px 14px; min-width:0; }
-.unified-detail-light .quote-header--newow .quote-header__facts div { display:flex; align-items:baseline; gap:4px; padding:0; border-radius:0; background:none; }
-.unified-detail-light .quote-header--newow .quote-header__facts dt { font-size:12px; color:#777; }
-.unified-detail-light .quote-header--newow .quote-header__facts dd { margin:0; font-family:inherit; font-size:12px; font-weight:600; color:#333; }
-@media(max-width:640px) {
-  .unified-detail-light .detail-view-nav .detail-view-nav__views button { min-height:28px; padding-inline:10px; font-size:13px; }
-  .unified-detail-light .quote-header--newow .quote-header__facts { gap:4px 12px; }
-  .unified-detail-light .quote-header--newow .quote-header__facts dt { font-size:12px; }
-  .unified-detail-light .quote-header--newow .quote-header__facts dd { font-size:12px; }
+.workstation-market .kline-shell, .workstation-market .newow-product-chart-stage__chart {
+  min-height: 350px; height: calc(clamp(350px, 100dvh - 238px, 1150px) + var(--extra-pane-height, 0px));
 }
-
-/* Keep the channel control compact alongside the strategy tabs. */
-.unified-detail-light .detail-view-nav .detail-view-nav__views .visual-overlay-controls button.donchian-dot {
-  flex:0 0 8px; width:8px; height:8px; min-height:8px; padding:0; border:0; border-radius:50%; background:#8e8e93;
+.workstation-market .newow-product-chart-stage:fullscreen .newow-product-chart-stage__chart { min-height: 0; height: 0; }
+.workstation-market :is(.chart-reference-toolbar, .newow-product-chart-stage__reference-prices, .newow-product-chart-stage__auxiliary-toolbar) {
+  min-width: 0; min-height: 27px; padding: 2px 5px; border-color: var(--gy-border); background: var(--gy-bg-panel);
 }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .visual-overlay-controls button.donchian-dot[aria-pressed="true"] { background:#34c759; }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .visual-overlay-controls button.donchian-label {
-  min-height:24px; height:24px; padding:0; border:0; border-radius:0; background:transparent; color:#8e8e93; font-size:12px; font-weight:400;
+.workstation-market .chart-reference-toolbar .newow-chart-frequency { background: var(--gy-bg-app); }
+.workstation-market .chart-reference-toolbar .newow-chart-frequency button { color: var(--gy-text-secondary); }
+.workstation-market .chart-reference-toolbar .newow-chart-frequency button.is-active { background: var(--gy-detail-accent-soft); color: var(--gy-link); }
+.workstation-market :is(.htdy-legend, .kline-hover-legend, .newow-product-chart-stage__cursor-card, .newow-product-chart-stage__legend details[open]) {
+  color: var(--gy-text-secondary); border-color: var(--gy-border); background: color-mix(in srgb, var(--gy-bg-panel) 92%, transparent);
 }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .visual-overlay-controls button.stop-toggle {
-  min-height:24px; height:24px; padding:0 6px; border:1px solid #ddd; border-radius:4px; background:var(--gy-bg-panel); color:var(--gy-text-muted); font-size:11px; font-weight:400;
+.workstation-market .kline-hover-legend { border-radius: 3px; padding: 3px 5px; font-size: 11px; }
+.workstation-market .newow-product-chart-stage__dual-summary { color: var(--gy-text-secondary); background: var(--gy-bg-panel); }
+.workstation-market .newow-product-workspace__auxiliary-tabs button[aria-pressed=true] { color: var(--gy-link); border-bottom-color: var(--gy-detail-accent); }
+.workstation-market .contract-strip { padding: 5px; border: 1px solid var(--gy-border); background: var(--gy-bg-panel); }
+.workstation-market .contract-strip button { min-height: 25px; }
+.workstation-market .market-detail-page__notice { color: var(--gy-status-warning); background: #30271d; border-color: #6b5132; }
+.workstation-market :focus-visible { outline: 2px solid var(--gy-border-focus); outline-offset: 2px; }
+@media(max-width: 960px) {
+  .workstation-market .ws-quote-band { grid-template-columns: minmax(0,1fr); gap: 3px; }
+  .workstation-market .detail-topbar--stock-title { flex-direction: row; align-items: center; gap: 10px; }
 }
-.unified-detail-light .detail-view-nav .detail-view-nav__views .visual-overlay-controls button.stop-toggle[aria-pressed="true"] {
-  border-color:#2563eb; color:#2563eb; background:#eff6ff;
-}
-
-.unified-detail-light .quote-header--newow .quote-header__price { align-items:baseline; gap:0 6px; flex-wrap:nowrap; }
-.unified-detail-light .quote-header--newow .quote-header__price strong { flex-basis:auto; font-family:Arial, sans-serif; font-size:34px; font-weight:700; line-height:1; }
-.unified-detail-light .quote-header--newow .quote-header__price span { padding:0; border-radius:0; background:none; font-family:Arial, sans-serif; font-size:14px; font-weight:400; white-space:nowrap; }
-
-.unified-detail-light .quote-header--newow .quote-header__price--up strong,
-.unified-detail-light .quote-header--newow .quote-header__price--up span { color:#ff3b30; }
-.unified-detail-light .quote-header--newow .quote-header__price--down strong,
-.unified-detail-light .quote-header--newow .quote-header__price--down span { color:#34c759; }
-
-/* Match the compact source detail chart, with one geometry across analysis views. */
-.unified-detail-light .newow-product-chart-stage__chart { height:700px; min-height:700px; }
-.unified-detail-light .newow-product-chart-stage { min-height:0; }
-.unified-detail-light .kline-shell { height:700px; min-height:700px; }
-.unified-detail-light .newow-product-chart-stage, .unified-detail-light .kline-shell {
-  --gy-chart-bg:#f8f9fd; --gy-chart-text:#8e8e93; --gy-chart-grid:#e9ebf0; --gy-chart-axis:#e9ebf0;
-  background:#f8f9fd; border:0;
-}
-.unified-detail-light .quote-header__asof { font-size:11px; color:#8e8e93; line-height:1.5; }
-.unified-detail-light .newow-product-chart-stage__reference-prices { min-height:36px; box-sizing:border-box; padding:4px 12px; background:#f4f5f8; }
-.unified-detail-light .newow-product-chart-stage__auxiliary-toolbar { background:#f8f9fd; }
-.unified-detail-light .newow-product-chart-stage__chart,
-.unified-detail-light .kline-shell .chart,
-.unified-detail-light .experiment-chart { overflow:hidden; min-width:0; max-width:100%; }
-.unified-detail-light .detail-view-nav__controls { padding-block:4px; }
-@media(max-width:640px) {
-  .unified-detail-light .newow-product-chart-stage__chart { height:650px; min-height:650px; }
-  .unified-detail-light .kline-shell { height:650px; min-height:650px; }
-}
-
-/* Newow's public light PC chart surface; other analysis views keep their theme. */
-.unified-detail-light .newow-product-chart-stage {
-  --gy-chart-bg:#fff; --gy-chart-text:#333; --gy-chart-grid:#f0f0f0; --gy-chart-axis:#e5e5e5;
-  --gy-chart-candle-up:#ff3b30; --gy-chart-candle-down:#34c759;
-  background:#fff;
-}
-.unified-detail-light .newow-product-chart-stage__reference-prices { background:#fafafa; }
-.unified-detail-light .newow-product-chart-stage__auxiliary-toolbar { background:#fff; }
-.unified-detail-light .newow-product-workspace__auxiliary-controls { padding:6px 16px 0; border-top:0; }
-.unified-detail-light .newow-product-workspace__auxiliary-tabs button {
-  min-height:0; padding:6px 14px; font-size:13px; font-weight:500; line-height:normal;
-  color:#8e8e93; border-bottom:2px solid transparent;
-}
-.unified-detail-light .newow-product-workspace__auxiliary-tabs button[aria-pressed="true"] {
-  color:#1d1d1f; font-weight:600; border-bottom-color:#ff6b35;
-}
-.unified-detail-light .newow-product-workspace__auxiliary-legend-row {
-  flex-wrap:nowrap; gap:10px; min-height:0; padding:6px 16px 4px;
-}
-.unified-detail-light .newow-product-workspace__auxiliary-legend-row > .newow-mirror-legend {
-  width:auto; flex:1 1 auto; padding:0; background:#fff;
-}
-.unified-detail-light .newow-product-workspace__auxiliary-legend-row > .newow-trend-reversal-legend {
-  flex:1 1 auto; min-width:0; background:#fff;
+@media(max-width: 640px) {
+  .ws-content .market-detail-page.workstation-market { padding-inline: 4px; }
+  .workstation-market .detail-view-nav { margin-inline: 0; }
+  .workstation-market .quote-header__meta { align-items: flex-start; }
+  .workstation-market .quote-header__primary { flex-wrap: wrap; }
+  .workstation-market .quote-header__facts { gap: 2px 7px; }
+  .workstation-market .detail-view-nav__views, .workstation-market .detail-view-nav__controls { padding-inline: 0; }
 }

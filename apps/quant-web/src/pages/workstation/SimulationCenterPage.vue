@@ -2,10 +2,28 @@
 import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { readSimulationWorkspace, type Fill, type SimulationWorkspace } from '@/api/simulationCenter'
+import { monitorClient } from '@/api/simulationMonitor'
+import { readSubingPortfolioStatus } from '@/api/subingPortfolio'
+import { useWorkstationRead } from '@/composables/useWorkstationRead'
+import { observerLabel } from '@/utils/simulationPresentation'
 import ReturnCurveSvg from '@/components/charts/ReturnCurveSvg.vue'
-import MarketNavigation from '@/components/market/MarketNavigation.vue'
+import { physicalContract } from '@/utils/workstationAccounts'
+import { workstationChartLink } from '@/utils/workstationRoutes'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { returnCurveLayout } from '@/utils/returnCurveLayout'
+
+const { value: tq, state: tqRead, refresh: refreshTq } = useWorkstationRead(monitorClient.overview)
+const { value: paper, state: paperRead, refresh: refreshPaper } = useWorkstationRead(readSubingPortfolioStatus)
+const modelStatus = computed(() => {
+  if (!paper.value) return paperRead.value === 'error' ? '读取失败' : '读取中'
+  if (paper.value.status === 'STALE_OR_STOPPED') return '心跳过期或已停止'
+  return paper.value.run_id ? paper.value.status : '尚无模型 Run'
+})
+function refreshSources() {
+  void load()
+  void refreshTq()
+  void refreshPaper()
+}
 
 const tabs = [
   ['overview', '模拟概览'], ['accounts', '账户管理'], ['deployments', '策略运行'],
@@ -78,6 +96,12 @@ function selectAccount(event: Event) {
   const alias = (event.target as HTMLSelectElement).value
   void router.replace({ name: 'simulations', query: { ...route.query, account: alias } })
 }
+function contractChart(id: string) {
+  const product = id.replace(/\d+$/, '').toLowerCase()
+  const contract = physicalContract(product, id)
+  if (!contract) return null
+  return workstationChartLink({ view: 'free', symbol: product, contract, seriesKind: 'contract', frequency: '1m' })
+}
 function amount(value?: string) {
   return value === undefined ? '—' : `¥ ${value}`
 }
@@ -86,20 +110,25 @@ function side(value: string) { return value === 'LONG' ? '买 / 多' : '卖 / �
 
 <template>
   <div class="simulation-shell">
-    <MarketNavigation active-tab="simulations" />
     <main class="simulation">
       <header class="simulation-heading">
-        <div><h1>模拟交易中心</h1><p>SimNow · 柜台仿真</p></div>
+        <div><h1>模拟交易中心</h1><p>账户读回与模拟运行</p></div>
         <div class="simulation-actions">
           <label v-if="workspace?.accounts.length">账户
             <select :value="workspace.selected" @change="selectAccount">
               <option v-for="row in workspace.accounts" :key="row.alias" :value="row.alias">{{ row.alias }}</option>
             </select>
           </label>
-          <button type="button" :disabled="loading" @click="load()">刷新</button>
+          <button type="button" :disabled="loading" @click="refreshSources">刷新</button>
         </div>
       </header>
 
+      <nav class="account-sources" aria-label="模拟来源">
+        <div><strong>SimNow 柜台读回</strong><small>{{ snapshot?.trading_day ?? (workspace?.status === 'NOT_CONFIGURED' ? '读回未配置' : selected?.alias ?? '暂无读回') }}</small></div>
+        <RouterLink to="/market?tab=simulation"><strong>快期模拟账户</strong><small>{{ tq ? observerLabel(tq) : tqRead === 'error' ? '读取失败' : '读取中' }} · {{ tq?.trading_day ?? '无已核验交易日' }}</small></RouterLink>
+        <RouterLink to="/research/subing-decision"><strong>苏冰共享 Paper</strong><small>{{ modelStatus }} · {{ paper?.trading_day ?? '无已核验交易日' }}</small></RouterLink>
+        <RouterLink v-if="snapshot?.trading_day" :to="{ name: 'trade-journal', query: { day: snapshot.trading_day } }">复盘此交易日</RouterLink>
+      </nav>
       <nav class="simulation-tabs" aria-label="模拟交易中心导航">
         <RouterLink v-for="[key, title] in tabs" :key="key"
           :to="{ name: 'simulations', query: { account, view: key === 'overview' ? undefined : key } }"
@@ -146,7 +175,7 @@ function side(value: string) { return value === 'LONG' ? '买 / 多' : '卖 / �
           <h2>策略部署</h2>
           <p v-if="!selected.deployment">此账户暂无已登记的策略部署。</p>
           <dl v-else class="deployment">
-            <dt>策略</dt><dd>{{ strategies[selected.deployment.strategy_id] ?? selected.deployment.strategy_id }}</dd>
+            <dt>策略</dt><dd><RouterLink :to="{ name: 'strategies', params: { strategyId: selected.deployment.strategy_id } }">{{ strategies[selected.deployment.strategy_id] ?? selected.deployment.strategy_id }}</RouterLink></dd>
             <dt>执行状态</dt><dd>等待仿真执行验收</dd>
             <dt>公式版本</dt><dd>{{ selected.deployment.formula_version }}</dd>
             <dt>参数 Profile</dt><dd>{{ selected.deployment.profile_id }}</dd>
@@ -160,7 +189,7 @@ function side(value: string) { return value === 'LONG' ? '买 / 多' : '卖 / �
             <h2>持仓</h2><p v-if="!snapshot.positions.length">最近完整读回为空仓。</p>
             <div v-else class="table-scroll"><table>
               <thead><tr><th>合约</th><th>方向</th><th>手数</th><th>今仓</th><th>昨仓</th><th>冻结</th><th>持仓盈亏</th></tr></thead>
-              <tbody><tr v-for="row in snapshot.positions" :key="row.id"><td>{{ row.contract }} · {{ row.exchange }}</td>
+              <tbody><tr v-for="row in snapshot.positions" :key="row.id"><td><RouterLink v-if="contractChart(row.contract)" :to="contractChart(row.contract)!">{{ row.contract }}</RouterLink><template v-else>{{ row.contract }}</template> · {{ row.exchange }}</td>
                 <td>{{ side(row.direction) }}</td><td>{{ row.quantity }}</td><td>{{ row.today }}</td>
                 <td>{{ row.yesterday }}</td><td>{{ row.frozen }}</td><td>{{ row.pnl }}</td>
               </tr></tbody>
@@ -202,7 +231,11 @@ function side(value: string) { return value === 'LONG' ? '买 / 多' : '卖 / �
 </template>
 
 <style scoped>
-.simulation-shell { min-height: 100vh; }
+.simulation-shell { min-height: 100%; }
+.account-sources { display: grid; grid-template-columns: repeat(auto-fit,minmax(160px,1fr)); gap: 8px; margin: 14px 0 0; }
+.account-sources > * { display: grid; align-content: center; gap: 5px; min-height: 48px; padding: 9px 12px; border: 1px solid var(--gy-border); border-radius: 5px; background: var(--gy-bg-panel); }
+.account-sources small { color: var(--gy-text-secondary); }
+.account-sources a:hover { border-color: var(--gy-detail-accent); }
 .simulation { max-width: 1320px; padding: clamp(14px, 3vw, 38px); margin: auto; color: var(--gy-text-primary); }
 .simulation-heading, .simulation-actions, .simulation-as-of { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .simulation-heading { justify-content: space-between; }

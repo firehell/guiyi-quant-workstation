@@ -59,6 +59,7 @@ owner 控制任务、架构与节奏，Codex 负责定位、实现、必要验�
   | Backtest Center | Plus 历史研究 Run、增量续跑、逐笔回放及实验。组件 tag 记录精确源码，工作站随应用构建集成。 | [组件版本](../services/quant-api/app/backtest_center/__init__.py) |
   | Simulation Center | SimNow 账户只读证据、模拟交易工作台、隔离的火天大有执行验收。组件 tag 记录精确源码，工作站随应用构建集成。 | [组件版本](../services/quant-api/app/simulation_center/__init__.py) |
   | Trade Journal Center | 交易计划、执行案例、复盘和已保存的来源证据。组件 tag 记录精确源码，工作站随应用构建集成。 | [组件版本](../services/quant-api/app/trade_journal/__init__.py) |
+  | Workstation UI | 八页导航、个人看盘交互、图层配置和跨页复盘上下文，按 `workstation-ui/vX.Y.Z` 发布。 | [组件版本](../apps/quant-web/src/utils/workstationNavigation.ts) · [交互合同](../openspec/specs/workstation-ui/spec.md) |
   | Quant Chart | 图层、Renderer、Pane 和 Indicator Catalog。Web 构建使用锁定的 Chart 包。 | [Chart 包版本](../packages/quant-chart/package.json) · [Web 锁文件](../apps/quant-web/pnpm-lock.yaml) |
 
 - 应用 API、Python 应用包和 Web 共用 `APP_VERSION`。各组件按自身变更维护版本。应用发版记录本次选用的组件版本，

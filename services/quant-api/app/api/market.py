@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from math import ceil
 from time import monotonic
-from typing import cast
+from typing import Literal, cast
 from threading import BoundedSemaphore, Event
 from decimal import Decimal
 
@@ -212,7 +212,7 @@ async def market_chart_window_studies(
     http_request: Request, series_kind: SeriesKind, symbol: str, frequency: BarFrequency,
     first: str, last: str, count: int = Query(ge=1, le=2000),
     studies: str = Query(pattern=_CHART_STUDIES_PATTERN),
-    contract: str | None = None, profile: MarketChartStudyProfile | None = None,
+    contract: str | None = None, profile: MarketChartStudyProfile | Literal["newow"] | None = None,
     session: Session = Depends(get_db),
 ) -> MarketChartStudyDisplayOut:
     """Slice aligned generic study results to the requested Canonical Bars."""
@@ -291,7 +291,7 @@ async def market_chart_window_studies(
 
         return project_chart_study_display(
             query, None, first=start, last=end, studies=requested, check_cancelled=check,
-            rows=read_rows(retain=profile is not None), read_current_rows=read_rows,
+            rows=read_rows(retain=profile is not None and profile != "newow"), read_current_rows=read_rows,
         )
 
     return await _run_chart_study(http_request, calculate)

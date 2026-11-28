@@ -201,7 +201,9 @@ test('dual presentation roundtrips without inventing a fourth strategy kernel', 
     { view: 'newow', strategy: 'trend', newow_mode: 'fusion' },
     { view: 'free', newow_mode: 'dual', frequency: '1d', series_kind: 'actual_dominant' },
   ]) assert.equal(parseMarketDetailRoute({ symbol: 'jm', ...query }).kind, 'invalid')
-  assert.equal(parseMarketDetailRoute({ view: 'newow', symbol: 'jm', strategy: 'main_rise' }).kind, 'valid')
+  const mainRise = { view: 'newow', symbol: 'jm', strategy: 'main_rise' }
+  assert.equal(parseMarketDetailRoute(mainRise).kind, 'valid')
+  assert.equal(parseMarketDetailRoute({ ...mainRise, newow_source: 'after-market' }).kind, 'valid')
 })
 
 test('legacy continuous links resolve to actual dominant before any consumer identity is built', () => {

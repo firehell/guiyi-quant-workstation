@@ -145,12 +145,15 @@ export interface RuntimeAlertHealth {
 
 export interface RuntimeHealthResponse {
   status: string
+  runtime_identity?: { status: string; services: Record<string, { status: string; runtime_tag?: string; runtime_commit?: string; runtime_generation?: number }> } | null
   generated_at: string
   readonly: boolean
   would_start_services: boolean
   would_enqueue_jobs: boolean
   would_send_notifications: boolean
   components: {
+    reference_worker?: { status: string; error_type?: string | null }
+    late_provider_recovery?: { status: string; error_type?: string | null }
     db: RuntimeComponentHealth
     redis: RuntimeComponentHealth
     live_market: RuntimeLiveMarketHealth
@@ -158,6 +161,14 @@ export interface RuntimeHealthResponse {
     weekly_audit?: RuntimeWeeklyAuditHealth
     alert: RuntimeAlertHealth
   }
+}
+
+export async function readWorkstationHealth(signal: AbortSignal) {
+  const data = await getRuntimeHealth(signal)
+  if (!data || typeof data.status !== 'string' || typeof data.generated_at !== 'string' || !data.components) {
+    throw new Error('RUNTIME_HEALTH_INVALID')
+  }
+  return data
 }
 
 export function getRuntimeHealth(signal?: AbortSignal) {

@@ -207,6 +207,8 @@ onScopeDispose(() => {
       <span>研究资格 {{ statusLabel(run.qualification) }}</span>
       <span v-if="run.phase">阶段 {{ run.phase }}</span>
       <time>{{ formatBeijingInstant(run.updated_at) }}</time>
+      <RouterLink :to="{ name: 'strategies', params: { strategyId: run.config.strategy_id } }">查看策略定义</RouterLink>
+      <RouterLink v-if="run.status === 'SUCCEEDED'" :to="{ name: 'statistics-research', query: { mode: 'backtest', run: run.run_id } }">以此 Run 研究统计</RouterLink>
       <RouterLink v-if="sourceRunId" :to="{ name: 'backtests', params: { runId: sourceRunId } }">来源 Run {{ sourceRunId }}</RouterLink>
     </div>
     <form v-if="canExtend && extensionOpen" class="bt-actions bt-extension" aria-label="延长回测" novalidate @submit.prevent="requestExtension">

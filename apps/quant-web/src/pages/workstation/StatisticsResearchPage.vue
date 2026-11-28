@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import MarketNavigation from '@/components/market/MarketNavigation.vue'
 import request from '@/api/request'
 
 type Kind = 'backtest' | 'case' | 'factor' | 'event' | 'fills' | 'panel' | 'event_test' | 'search' | 'assistant'
@@ -257,6 +256,14 @@ async function chooseGroup(group: string) {
   sampleRows.value = []
   if (active.value?.status === 'SUCCEEDED') await loadSamples(active.value)
 }
+watch(() => [route.query.mode, route.query.run, route.query.case, route.params.taskId], ([kind, run, caseKey, taskId]) => {
+  if (taskId) return
+  const requested = modes.find(([value]) => value === kind)
+  if (!requested) return
+  selectMode(requested[0])
+  if (requested[0] === 'backtest' && typeof run === 'string') runId.value = run
+  if (requested[0] === 'case' && typeof caseKey === 'string') caseId.value = caseKey
+}, { immediate: true })
 watch(() => route.params.taskId, async (value) => {
   const id = typeof value === 'string' ? value : ''
   active.value = undefined
@@ -315,7 +322,6 @@ async function cancel() {
 
 <template>
   <div class="research">
-    <MarketNavigation active-tab="research" />
     <main>
       <header>
         <div><RouterLink to="/research">研究</RouterLink><h1>统计与研究中心</h1></div>

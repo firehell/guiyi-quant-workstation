@@ -57,7 +57,7 @@ export async function getMarketAfterCloseSection(
       ...(query.section === 'auxiliary' ? { component: query.component } : {}),
     },
     signal: options.signal,
-  }) as { status?: unknown; receipt?: unknown; chart?: unknown; result?: unknown } | null
+  }) as { status?: unknown; receipt?: unknown; reference?: Pick<MarketAfterCloseReference, 'stream_id' | 'revision_id' | 'seq'>; chart?: unknown; result?: unknown } | null
   const receipt = response?.receipt
   const validReceipt = typeof receipt === 'string' && /^[0-9a-f]{64}$/.test(receipt)
   if (!response || (!validReceipt && receipt !== null)) throw new Error('REFERENCE_RESPONSE_INVALID')
@@ -75,7 +75,7 @@ export async function getMarketAfterCloseSection(
     || result.meta.data_revision_identity !== chart.meta.data_revision_identity) {
     throw new Error('REFERENCE_SNAPSHOT_CHANGED')
   }
-  return { status, receipt, chart, result }
+  return { status, receipt, reference: response.reference, chart, result }
 }
 
 export async function getReferenceTrades(
