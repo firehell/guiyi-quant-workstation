@@ -4,13 +4,14 @@ import { useRoute, useRouter } from 'vue-router'
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
 import request from '@/api/request'
 
-type Kind = 'backtest' | 'case' | 'factor' | 'event' | 'fills' | 'panel' | 'event_test' | 'search'
+type Kind = 'backtest' | 'case' | 'factor' | 'event' | 'fills' | 'panel' | 'event_test' | 'search' | 'assistant'
 type Run = { run_id: string; product: string; contract: string; strategy_id: string; frequency: string;
   qualification: string; formula_version: string; start: string; end: string }
 type Task = { id: string; status: string; reason?: string; started_at?: string;
-  request: { source: { kind: Kind; run_id?: string } }; result?: Analysis }
+  request: { source: { kind: Kind; run_id?: string }; followup?: Followup }; result?: Analysis }
 type Analysis = {
   source: Record<string, string>
+  question?: string
   policy: Record<string, unknown>
   coverage: Record<string, unknown>
   performance?: { cumulative: number; annualized: number; max_drawdown: number; daily_win_rate: number;
@@ -30,7 +31,14 @@ type Analysis = {
     accepted_events?: number; purged_overlapping_events?: number; excluded_unpaired_days?: number;
     quantiles?: Record<string, { mean_label: number; member_observations: number; trading_days: number }> }
   experiment_plan?: { delays: number[]; scored: boolean }
+  assistant?: { summary: string; hypothesis: string; limitations: string; evidence_refs: string[];
+    next_analysis: string; hypothesis_status: string }
+  model?: { model_sha256: string; runner_sha256: string }
+  assistant_origin?: { task_id: string; evidence_task_id: string }
 }
+type AssistantReference = { task_id: string; refs: string[]; result_digest: string;
+  kind: Kind; run_id?: string; member_id?: string; member_ids?: string[] }
+type Followup = { assistant_id: string; evidence_task_id: string }
 type Estimate = { n: number; mean: number | null; interval: number[] | null; p: number | null; p_bh?: number; reason?: string }
 const foldFields = [
   ['train_warmup_start', '训练预热起点'], ['train_start', '训练起点'], ['train_end', '训练终点'],
@@ -42,7 +50,7 @@ type Source = { kind: string; status: string }
 const root = '/statistics-research'
 const route = useRoute()
 const router = useRouter()
-const modes: Array<[Kind, string]> = [['backtest', '回测统计'], ['case', '交易案例'], ['fills', '账户与参考证据'], ['factor', '因子实验'], ['event', '突破事件'], ['panel', '同步横截面'], ['event_test', '事件稳健检验'], ['search', 'OOS 参数方案']]
+const modes: Array<[Kind, string]> = [['backtest', '回测统计'], ['case', '交易案例'], ['fills', '账户与参考证据'], ['factor', '因子实验'], ['event', '突破事件'], ['panel', '同步横截面'], ['event_test', '事件稳健检验'], ['search', 'OOS 参数方案'], ['assistant', 'AI 研究助手']]
 const mode = ref<Kind>('backtest')
 const sources = ref<Source[]>([])
 const worker = ref(false)
@@ -89,7 +97,42 @@ const hacLag = ref(2)
 const delayChoices = ref([0, 1, 2, 3])
 const budget = ref(3)
 const seed = ref(13)
+const question = ref('')
+const assistantEvidence = ref<string[]>([])
+const assistantSources = computed(() => recent.value.filter(item =>
+  item.status === 'SUCCEEDED' && ['backtest', 'factor', 'event', 'panel', 'event_test'].includes(item.request.source.kind)))
+const assistantAvailable = computed(() => sources.value.some(item => item.kind === 'assistant' && item.status === 'AVAILABLE'))
+const assistantReferences = computed(() => result.value?.assistant
+  ? (result.value.source.evidence as unknown as AssistantReference[]).filter(origin =>
+      origin.refs.some(ref => result.value?.assistant?.evidence_refs.includes(ref))) : [])
+const followup = ref<Followup>()
+const followupChoices = computed(() => assistantReferences.value.filter(origin =>
+  (origin.kind === 'backtest' ? !!origin.run_id : ['event', 'event_test', 'panel'].includes(origin.kind)) &&
+  origin.refs.every(ref => result.value?.assistant?.evidence_refs.includes(ref))))
+const followupTitle: Partial<Record<Kind, string>> = { backtest: '配置样本外验证', event: '配置事件稳健检验',
+  event_test: '复查事件稳健性', panel: '复查横截面稳健性' }
+function selectMode(kind: Kind) {
+  mode.value = kind
+  followup.value = undefined
+}
+function startFollowup(origin: AssistantReference) {
+  if (!active.value) return
+  followup.value = { assistant_id: active.value.id, evidence_task_id: origin.task_id }
+  if (origin.kind === 'backtest') {
+    mode.value = 'search'
+    runId.value = origin.run_id ?? ''
+    folds.value = [newFold()]
+  } else if (origin.kind === 'panel') {
+    mode.value = 'panel'
+    panelMembers.value = origin.member_ids ?? []
+  } else {
+    mode.value = 'event_test'
+    eventMember.value = origin.member_id ?? origin.task_id
+  }
+  document.getElementById('statistics-analysis-form')?.scrollIntoView({ block: 'start' })
+}
 const folds = ref<Fold[]>([newFold()])
+const experimentId = ref<string>()
 const submittingExperiment = ref(false)
 async function submitExperiment() {
   const id = active.value?.id
@@ -108,6 +151,29 @@ const through = ref('')
 const frequency = ref('60m')
 const feature = ref('trend_direction')
 const result = computed(() => active.value?.result)
+const citedSamples = computed(() => sampleRows.value.filter(row =>
+  result.value?.assistant?.evidence_refs.includes(String(row.ref))))
+const factLabels: Record<string, string> = {
+  sample_qualification: 'Run 资格', trading_days: '结算交易日', closed_trades: '闭合交易',
+  cumulative: '累计净收益', max_drawdown: '回撤幅度', daily_win_rate: '日胜率',
+  searched_trading_days: '核查交易日', losing_trading_days: '净亏交易日',
+  searched_closed_trades: '核查闭合交易', losing_closed_trades: '亏损闭合交易',
+  sample_count: '标签样本', n: '有效样本', spearman: 'Spearman 相关', mean_label: '标签均值',
+  confirmed: '确认组', control: '对照组', research_only: '仅用于研究',
+  searched_observations: '核查观察数', negative_labels: '负向价格标签',
+  estimand: '估计目标', days: '有效交易日', day_estimate: '交易日均值', interval: 'HAC 95% 区间',
+  inference_reason: '推断缺项原因', searched_days: '核查有效交易日', adverse_days: '估计值为负的交易日',
+  zero_days: '估计值为零的交易日', eligible_cross_sections: '有效截面',
+  excluded: '排除原因', accepted_events: '保留事件', purged_overlapping_events: '剔除重叠事件',
+  excluded_unpaired_days: '剔除未配对交易日',
+}
+function showFact(key: string, value: unknown): string {
+  if (key === 'estimand') return value === 'daily_mean_of_complete_cross_section_rank_ic'
+    ? '完整截面 Rank IC 日均值' : '确认组减对照组的日内价格标签差'
+  if (['cumulative', 'max_drawdown', 'daily_win_rate'].includes(key) && typeof value === 'number') return percent(value)
+  if (typeof value === 'boolean') return value ? '是' : '否'
+  return show(value)
+}
 const performance = computed(() => result.value?.performance)
 const summary = computed(() => performance.value ? [
   ['累计净收益', percent(performance.value.cumulative)],
@@ -126,6 +192,7 @@ const evidenceColumns: Record<Kind, Array<[string, string]>> = {
   panel: [['member', '源研究 ID'], ['available_at', '同步时点'], ['feature', '特征'], ['label', '观察标签'], ['trading_day', '交易日']],
   event_test: [['at', '突破 Bar'], ['available_at', '确认检查时点'], ['confirmed', '是否确认'], ['label_available_at', '标签结束'], ['label', '观察标签']],
   search: [],
+  assistant: [['ref', '引用'], ['tool', '研究工具'], ['facts', '核验结果']],
   case: [['trading_day', '交易日'], ['at', '执行时刻'], ['action', '动作'], ['native_id', '原生 ID'], ['price', '成交价'],
     ['quantity', '数量'], ['remaining', '剩余'], ['fees_to_date', '累计费用']],
   factor: [['at', '特征 Bar'], ['feature', '特征值'], ['label', '观察标签'], ['label_available_at', '标签结束']],
@@ -193,6 +260,8 @@ async function chooseGroup(group: string) {
 watch(() => route.params.taskId, async (value) => {
   const id = typeof value === 'string' ? value : ''
   active.value = undefined
+  followup.value = undefined
+  experimentId.value = undefined
   sampleSequence++
   sampleRows.value = []
   month.value = ''
@@ -205,6 +274,10 @@ watch(() => route.params.taskId, async (value) => {
     if (route.params.taskId !== id) return
     active.value = data
     if (data.status === 'SUCCEEDED') await loadSamples(data)
+    if (data.result?.experiment_plan) {
+      const linked = await request.get<unknown, { experiment_id: string | null }>(root + '/tasks/' + id + '/experiment')
+      if (route.params.taskId === id) experimentId.value = linked.experiment_id ?? undefined
+    }
   } catch (error) { if (route.params.taskId === id) taskError.value = message(error) }
 }, { immediate: true })
 onMounted(() => { void loadSources(); void loadRuns(); void loadTasks() })
@@ -217,6 +290,7 @@ async function submit(rerun = false) {
   const source = rerun && previous ? previous.request.source : mode.value === 'backtest'
     ? { kind: 'backtest', run_id: runId.value }
     : mode.value === 'case' ? { kind: 'case', case_id: caseId.value }
+    : mode.value === 'assistant' ? { kind: 'assistant', question: question.value, evidence: assistantEvidence.value }
     : mode.value === 'panel' ? { kind: 'panel', members: panelMembers.value, hac_lag: hacLag.value }
     : mode.value === 'event_test' ? { kind: 'event_test', member: eventMember.value, hac_lag: hacLag.value }
     : mode.value === 'search' ? { kind: 'search', base_run_id: runId.value, choices: delayChoices.value, budget: budget.value, seed: seed.value, folds: folds.value }
@@ -224,7 +298,9 @@ async function submit(rerun = false) {
       : { kind: mode.value, product: product.value, contract: contract.value, since: since.value,
           through: through.value, frequency: frequency.value, feature: feature.value }
   try {
-    await request.post(root + '/tasks', { id, source, rerun_of: rerun ? previous?.id : undefined }, { timeout: 48000 })
+    await request.post(root + '/tasks', { id, source, rerun_of: rerun ? previous?.id : undefined,
+      followup: rerun ? previous?.request.followup : followup.value }, { timeout: 48000 })
+    followup.value = undefined
     await router.push({ name: 'statistics-research', params: { taskId: id } })
     await loadTasks()
   } catch (error) { taskError.value = message(error) }
@@ -246,13 +322,13 @@ async function cancel() {
         <span v-if="version">v{{ version }}</span>
       </header>
       <div class="sources" aria-label="来源状态">
-        <span v-for="source in sources" :key="source.kind">{{ ({ backtest: '历史回测', case: '交易日志', factor: '因子', event: '事件', paper: 'Paper', simnow: 'SimNow', reference: '页面参考', advanced: '高级研究' } as Record<string, string>)[source.kind] }}
-          <small>{{ ({ AVAILABLE: '可用', NOT_CONFIGURED: '未配置', EXACT_CASE_REQUIRED: '指定案例', EXACT_PUBLISHED_RESEARCH_REQUIRED: '选择已发布样本', EXACT_ACCOUNT_SCOPE_REQUIRED: '指定来源范围', EXACT_MARKET_WINDOW_REQUIRED: '指定窗口', VERIFIED_ACCOUNT_SETTLEMENT_REQUIRED: '缺已核验账户结算' } as Record<string, string>)[source.status] }}</small>
+        <span v-for="source in sources" :key="source.kind">{{ ({ backtest: '历史回测', case: '交易日志', factor: '因子', event: '事件', paper: 'Paper', simnow: 'SimNow', reference: '页面参考', advanced: '高级研究', assistant: 'AI 助手' } as Record<string, string>)[source.kind] }}
+          <small>{{ ({ AVAILABLE: '可用', NOT_CONFIGURED: '未配置', EXACT_CASE_REQUIRED: '指定案例', LOCAL_MODEL_NOT_CONFIGURED: '待配置本地模型', EXACT_PUBLISHED_RESEARCH_REQUIRED: '选择已发布样本', EXACT_ACCOUNT_SCOPE_REQUIRED: '指定来源范围', EXACT_MARKET_WINDOW_REQUIRED: '指定窗口', VERIFIED_ACCOUNT_SETTLEMENT_REQUIRED: '缺已核验账户结算' } as Record<string, string>)[source.status] }}</small>
         </span>
       </div>
       <section>
         <div class="tabs">
-          <button v-for="[kind, label] in modes" :key="kind" :aria-pressed="mode === kind" @click="mode = kind">{{ label }}</button>
+          <button v-for="[kind, label] in modes" :key="kind" :aria-pressed="mode === kind" @click="selectMode(kind)">{{ label }}</button>
         </div>
         <form v-if="mode === 'backtest' || mode === 'search'" class="controls" @submit.prevent="loadRuns()">
           <label>品种 <input v-model="productFilter" placeholder="全部品种"></label>
@@ -262,7 +338,7 @@ async function cancel() {
         </form>
         <div v-if="mode === 'backtest' || mode === 'search'" class="scroll">
           <p v-if="catalogError" role="status">{{ catalogError }}</p>
-          <table v-if="runs.length">
+          <table v-if="runs.length && !followup">
             <thead><tr><th>合约</th><th>策略 / 周期</th><th>窗口</th><th>资格</th><th>原始 Run</th><th>选择</th></tr></thead>
             <tbody><tr v-for="run in runs" :key="run.run_id">
               <td>{{ run.contract }}</td><td>{{ run.strategy_id }} · {{ run.frequency }}<br><small>{{ run.formula_version }}</small></td><td>{{ run.start }} 至 {{ run.end }}</td>
@@ -275,11 +351,24 @@ async function cancel() {
             <button :disabled="runOffset + 20 >= runTotal" @click="loadRuns(runOffset + 20)">下一页</button>
           </div>
         </div>
-        <form class="controls" @submit.prevent="submit()">
+        <p v-if="followup">本次分析关联 AI 假设草稿 {{ followup.assistant_id }}</p>
+        <form id="statistics-analysis-form" class="controls" @submit.prevent="submit()">
           <label v-if="mode === 'backtest'">已发布 Run <input v-model="runId" required></label>
           <label v-else-if="mode === 'case'">案例 ID <input v-model="caseId" required></label>
+          <template v-else-if="mode === 'assistant'">
+            <label>研究问题 <textarea v-model="question" maxlength="480" rows="3" required /></label>
+            <label>已发布证据（最多三项）
+              <select v-model="assistantEvidence" multiple required>
+                <option v-for="item in assistantSources" :key="item.id" :value="item.id">
+                  {{ modes.find(([kind]) => kind === item.request.source.kind)?.[1] }} · {{ item.id }}
+                </option>
+              </select>
+            </label>
+            <small v-if="!assistantAvailable">待配置本地模型</small>
+          </template>
           <template v-else-if="mode === 'panel' || mode === 'event_test'">
-            <label v-if="mode === 'panel'">已发布因子研究（3 至 8 项）
+            <p v-if="followup">沿用报告引用的已发布证据</p>
+            <label v-else-if="mode === 'panel'">已发布因子研究（3 至 8 项）
               <select v-model="panelMembers" required multiple>
                 <option v-for="item in recent.filter(r => r.status === 'SUCCEEDED' && r.request.source.kind === 'factor')" :key="item.id" :value="item.id">{{ item.id }}</option>
               </select>
@@ -292,7 +381,7 @@ async function cancel() {
             <label>HAC 滞后 <input v-model.number="hacLag" type="number" min="0" max="8" required></label>
           </template>
           <template v-else-if="mode === 'search'">
-            <label>基础已发布 Run <input v-model="runId" required></label>
+            <label>基础已发布 Run <input v-model="runId" :readonly="!!followup" required></label>
             <label v-for="delay in [0, 1, 2, 3]" :key="delay"><input v-model="delayChoices" type="checkbox" :value="delay">延迟 {{ delay }} 分钟</label>
             <label>候选数 <input v-model.number="budget" type="number" min="2" max="4" required></label>
             <label>随机种子 <input v-model.number="seed" type="number" min="0" max="4294967295" required></label>
@@ -323,7 +412,7 @@ async function cancel() {
               <option value="stddev">波动标准差 / 收盘价</option>
             </select></label>
           </template>
-          <button class="primary" :disabled="!!pending || (!worker && mode !== 'case' && mode !== 'fills')">{{ pending ? '计算中' : '运行分析' }}</button>
+          <button class="primary" :disabled="!!pending || (!worker && mode !== 'case' && mode !== 'fills') || (mode === 'assistant' && (!assistantAvailable || assistantEvidence.length > 3))">{{ pending ? '计算中' : '运行分析' }}</button>
           <button v-if="pending" type="button" @click="cancel">取消任务</button>
         </form>
         <p v-if="taskError" role="alert">{{ taskError }}</p>
@@ -384,14 +473,48 @@ async function cancel() {
               <tbody><tr v-for="[key, value] in Object.entries(result.advanced.months)" :key="key"><td>{{ key }}</td><td>{{ value.n }}</td><td>{{ show(value.mean) }}</td><td>{{ show(value.interval) }}</td><td>{{ show(value.p_bh) }}</td></tr></tbody>
             </table>
           </section>
+          <section v-if="result.assistant" aria-label="AI 研究报告">
+            <h3>AI 研究报告</h3>
+            <p>模型解释与假设草稿未经逐句核验。下表为可复算事实。</p>
+            <dl>
+              <dt>研究问题</dt><dd>{{ result.question }}</dd>
+              <dt>解释</dt><dd>{{ result.assistant.summary }}</dd>
+              <dt>假设草稿</dt><dd>{{ result.assistant.hypothesis }}</dd>
+              <dt>局限</dt><dd>{{ result.assistant.limitations }}</dd>
+              <dt>后续研究</dt><dd>{{ ({ review_coverage: '核对覆盖', test_robustness: '验证稳健性', review_backtest: '复查样本外回测' } as Record<string, string>)[result.assistant.next_analysis] }}</dd>
+              <dt>报告引用</dt><dd>{{ result.assistant.evidence_refs.join('、') }}</dd>
+            </dl>
+            <div class="controls">
+              <RouterLink v-for="origin in assistantReferences" :key="origin.task_id"
+                :to="{ name: 'statistics-research', params: { taskId: origin.task_id } }">回查 {{ origin.refs.filter(ref => result?.assistant?.evidence_refs.includes(ref)).join(' / ') }}</RouterLink>
+              <button v-for="origin in followupChoices" :key="'followup-' + origin.task_id" type="button"
+                @click="startFollowup(origin)">{{ followupTitle[origin.kind] }} · {{ origin.refs[0] }}</button>
+            </div>
+            <p v-if="!followupChoices.length">引用证据暂不支持已注册的后续分析。</p>
+            <table v-if="citedSamples.length">
+              <thead><tr><th>引用</th><th>研究工具</th><th>核验结果</th></tr></thead>
+              <tbody><tr v-for="row in citedSamples" :key="String(row.ref)">
+                <td>{{ row.ref }}</td><td>{{ row.tool === 'read_statistics' ? '读取已发布统计' : '查找反例' }}</td>
+                <td><dl><template v-for="[key, value] in Object.entries(row.facts ?? {})" :key="key">
+                  <dt>{{ factLabels[key] ?? key }}</dt><dd>{{ showFact(key, value) }}</dd>
+                </template></dl></td>
+              </tr></tbody>
+            </table>
+            <details v-if="result.model"><summary>本地模型身份</summary><p>{{ result.model.model_sha256 }}</p></details>
+          </section>
+          <p v-if="result.assistant_origin">
+            <RouterLink :to="{ name: 'statistics-research', params: { taskId: result.assistant_origin.task_id } }">回查起始 AI 假设草稿</RouterLink>
+            · <RouterLink :to="{ name: 'statistics-research', params: { taskId: result.assistant_origin.evidence_task_id } }">回查引用证据</RouterLink>
+          </p>
           <section v-if="result.experiment_plan">
             <h3>待运行的 OOS / Walk-forward 方案</h3>
             <p>候选延迟 {{ result.experiment_plan.delays.join('、') }} 分钟 · 计划 Run 上限 {{ result.policy.total_native_run_limit }}</p>
-            <button :disabled="submittingExperiment" @click="submitExperiment">提交到回测中心实验</button>
+            <RouterLink v-if="experimentId" :to="{ name: 'backtests', query: { view: 'validation', experiment: experimentId } }">查看回测中心实验</RouterLink>
+            <button v-else :disabled="submittingExperiment" @click="submitExperiment">提交到回测中心实验</button>
           </section>
           <details><summary>样本覆盖与计算口径</summary><dl><template v-for="[key, value] in Object.entries({ ...result.policy, ...result.coverage, ...result.source })" :key="key"><dt>{{ key }}</dt><dd>{{ show(value) }}</dd></template></dl></details>
           <details v-if="result.native"><summary>Plus 原生摘要</summary><p>{{ result.native_scope }}</p><dl><template v-for="[key, value] in Object.entries(result.native)" :key="key"><dt>{{ key }}</dt><dd>{{ value }}</dd></template></dl></details>
-          <div class="scroll">
+          <div v-if="!result.assistant" class="scroll">
             <h3>{{ tradeGroup ? '闭合交易证据' : result.source.kind === 'backtest' ? '日结算证据' : '样本证据' }}</h3>
             <p>共 {{ sampleTotal }} 条<span v-if="month"> · {{ month }}</span></p>
             <table v-if="sampleRows.length">
@@ -448,12 +571,12 @@ section{border:1px solid #50617455;border-radius:10px;padding:16px;min-width:0}
 form,.controls,.scroll,details{margin:12px 0}.scroll{overflow:auto}
 table{border-collapse:collapse;width:100%;text-align:left;font-variant-numeric:tabular-nums}
 th,td{padding:7px 10px;border-bottom:1px solid #50617445;white-space:nowrap}
-button,input,select{font:inherit;color:inherit;border:1px solid #50617477;border-radius:5px;padding:4px 8px;background:transparent}
+button,input,select,textarea{font:inherit;color:inherit;border:1px solid #50617477;border-radius:5px;padding:4px 8px;background:transparent}
 button{cursor:pointer}button:disabled{opacity:.45;cursor:default}button[aria-pressed="true"]{border-color:#5089cb;background:#5089cb22}
 .primary{background:#2363a6;color:white}.metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(123px,1fr));gap:8px}
 .metrics>div{border:1px solid #50617455;border-radius:6px;padding:10px}
 .metrics strong{display:block;font-size:17px;font-variant-numeric:tabular-nums}
 dl{display:grid;grid-template-columns:minmax(90px,auto) minmax(0,1fr);gap:3px 9px}dd{margin:0;overflow-wrap:anywhere}
-.history{display:grid;gap:7px}fieldset{display:flex;gap:8px;flex-wrap:wrap;border:1px solid #50617455}
+.history{display:grid;gap:7px}textarea{min-width:18ch;vertical-align:middle}fieldset{display:flex;gap:8px;flex-wrap:wrap;border:1px solid #50617455}
 @media(max-width:600px){main{padding:12px}section{padding:11px}input{max-width:180px}}
 </style>

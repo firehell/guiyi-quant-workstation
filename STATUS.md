@@ -1,3 +1,8 @@
+## 2026-11-28｜统计与研究中心 V0.2 独立发布
+
+- [Statistics and Research Center v0.2.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/statistics-research-center/v0.2.0) 经 [PR #693](https://github.com/firehell/guiyi-quant-workstation/pull/693) 合入 `develop`，绑定 `7fb5fa0829b580757043c40d0d8f05602a4f257e`。
+- FU2603、RB2605、RU2605 的真实 5m 样本形成 1,356 个同步 Rank IC 截面和 23 个日汇总。FU2603 事件检验保留 14 个有配对的交易日，日历有间断，HAC 区间显示缺项。隔离双折 Plus 实验执行 4 个训练 Run 和 2 个测试 Run，全部成功。
+
 ## 2026-11-28｜统计与研究中心 V0.1 独立发布
 
 - [Statistics and Research Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/statistics-research-center/v0.1.0) 经 [PR #692](https://github.com/firehell/guiyi-quant-workstation/pull/692) 合入 `develop`，绑定 `e6f2687d2f182d60da06d1fa5e01c2d5fdc1c9fd`。

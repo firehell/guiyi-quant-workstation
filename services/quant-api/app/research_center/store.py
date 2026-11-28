@@ -16,6 +16,7 @@ from sqlalchemy import text
 from app.backtest_center.codec import encode
 from app.core.env import PROJECT_ROOT
 from app.research_center import VERSION
+from app.research_center.assistant import local_model_config
 from app.research_center.inputs import ResearchError
 
 def worker_root():
@@ -50,7 +51,7 @@ def worker_python():
 
 
 def worker_revision():
-    files = ("calculate_job.py", "performance.py", "advanced.py", "uv.lock")
+    files = ("calculate_job.py", "performance.py", "advanced.py", "assistant_model.py", "uv.lock")
     return {name: checksum(worker_root() / name) for name in files}
 
 
@@ -72,7 +73,9 @@ def compute(payload, is_running):
                 command, cwd=worker_root(), stdin=source, stdout=output, stderr=subprocess.DEVNULL,
                 start_new_session=True,
                 env={"PATH": os.defpath, "MPLCONFIGDIR": str(artifact_root() / ".matplotlib"),
-                     "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "POLARS_MAX_THREADS": "2"},
+                     "GUIYI_RESEARCH_PARENT_PID": str(os.getpid()),
+                     "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1", "POLARS_MAX_THREADS": "2",
+                     **(local_model_config() if payload["source"]["kind"] == "assistant" else {})},
             ) as worker:
                 deadline = monotonic() + TIME_BUDGET
                 try:

@@ -258,6 +258,15 @@ def read_experiment(store, experiment_id: str) -> dict | None:
     return state
 
 
+def experiment_id_for_request(store, request_key: str) -> str | None:
+    path = _path(store)
+    if not path.is_file():
+        return None
+    with closing(_connect(path, readonly=True)) as db:
+        row = db.execute("SELECT experiment_id FROM experiments WHERE request_key = ?", (request_key,)).fetchone()
+    return row["experiment_id"] if row else None
+
+
 def list_experiments(store, *, kind: str | None, limit: int, offset: int) -> dict:
     path = _path(store)
     if not path.is_file():

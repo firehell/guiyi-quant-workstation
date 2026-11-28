@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
+from app.backtest_center.codec import digest
 from app.backtest_center.experiments import ENVIRONMENT_FIELDS, evaluation_settlements
 from app.backtest_center.store import RunStore
 from app.backtest_center.worker import Settings
@@ -12,6 +13,10 @@ from app.backtest_center.worker import Settings
 
 class ResearchError(ValueError):
     pass
+
+
+def publication_identity(native):
+    return digest({key: native[key] for key in ("run_id", "result_digest", "config", "snapshot")})
 
 
 def published_runs(offset, limit, **filters):
@@ -102,6 +107,7 @@ def backtest_input(publication):
         rows, reason = [], "SETTLEMENT_EVIDENCE_UNAVAILABLE"
     return {
         "source": {"kind": "backtest", "run_id": publication["run_id"], "digest": publication["result_digest"],
+                   "publication_identity": publication_identity(publication),
                    "code_revision": s.get("code_revision"), "data_revision": s.get("data_revision"),
                    "qualification": s["qualification"], "contract": c["contract"],
                    "product": c["product"], "strategy_id": c["strategy_id"], "formula_version": c["formula_version"],
