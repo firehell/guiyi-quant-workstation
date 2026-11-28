@@ -192,7 +192,7 @@ def verify_captured_recovery_runtime(
     if (_read_command([*git, "cat-file", "-t", tag_ref], root=root) != "tag"
             or _read_command([*git, "rev-parse", f"{tag_ref}^{{commit}}"], root=root) != commit):
         _reject("CODE_IDENTITY_INVALID")
-    registry = read_bindings()
+    registry = read_bindings(services=("live", "alert", "after-market"))
     if registry is not None:
         services = ("live", "alert", "after-market")
         if any(service not in registry.services or not registry.services[service].enabled for service in services):
@@ -221,7 +221,7 @@ def verify_captured_recovery_runtime(
             _verify_heartbeat(heartbeat, now=now, root=Path(binding.root), commit=binding.commit)
             if heartbeat is None or heartbeat.get("runtime_generation") != binding.generation or heartbeat.get("runtime_tag") != binding.tag:
                 _reject("HEARTBEAT_INVALID")
-        if read_bindings() != registry:
+        if read_bindings(services=("live", "alert", "after-market")) != registry:
             _reject("SERVICE_IDENTITY_INVALID")
         return json.dumps({"root": str(root), "commit": commit, "tag": tag}, sort_keys=True, separators=(",", ":"))
     _verify_markers(root)

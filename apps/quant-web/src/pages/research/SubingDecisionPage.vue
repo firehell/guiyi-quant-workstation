@@ -1,23 +1,26 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import SubingPortfolioWorkbench from '@/components/subing/SubingPortfolioWorkbench.vue'
 import MarketNavigation from '@/components/market/MarketNavigation.vue'
-import '@/styles/marketHome.css'
 
 const route = useRoute()
-const view = ref<'status' | 'history'>(route.query.mode === 'history' ? 'history' : 'status')
+const router = useRouter()
+const view = computed(() => route.query.mode === 'history' ? 'history' : 'status')
+function selectView(mode: 'status' | 'history') {
+  void router.push({ name: 'subing-decision', query: { ...route.query, mode: mode === 'history' ? mode : undefined } })
+}
 </script>
 
 <template>
-  <div class="market-dashboard-page subing-workbench">
+  <div class="subing-workbench">
     <MarketNavigation active-tab="subing-decision">
       <template #actions><span class="boundary">16品种共享模型 · 研究候选</span></template>
     </MarketNavigation>
     <main>
       <nav class="mode-nav" aria-label="苏冰数据模式">
-        <button :aria-pressed="view === 'status'" @click="view = 'status'">持续模型</button>
-        <button :aria-pressed="view === 'history'" @click="view = 'history'">历史回放</button>
+        <button :aria-pressed="view === 'status'" @click="selectView('status')">持续模型</button>
+        <button :aria-pressed="view === 'history'" @click="selectView('history')">历史回放</button>
       </nav>
       <SubingPortfolioWorkbench :mode="view" />
     </main>
@@ -25,12 +28,10 @@ const view = ref<'status' | 'history'>(route.query.mode === 'history' ? 'history
 </template>
 
 <style scoped>
-.subing-workbench{background:#f8f9fb;--gy-detail-accent-soft:#fff4ee;--gy-border-focus:#ff6b2c}
-.subing-workbench :deep(.market-navigation){background:#fff}
-.subing-workbench :deep(.market-navigation__tabs button[aria-current=page]){color:#ff6b2c;background:#fff4ee;border-bottom:2px solid #ff6b2c;border-radius:0}
+.subing-workbench{min-height:100%;background:var(--gy-bg-app);color:var(--gy-text-primary)}
 .subing-workbench main{padding:0 24px 24px;max-width:1920px;margin:auto}
 .mode-nav{display:flex;gap:8px;padding-top:16px}
-.mode-nav button{font:inherit;min-height:32px;border:1px solid #ebedf0;background:#fff;border-radius:6px;padding:5px 12px;color:#20242b;cursor:pointer}
-.mode-nav button[aria-pressed=true]{background:#ff6b2c;color:white}
-.boundary{font-size:12px;color:#667085}
+.mode-nav button{font:inherit;min-height:32px;border:1px solid var(--gy-border);background:var(--gy-bg-panel);border-radius:6px;padding:5px 12px;color:var(--gy-text-primary);cursor:pointer}
+.mode-nav button[aria-pressed=true]{background:var(--gy-detail-accent-soft);color:var(--gy-link)}
+.boundary{font-size:12px;color:var(--gy-text-secondary)}
 </style>

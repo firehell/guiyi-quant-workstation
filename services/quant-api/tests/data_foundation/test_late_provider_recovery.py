@@ -296,7 +296,11 @@ def test_scheduled_runtime_keeps_source_and_status_owner_bound(tmp_path, monkeyp
         for service in ("api", "live", "after-market", "late-provider-recovery", "market-feed")
     }
     registry = SimpleNamespace(services=bindings)
-    monkeypatch.setattr(runtime_bindings, "read_bindings", lambda: registry)
+    def scoped_registry(*, services):
+        expected = {"api", "live", "after-market", "late-provider-recovery"}
+        assert set(services) == expected | ({"market-feed"} if formal_tick else set())
+        return registry
+    monkeypatch.setattr(runtime_bindings, "read_bindings", scoped_registry)
     monkeypatch.setattr(runtime_bindings, "verify_release", lambda *_: None)
     monkeypatch.setattr(runtime_bindings, "authorized_program_arguments", lambda *_: ["/bin/bash"])
     monkeypatch.setattr(runtime_identity, "read_launchd_service", lambda *_, **__: "\tprogram = /bin/bash\n")

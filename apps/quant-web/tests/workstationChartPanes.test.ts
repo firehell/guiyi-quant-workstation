@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { matchedArchiveChart, readWorkstationLayers } from '../src/utils/workstationChartPanes.ts'
+import { archiveReadError, paneAvailability, matchedArchiveChart, readWorkstationLayers } from '../src/utils/workstationChartPanes.ts'
 import type { MarketAfterCloseFrame, MarketAfterCloseSection } from '../src/types/referenceTrading.ts'
 import type { BarData } from '../src/types/market.ts'
 import { marketChartStudyRequest, marketChartStudyTailRequest, projectMarketChartStudyDisplay } from '../src/utils/marketChartStudies.ts'
@@ -20,6 +20,24 @@ test('archive panes require the historical owner, calculation segment, SHA, OHLC
     assert.equal(matchedArchiveChart(section, [frame], [{...bar, ...change}]), null)
   }
   assert.equal(matchedArchiveChart(section, [{...frame, calculation_segment_id: 'new-owner'}], [bar]), null)
+})
+
+test('archive errors distinguish a failed service, a changed receipt and an unreadable request', () => {
+  assert.match(archiveReadError({ response: { status: 503, data: { detail: { code: 'SERVICE_BINDING_ROOT_UNAVAILABLE' } } } }), /503.*SERVICE_BINDING_ROOT_UNAVAILABLE/)
+  assert.match(archiveReadError(new Error('REFERENCE_SNAPSHOT_CHANGED')), /快照版本冲突/)
+  assert.match(archiveReadError({ response: { status: 422 } }), /读取失败（422）/)
+})
+
+test('per-pane status distinguishes a warming historical owner from the current weekly reason', () => {
+  const latest = { bar_end: time, physical_contract: 'RB2510', calculation_segment_id: 'owner' }
+  const chart = { value: { bars: [latest] } }
+  const historical = { physical_contract: 'RB2505', segment_id: 'other', bar_ends: [], status: { status: 'warming' } }
+  const current = { physical_contract: 'RB2510', segment_id: 'owner', bar_ends: [time], status: { status: 'ready', reason_code: null } }
+  const aux = { status: { status: 'warming', reason_code: 'NEWOW_TREND_REVERSAL_WARMING' }, value: { component: 'trend_reversal', segments: [historical, current] } }
+  assert.match(paneAvailability(chart, aux), /当前合约段就绪，历史有 1 个区段数据不完整/)
+  current.status = { status: 'warming', reason_code: 'NEWOW_TREND_REVERSAL_WARMING' }
+  assert.match(paneAvailability(chart, aux), /当前合约段预热中.*NEWOW_TREND_REVERSAL_WARMING/)
+  assert.match(paneAvailability(chart, { status: { status: 'unavailable', reason_code: 'INPUT_CONFLICT' }, value: null }), /不可用.*INPUT_CONFLICT/)
 })
 
 test('default one pane, explicit zero, ordered distinct three and bounded heights', () => {

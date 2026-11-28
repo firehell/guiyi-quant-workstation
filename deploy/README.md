@@ -583,6 +583,19 @@ Tick 次日元数据准备使用独立状态文件。旧范围在同一交易日
 正式 Canonical Compute 的订阅跳过退役品种，并使用新版进度文件保留旧范围的计算水位。
 旧范围的盘后状态、成功凭证和迟到处理记录随切换前像留存，新范围的盘后水位从自身首份凭证开始。旧盘后提交结果未明时阻断切换。
 
+### 保留原 Tick 日志的工作站恢复
+
+正式 API/Web 已运行且原行情服务根已失效时，`install-local-services.sh --audit-market-recovery --day YYYY-MM-DD`
+只读核验已登记的交易日、57 个 rank1、全量原始流与索引、Live 游标、规则和通知配置。应用发布并构建后，在精确发布根运行
+`--plan-market-recovery --root "$PWD" --tag "$tag" --commit "$commit" --day "$day"`，以 `umask 077` 保存输出计划。
+`--apply-market-recovery --plan "$plan"` 在休市窗口内原生停驻 API/Web，将八个已选服务切到新代次并读回。
+盘后与延迟恢复按原日历装载。保留旧通知开关、其他登记和账户进程。独立核验用 `--read-market-recovery --plan "$plan"`。
+
+中断后先读同一计划的 authority/phase。休市窗口内 `--resume-market-recovery --plan "$plan"`
+从已证实的旧或新注册继续，保留原始注册前像和排空请求。新启动失败会停驻本次八项；修复依赖后沿原计划继续。
+首次启用 Alert 仅在两个日志完整且 Live 已追尾时原子登记于完成流尾。已有游标、历史 Event 和投递保留。
+新交易时段如已开始，需按现场验证新的业务边界，不能重做首次注册。Reference 等待现有或新归档凭证。
+
 ### V2 直接首启
 
 在精确应用发布树使用 `install-local-services.sh --plan-market-direct-start --candidate-root <absolute-release-root> --tag <application-tag> --commit <commit> --trading-day YYYY-MM-DD`。

@@ -30,7 +30,10 @@ async function loadPage() {
   return (await import(compile('pages/research/SubingDecisionPage.vue', {
     '@/components/subing/SubingPortfolioWorkbench.vue': portfolio,
     '@/components/market/MarketNavigation.vue': stub,
-    'vue-router': moduleUrl('export function useRoute(){return {query:{}}}'),
+    'vue-router': moduleUrl(`import { reactive } from '${vue}';
+      let route;
+      export function useRoute(){ route = reactive({query:{}}); return route }
+      export function useRouter(){ return { push(to){route.query = to.query; return Promise.resolve()} } }`),
   }))).default
 }
 async function flush() { await new Promise(resolve => setImmediate(resolve)); await nextTick() }

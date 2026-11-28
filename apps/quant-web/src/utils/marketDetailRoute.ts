@@ -1,3 +1,4 @@
+import { isRecordingTradingDay, newowRecordingWindow } from './newowRecording.ts'
 import { parseHomeContext } from './newowHomeContext.ts'
 import { MARKET_FREQUENCIES, type AlertEvent, type MarketFrequency } from '../types/market.ts'
 import {
@@ -59,8 +60,14 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
     return invalid('DETAIL_STRATEGY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
 
-  if (query.newow_source !== undefined && (!isNewow || query.newow_source !== 'after-market'
-    || query.newow_test !== undefined || query.home_context !== undefined)) {
+  const recompute = query.newow_source === 'canonical-recompute'
+  if ((query.newow_source !== undefined && (!isNewow || (!recompute && query.newow_source !== 'after-market')
+      || query.newow_test !== undefined || query.home_context !== undefined))
+    || (recompute && query.series_kind !== undefined && query.series_kind !== 'actual_dominant')
+    || (query.trading_day !== undefined && (!recompute || !isRecordingTradingDay(query.trading_day)
+      || query.trading_day > newowRecordingWindow().through))
+    || (query.source_revision !== undefined && (!recompute || !query.trading_day
+      || typeof query.source_revision !== 'string' || !/^[0-9a-f]{64}$/.test(query.source_revision)))) {
     return invalid('DETAIL_NEWOW_IDENTITY_INVALID', symbol, recoveryFor(viewValue, symbol))
   }
   if (query.strategy_model !== undefined) {
@@ -108,6 +115,11 @@ export function parseMarketDetailRoute(query: Record<string, unknown>): MarketDe
 
 function applyNewowOptions(result: MarketDetailRouteResult, query: Record<string, unknown>): MarketDetailRouteResult {
   if (result.kind === 'valid' && query.newow_source === 'after-market') result.identity.newowSource = 'after-market'
+  if (result.kind === 'valid' && query.newow_source === 'canonical-recompute') {
+    result.identity.newowSource = 'canonical-recompute'
+    if (typeof query.trading_day === 'string') result.identity.newowTradingDay = query.trading_day
+    if (typeof query.source_revision === 'string') result.identity.newowRevision = query.source_revision
+  }
   if (result.kind === 'valid' && query.newow_test) result.identity.newowTest = query.newow_test as MarketDetailIdentity['newowTest']
   if (result.kind === 'valid' && query.newow_mode === 'dual') result.identity.newowMode = 'dual'
   return result
@@ -122,6 +134,8 @@ export function serializeMarketDetailIdentity(identity: MarketDetailIdentity): R
     view: identity.view,
     symbol: identity.symbol,
     ...(identity.view === 'newow' ? { strategy: identity.strategy, ...(identity.newowSource ? { newow_source: identity.newowSource } : {}), ...(identity.newowTest ? { newow_test: identity.newowTest } : {}), ...(identity.newowMode ? { newow_mode: identity.newowMode } : {}) } : {}),
+    ...(identity.view === 'newow' && identity.newowSource === 'canonical-recompute'
+      ? { trading_day: identity.newowTradingDay, source_revision: identity.newowRevision } : {}),
     series_kind: identity.seriesKind === 'contract' ? 'contract' : 'actual_dominant',
     contract: identity.seriesKind === 'contract' ? identity.contract : undefined,
     frequency: identity.frequency,

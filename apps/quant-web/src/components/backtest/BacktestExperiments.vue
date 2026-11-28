@@ -7,7 +7,7 @@ import {
   type SelectionMetric, type Template,
 } from '@/api/backtestCenter'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
-import { displayValue, metricLabels, metricValue, statusLabel } from './backtestDisplay'
+import { diagnosticLabel, displayValue, metricLabels, metricValue, statusLabel } from './backtestDisplay'
 import { pendingRunRequest } from './backtestSubmission'
 
 const props = defineProps<{ validation: boolean }>()
@@ -193,13 +193,13 @@ function json(value: unknown) {
           </fieldset>
           <button v-if="kind === 'walk_forward' && folds.length < 8" class="bt-button" type="button" @click="folds.push(newFold())">添加一折</button>
         </template>
-        <p v-if="formError" class="bt-alert bt-form-wide" role="alert">{{ formError }}</p>
+        <p v-if="formError" class="bt-alert bt-form-wide" role="alert">{{ diagnosticLabel(formError) }}</p>
         <div class="bt-form-wide"><button class="bt-button bt-primary" :disabled="pending || loading || selectedRuns.length < 2" type="submit">{{ pending ? '正在提交' : '冻结定义并提交' }}</button></div>
       </form>
     </section>
     <section aria-labelledby="experiment-history-heading">
       <div class="bt-panel-header"><h2 id="experiment-history-heading">{{ props.validation ? '验证记录' : '实验记录' }}</h2><button class="bt-button" @click="refresh += 1; refreshList()">刷新</button></div>
-      <p v-if="error || listError" class="bt-alert" role="alert">{{ error || listError }}</p>
+      <p v-if="error || listError" class="bt-alert" role="alert">{{ diagnosticLabel(error || listError) }}</p>
       <ul v-if="rows.length" class="bt-list">
         <li v-for="item in rows" :key="item.experiment_id">
           <RouterLink :to="{ name: 'backtests', query: { view: props.validation ? 'validation' : 'experiments', experiment: item.experiment_id } }" :aria-current="selected === item.experiment_id ? 'true' : undefined">

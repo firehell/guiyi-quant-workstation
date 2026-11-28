@@ -16,11 +16,13 @@ const constructors = {
 export function createWorkstationPaneRenderer() {
   const anchors = new Map<PaneId, ISeriesApi<'Line'>>()
   const painted = new Map<PaneId, ArchivePane>()
+  const cursorValues = new Map<PaneId, Map<string, string[]>>()
   function render(host: ChartHost, panes: readonly ArchivePane[], times: Time[]) {
     for (const id of anchors.keys()) if (!panes.some(pane => pane.id === id)) {
       host.removeAuxiliary(id)
       anchors.delete(id)
       painted.delete(id)
+      cursorValues.delete(id)
     }
     for (const pane of panes) {
       const target = host.addAuxiliary(pane.id)
@@ -43,12 +45,21 @@ export function createWorkstationPaneRenderer() {
       const id = newowPaneId(pane.id)
       host.removeLayer(id)
       const component = pane.id
+      cursorValues.delete(component)
       const ready = host.renderLayer(id, id, target, 'primitive', layer => {
         const model = pane.chart ? buildNewowProductChartModel(pane.chart) : null
         const aligned = alignNewowAuxiliaryChartModel(pane.chart, pane.auxiliary)
         const primitive = new constructors[component]()
         let cutoff: string | null = null
         if (aligned?.component === component && model) {
+          const values = new Map<string, string[]>()
+          for (const series of aligned.series) for (const point of series.points) {
+            const key = point.physicalContract + '/' + Date.parse(point.barEnd)
+            let labels = values.get(key)
+            if (!labels) values.set(key, labels = [])
+            labels.push(series.label + ' ' + Number(point.value.toFixed(3)))
+          }
+          cursorValues.set(component, values)
           layer.primitive(anchors.get(component)!, primitive)
           cutoff = paintNewowAuxiliaryPrimitive(primitive, aligned, pane.auxiliary, model, 23)
         }
@@ -71,5 +82,8 @@ export function createWorkstationPaneRenderer() {
         retrospective: DISPLAY_CATALOG[id]?.retrospective === true }
     })
   }
-  return { render, headers }
+  function readout(id: PaneId, bar: { time: string; physicalContract?: string }) {
+    return cursorValues.get(id)?.get(bar.physicalContract + '/' + Date.parse(bar.time))?.join(' · ') ?? '该 Bar 无指标值'
+  }
+  return { render, headers, readout }
 }

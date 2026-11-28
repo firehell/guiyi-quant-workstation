@@ -28,6 +28,18 @@ test('rejects the retired Trend view and preserves SuBing focus', () => {
   })
 })
 
+test('pins a historical Newow window and restricts date and revision to that source', () => {
+  const query = { view: 'newow', symbol: 'rb', strategy: 'trend', frequency: '1d',
+    series_kind: 'actual_dominant', newow_source: 'canonical-recompute', trading_day: '2026-11-06', source_revision: 'a'.repeat(64) }
+  const route = parseMarketDetailRoute(query)
+  assert.equal(route.kind, 'valid')
+  if (route.kind === 'valid') assert.deepEqual(parseMarketDetailRoute(serializeMarketDetailIdentity(route.identity)), route)
+  for (const invalid of [{ newow_source: 'after-market' }, { view: 'free' }, { series_kind: 'contract', contract: 'RB2701' },
+    { trading_day: '2026-02-31' }, { trading_day: '3000-01-01' }, { trading_day: undefined }, { source_revision: 'latest' }])
+    assert.equal(parseMarketDetailRoute({ ...query, ...invalid }).kind, 'invalid')
+  assert.equal(parseMarketDetailRoute({ ...query, source_revision: undefined, trading_day: undefined }).kind, 'valid')
+})
+
 test('roundtrips a completed Newow focus through the unified route', () => {
   const identity = { view: 'newow' as const, symbol: 'rb', strategy: 'trend' as const,
     seriesKind: 'actual_dominant' as const, frequency: '1d' as const,

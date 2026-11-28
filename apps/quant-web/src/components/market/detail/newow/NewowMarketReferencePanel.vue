@@ -4,14 +4,15 @@ import { getMarketAfterCloseReference, getMarketAfterCloseSection, getReferenceS
 import { formatBeijingInstant, formatDecimalText } from '@/utils/marketDisplay'
 import { NEWOW_PRODUCT_FREQUENCIES, NEWOW_PRODUCT_STRATEGIES, type NewowProductIdentity } from '@/types/newowProduct'
 import type { MarketAfterCloseReference, MarketAfterCloseSection, MarketAfterCloseSectionQuery, ReferenceSummary, ReferenceTradeView } from '@/types/referenceTrading'
+import { archiveReadError } from '@/utils/workstationChartPanes'
 import { projectNewowAuxiliaryReadiness } from '@/utils/newowDetailPresentation'
 import NewowCupFactsPanel from './NewowCupFactsPanel.vue'
 import NewowExplanationPanel from './NewowExplanationPanel.vue'
 
-const props = defineProps<{ product: string; strategy: string; frequency: string }>()
-const emit = defineEmits<{ selected: [selection: { source: MarketAfterCloseReference; snapshot: string } | null] }>()
+const props = defineProps<{ product: string; strategy: string; frequency: string; requireReceipt?: boolean }>()
+const emit = defineEmits<{ selected: [selection: { source: MarketAfterCloseReference; snapshot: string } | null]; notice: [message: string | null] }>()
 const busy = ref(false)
-const error = ref(false)
+const error = ref<string | null>(null)
 const source = ref<MarketAfterCloseReference | null>(null)
 const rows = ref<ReferenceTradeView[]>([])
 const summary = ref<ReferenceSummary | null>(null)
@@ -66,9 +67,11 @@ watch(() => [props.product, props.strategy, props.frequency, revision.value], as
   const controller = new AbortController()
   onCleanup(() => controller.abort())
   const options = { signal: controller.signal }
+  let selected = false
   busy.value = true
   emit('selected', null)
-  error.value = false
+  error.value = null
+  emit('notice', '正在读取盘后归档')
   source.value = null
   rows.value = []
   summary.value = null
@@ -76,19 +79,28 @@ watch(() => [props.product, props.strategy, props.frequency, revision.value], as
     const result = await getMarketAfterCloseReference({
       product: props.product, strategy: props.strategy, frequency: props.frequency,
     }, options)
-    if (!result || controller.signal.aborted) return
+    if (controller.signal.aborted) return
+    if (!result || (props.requireReceipt && !result.receipt)) {
+      emit('notice', '当前策略尚无已核验回执对应的盘后归档')
+      return
+    }
     const window = { since: result.since, through: result.through, cutoff: result.cutoff }
     const page = await getReferenceTrades(result.stream_id, window, options)
     if (page.seq !== result.seq || page.revision_id !== result.revision_id) throw new Error('REFERENCE_SNAPSHOT_CHANGED')
     if (controller.signal.aborted) return
+    selected = true
     emit('selected', { source: result, snapshot: page.snapshot })
+    emit('notice', null)
     const totals = await getReferenceSummary(result.stream_id, window, page.snapshot, options)
     if (controller.signal.aborted) return
     source.value = result
     rows.value = page.items
     summary.value = totals
-  } catch {
-    if (!controller.signal.aborted) error.value = true
+  } catch (failure) {
+    if (!controller.signal.aborted) {
+      error.value = archiveReadError(failure)
+      if (!selected) emit('notice', error.value)
+    }
   } finally {
     if (!controller.signal.aborted) busy.value = false
   }
@@ -99,7 +111,7 @@ watch(() => [props.product, props.strategy, props.frequency, revision.value], as
   <section aria-label="牛哇盘后参考交易" :aria-busy="busy" class="market-reference">
     <h3>牛哇盘后参考交易</h3>
     <p v-if="busy" role="status">正在读取盘后结果…</p>
-    <p v-else-if="error" role="alert">盘后参考结果暂不可读。<button type="button" @click="revision++">重新读取</button></p>
+    <p v-else-if="error" role="alert">{{ error }}。<button type="button" @click="revision++">重新读取</button></p>
     <p v-else-if="!source" role="status">该策略暂无已发布盘后结果。</p>
     <template v-else>
       <p>数据截至 {{ source.through }} · 计算完成 {{ formatBeijingInstant(source.computed_at) }}</p>

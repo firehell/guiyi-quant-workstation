@@ -487,7 +487,7 @@ class LaunchdBackend:
             'schema_version': 1, 'phase': 'cancelled', 'service': service, 'request_id': request})
 
 
-def assert_no_unknown_deployment(*, cohort_plan_sha256=None, allow_optional=False, workstation_plan_sha256=None):
+def assert_no_unknown_deployment(*, cohort_plan_sha256=None, allow_optional=False, workstation_plan_sha256=None, market_recovery_sha256=None):
     from app.runtime_cohort import terminal_cohort_state
 
     directory = runtime_directory()
@@ -506,6 +506,10 @@ def assert_no_unknown_deployment(*, cohort_plan_sha256=None, allow_optional=Fals
         state = _read(runtime_directory() / f'{service}.scheduled-update.json')
         if state is not None and state.get('phase') not in {'switched', 'scheduled_busy', 'precondition_blocked'}:
             raise DeploymentError('SCHEDULED_RECOVERY_READBACK_REQUIRED')
+    recovery = _read(directory / 'market-recovery.json')
+    if (recovery is not None and recovery.get('phase') != 'switched'
+            and (not market_recovery_sha256 or recovery.get('plan_sha256') != market_recovery_sha256)):
+        raise DeploymentError('MARKET_RECOVERY_READBACK_REQUIRED')
     workstation = _read(directory / 'workstation-forward.json')
     if (workstation is not None and workstation.get('phase') not in {'switched', 'cancelled'}
             and (workstation_plan_sha256 is None or workstation.get('plan_sha256') != workstation_plan_sha256)):

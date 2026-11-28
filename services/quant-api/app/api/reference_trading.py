@@ -13,6 +13,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from app.db.session import SessionLocal
+from app.runtime_bindings import ServiceBindingRootUnavailable
 from app.market_data.product_retirement import ProductRetiredError
 from app.reference_trading.presentation import PresentationUnavailable
 from app.reference_trading.query import HistoricalReferenceQuery, QueryConflict
@@ -64,9 +65,15 @@ def _run(call):
         raise HTTPException(503, detail={"code": str(exc)}) from None
     except SQLAlchemyError:
         raise HTTPException(503, detail={"code": "REFERENCE_SCHEMA_UNAVAILABLE"}) from None
+    except ServiceBindingRootUnavailable:
+        raise HTTPException(503, detail={"code": "SERVICE_BINDING_ROOT_UNAVAILABLE"}) from None
     except OSError:
         raise HTTPException(503, detail={"code": "MARKET_REFERENCE_SECTION_UNAVAILABLE"}) from None
-    except (ValueError, TypeError):
+    except (ValueError, TypeError) as exc:
+        code = str(exc)
+        if code in {"MARKET_REFERENCE_RESULT_INVALID", "MARKET_REFERENCE_ACK_INVALID",
+                    "MARKET_ARCHIVE_RECEIPT_INVALID", "MARKET_ARCHIVE_RECEIPT_SCOPE_INVALID"}:
+            raise HTTPException(409, detail={"code": code}) from None
         raise HTTPException(422, detail={"code": "QUERY_INVALID"}) from None
 
 
@@ -232,6 +239,8 @@ def newow_after_close_section(request: Request, product: str, strategy: str, fre
         if formal_tick_requested():
             try:
                 sandbox = formal_archive_root()
+            except ServiceBindingRootUnavailable:
+                raise HTTPException(503, detail={"code": "SERVICE_BINDING_ROOT_UNAVAILABLE"}) from None
             except (OSError, ValueError):
                 raise HTTPException(503, detail={"code": "MARKET_REFERENCE_SECTION_UNAVAILABLE"}) from None
     if factory is None or sandbox is None:

@@ -56,6 +56,19 @@ def client(store):
         yield test_client
 
 
+def test_uninitialized_default_store_is_explained_without_creating_it(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.delenv("GUIYI_BACKTEST_STORE", raising=False)
+    app = FastAPI()
+    app.include_router(router)
+    with TestClient(app) as client:
+        response = client.get("/api/v1/backtests/runs")
+        assert response.status_code == 503
+        assert response.json()["detail"]["code"] == "BACKTEST_DEFAULT_STORE_MISSING"
+        assert not (tmp_path / ".local").exists()
+        assert not hasattr(app.state, "backtest_worker")
+
+
 def test_open_workbench_reads_only_and_never_creates_a_run_store(tmp_path, monkeypatch):
     path = tmp_path / "runs.db"
     monkeypatch.setenv("GUIYI_BACKTEST_STORE", str(path))

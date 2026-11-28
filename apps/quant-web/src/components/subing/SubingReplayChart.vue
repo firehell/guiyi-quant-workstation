@@ -51,13 +51,16 @@ function render() {
 
 onMounted(() => {
   if (!container.value) return
+  const theme = container.value.ownerDocument?.defaultView?.getComputedStyle(container.value)
+  const color = (token: string, fallback: string) => theme?.getPropertyValue(token).trim() || fallback
+  const border = color('--gy-border', '#39485b')
   const replay = mountChartHost(container.value, {
     autoSize: true, height: 390,
-    layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#667085', fontFamily: 'Arial, sans-serif', fontSize: 12 },
-    grid: { vertLines: { color: '#f1f2f5' }, horzLines: { color: '#f1f2f5' } },
+    layout: { background: { type: ColorType.Solid, color: color('--gy-bg-panel', '#151e29') }, textColor: color('--gy-text-secondary', '#acb9ca'), fontFamily: 'Arial, sans-serif', fontSize: 12 },
+    grid: { vertLines: { color: border }, horzLines: { color: border } },
     crosshair: { mode: CrosshairMode.Normal },
-    rightPriceScale: { borderColor: '#ebedf0', scaleMargins: { top: .08, bottom: .08 } },
-    timeScale: { borderColor: '#ebedf0', timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
+    rightPriceScale: { borderColor: border, scaleMargins: { top: .08, bottom: .08 } },
+    timeScale: { borderColor: border, timeVisible: true, tickMarkFormatter: formatChartAxisTimeInShanghai },
     localization: { timeFormatter: formatChartTimeInShanghai },
   }, createChart)
   host = replay

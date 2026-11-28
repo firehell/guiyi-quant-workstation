@@ -33,6 +33,8 @@ export function safeLocalLink(value: string) {
 }
 
 export const diagnosticLabels: Record<string, string> = {
+  BACKTEST_DEFAULT_STORE_MISSING: '本机尚未找到回测结果库。首次保存配置模板或提交回测时会创建。',
+  BACKTEST_STORE_UNAVAILABLE: '配置的回测结果库无法读取。',
   PLUS_INPUT_AND_EXECUTION_COVERAGE_REQUIRED: 'FU 试验须先验证 Plus 授权、原生分钟覆盖和成交资格。',
   OSCILLATION_SAME_BAR_POLICY_UNVERIFIED: '震荡同 Bar 执行政策待核验。',
   MAIN_RISE_REDUCTION_POLICY_UNVERIFIED: '主升浪减仓政策待核验。',

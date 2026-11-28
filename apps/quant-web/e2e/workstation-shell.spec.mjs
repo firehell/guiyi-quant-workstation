@@ -60,14 +60,23 @@ for (const [width, height] of [[1366, 768], [1920, 1080]]) {
 }
 test('research links retain the selected run and case without starting a task', async ({ page }) => {
   const writes = []
+  const reads = []
   await page.route('**/api/**', route => {
     if (!new URL(route.request().url()).pathname.startsWith('/api/')) return route.continue()
     if (route.request().method() !== 'GET') writes.push(route.request().method())
+    else reads.push(new URL(route.request().url()).pathname)
     return route.fulfill({ status: 503, json: {} })
   })
   await page.goto('/research/statistics?mode=case&case=case-identity')
   await expect(page.getByRole('button', { name: '交易案例', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await expect(page.locator('#statistics-analysis-form input[required]').first()).toHaveValue('case-identity')
+  await page.getByRole('button', { name: '因子实验', exact: true }).click()
+  await expect(page).toHaveURL(/statistics\?mode=factor$/)
+  await page.reload()
+  await expect(page.getByRole('button', { name: '因子实验', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.goBack()
+  await expect(page.locator('#statistics-analysis-form input[required]').first()).toHaveValue('case-identity')
+  expect(reads).not.toContain('/api/v1/statistics-research/backtests')
   await page.goto('/research/statistics?mode=backtest&run=run-identity')
   await expect(page.getByLabel('已发布 Run')).toHaveValue('run-identity')
   expect(writes).toEqual([])

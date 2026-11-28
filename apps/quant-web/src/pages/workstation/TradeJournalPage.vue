@@ -45,9 +45,23 @@ const route = useRoute()
 const router = useRouter()
 const today = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10)
 const caseId = computed(() => typeof route.params.caseId === 'string' ? route.params.caseId : undefined)
-const dayQuery = typeof route.query.day === 'string' ? route.query.day : ''
-const selectedDay = ref(/^\d{4}-\d{2}-\d{2}$/.test(dayQuery) && Number.isFinite(Date.parse(dayQuery)) ? dayQuery : today)
-const period = ref<Period>('day')
+const selectedDay = computed({
+  get() {
+    const day = route.query.day
+    if (day === '') return ''
+    if (typeof day !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(day)) return today
+    const stamp = Date.parse(day)
+    return Number.isFinite(stamp) && new Date(stamp).toISOString().startsWith(day) ? day : today
+  },
+  set(day: string) { void router.push({ name: 'trade-journal', query: periodQuery(day, period.value) }) },
+})
+const period = computed<Period>({
+  get: () => route.query.period === 'week' ? 'week' : 'day',
+  set(value) { void router.push({ name: 'trade-journal', query: periodQuery(selectedDay.value, value) }) },
+})
+function periodQuery(day: string, value: Period = period.value) {
+  return value === 'week' ? { day, period: 'week' } : { day }
+}
 const anchor = computed(() => {
   if (!selectedDay.value || period.value === 'day') return selectedDay.value
   const day = new Date(selectedDay.value + 'T00:00:00Z')
@@ -213,7 +227,7 @@ watch(caseId, () => {
 }, { immediate: true })
 
 function toCase(id: string) {
-  void router.push({ name: 'trade-journal', params: { caseId: id }, query: { day: selectedDay.value } })
+  void router.push({ name: 'trade-journal', params: { caseId: id }, query: periodQuery(selectedDay.value) })
 }
 
 function filters() {
@@ -264,7 +278,7 @@ watch(() => route.fullPath, () => {
   if (caseId.value || compose !== 'plan' || typeof product !== 'string' || !/^[A-Za-z]{1,3}$/.test(product)
     || typeof frequency !== 'string' || !frequencies.includes(frequency) || typeof day !== 'string'
     || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(day))) return
-  selectedDay.value = day
+  if (day !== selectedDay.value) return
   editPlan()
   planEditor.value!.product = product.toUpperCase()
   planEditor.value!.content.frequencies = [frequency]
@@ -440,7 +454,7 @@ onScopeDispose(() => {
   <main class="journal">
     <header class="heading">
       <div>
-        <RouterLink v-if="caseId" class="back" :to="{ name: 'trade-journal', query: { day: selectedDay } }">← 交易复盘</RouterLink>
+        <RouterLink v-if="caseId" class="back" :to="{ name: 'trade-journal', query: periodQuery(selectedDay) }">← 交易复盘</RouterLink>
         <h1>{{ detail?.case.title ?? '交易日志与复盘中心' }}</h1>
         <RouterLink v-if="sourceChart" class="back" :to="sourceChart">返回原看盘视窗</RouterLink>
         <div v-if="detail" class="case-meta">
@@ -527,7 +541,7 @@ onScopeDispose(() => {
           <table v-else>
             <thead><tr><th>案例</th><th>合约</th><th>进度</th><th>标签</th></tr></thead>
             <tbody><tr v-for="row in workspace.cases" :key="row.id">
-              <td><RouterLink :to="{ name: 'trade-journal', params: { caseId: row.id }, query: { day: selectedDay } }">{{ row.title }}</RouterLink><small>{{ row.trading_day }}</small></td>
+              <td><RouterLink :to="{ name: 'trade-journal', params: { caseId: row.id }, query: periodQuery(selectedDay) }">{{ row.title }}</RouterLink><small>{{ row.trading_day }}</small></td>
               <td>{{ row.contract }} {{ row.direction === 'LONG' ? '多' : '空' }}</td>
               <td>{{ row.reviewed ? '已复盘' : row.closed ? '待复盘' : '进行中' }}</td>
               <td>{{ row.tags.join('、') || '—' }}</td>
@@ -549,7 +563,7 @@ onScopeDispose(() => {
             {{ row.title }}
           </label>
           <span v-for="id in summary.case_ids.filter(id => !workspace?.cases.some(row => row.id === id))" :key="id" class="reference">
-            <RouterLink :to="{ name: 'trade-journal', params: { caseId: id }, query: { day: selectedDay } }">{{ caseNames[id] ?? '查看已关联案例' }}</RouterLink>
+            <RouterLink :to="{ name: 'trade-journal', params: { caseId: id }, query: periodQuery(selectedDay) }">{{ caseNames[id] ?? '查看已关联案例' }}</RouterLink>
             <button type="button" @click="setSummaryCase(id, false)">取消引用</button>
           </span>
         </fieldset>

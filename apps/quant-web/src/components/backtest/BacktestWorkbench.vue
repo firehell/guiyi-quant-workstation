@@ -2,7 +2,7 @@
 import { computed, onMounted, onScopeDispose, reactive, ref, shallowRef, watch } from 'vue'
 import { diagnosticCode, readExperiments, readRuns, runInProgress, type Experiment, type Run, type RunFilters, type RunPage } from '@/api/backtestCenter'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
-import { metricValue, sampleLabels, statusLabel } from './backtestDisplay'
+import { diagnosticLabel, metricValue, sampleLabels, statusLabel } from './backtestDisplay'
 
 const filters = reactive<RunFilters>({ strategy_id: '', product: '', signal_frequency: '', start: '', end: '', status: '', sort: '' })
 const applied = shallowRef({ ...filters })
@@ -96,7 +96,7 @@ onScopeDispose(() => {
       <label>排序 <select v-model="filters.sort"><option value="">最新提交</option><option value="net_return">净收益为正且有已平仓交易</option></select></label>
       <button class="bt-button" type="submit">筛选</button>
     </form>
-    <p v-if="failure" class="bt-alert" role="alert">{{ failure }}</p>
+    <p v-if="failure" class="bt-alert" role="alert">{{ diagnosticLabel(failure) }}</p>
     <div v-if="state?.items.length" class="bt-table-scroll" :aria-busy="loading">
       <table class="bt-table">
         <thead><tr><th>Run</th><th>状态</th><th>策略 / 合约</th><th>周期</th><th>评价区间</th><th>研究资格 / 样本</th><th>净累计收益</th><th>最大回撤</th><th>有效交易数</th><th>提交时间</th></tr></thead>
@@ -128,11 +128,11 @@ onScopeDispose(() => {
       <ul v-if="strategies.length" class="bt-list">
         <li v-for="strategy in strategies" :key="strategy"><RouterLink :to="{ name: 'backtests', query: { view: 'config', strategy } }">{{ strategy }}</RouterLink></li>
       </ul>
-      <p v-else class="bt-note">暂无近期策略</p>
+      <p v-else-if="state && !failure" class="bt-note">暂无近期策略</p>
     </section>
     <section aria-labelledby="recent-experiments">
       <h2 id="recent-experiments">近期实验与验证</h2>
-      <p v-if="experimentError" class="bt-alert">{{ experimentError }}</p>
+      <p v-if="experimentError" class="bt-alert">{{ diagnosticLabel(experimentError) }}</p>
       <ul v-else-if="recent.length" class="bt-list">
         <li v-for="item in recent.slice(0, 5)" :key="item.experiment_id">
           <RouterLink :to="{ name: 'backtests', query: { view: item.kind === 'comparison' ? 'experiments' : 'validation', experiment: item.experiment_id } }">{{ experimentKinds[item.kind] }} · {{ item.experiment_id }}</RouterLink>

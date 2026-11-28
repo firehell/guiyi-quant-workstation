@@ -165,7 +165,7 @@ async function submit() {
             <option value="">新配置</option><option v-for="item in templates" :key="item.template_id" :value="item.template_id">{{ item.name }}</option>
           </select>
         </label>
-        <p v-if="templateError" class="bt-alert">{{ templateError }}</p>
+        <p v-if="templateError" class="bt-alert">{{ diagnosticLabel(templateError) }}</p>
       </div>
       <form class="bt-form" @submit.prevent="submit">
         <label>策略 <select :value="fields.strategy_id" :disabled="loading" @change="selectStrategy(($event.target as HTMLSelectElement).value)">

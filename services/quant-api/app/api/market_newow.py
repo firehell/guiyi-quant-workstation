@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import UTC, date, datetime
+from time import monotonic
 import re
 from typing import Literal
 from collections.abc import Callable
@@ -510,6 +511,42 @@ def _build_weekly_resolver(
             status, product, day, at,
         ),
     )
+
+
+@router.get("/historical-chart")
+def workstation_historical_chart(
+    request: Request, product: str, strategy: ProductStrategy, frequency: ProductFrequency,
+    trading_day: date | None = None, session: Session = Depends(get_db),
+):
+    """User-selected historical study with a single completed Canonical input for every pane."""
+    from app.db.readonly import readonly_transaction
+    from app.market_data.newow.workstation_history import historical_chart
+    from app.market_data.product_retirement import ProductRetiredError, assert_not_retired
+
+    keys = [key for key, _ in request.query_params.multi_items()]
+    if len(keys) != len(set(keys)) or set(keys) - {"product", "strategy", "frequency", "trading_day"}:
+        raise HTTPException(422, detail={"code": "NEWOW_INVALID_QUERY"})
+    product = _normalize_public_product(product)
+    deadline = monotonic() + 90
+
+    def cancelled():
+        return monotonic() >= deadline or from_thread.run(request.is_disconnected)
+
+    try:
+        assert_not_retired(product)
+        _enforce_product_frequency(request, product, frequency)
+        with _PRODUCT_GATE.acquire(cancelled), readonly_transaction(session, timeout_seconds=90):
+            return historical_chart(session, product, strategy, frequency, trading_day,
+                                    now=datetime.now(UTC), cancelled=cancelled)
+    except HTTPException:
+        raise
+    except ProductRetiredError:
+        raise HTTPException(409, detail={"code": "PRODUCT_RETIRED"}) from None
+    except SQLAlchemyError:
+        raise HTTPException(503, detail={"code": "NEWOW_DATA_UNAVAILABLE"}) from None
+    except Exception as exc:
+        status, detail = public_product_error(exc, context={"symbol": product, "frequency": frequency.value})
+        raise HTTPException(status, detail=detail) from None
 
 
 @router.get("/historical-snapshot", response_model=NewowHistoricalSnapshotResponse)

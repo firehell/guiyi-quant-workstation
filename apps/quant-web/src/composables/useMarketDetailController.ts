@@ -220,6 +220,21 @@ export function useMarketDetailController(
       (value) => ({ ok: true as const, value }),
       () => ({ ok: false as const }),
     )
+    if (identity.view === 'newow' && identity.newowSource === 'canonical-recompute') {
+      // The pinned Canonical chart owns its bar window. Drop previous live subscriptions and pending chart reads.
+      headerGeneration = 0
+      activeSeriesKey = null
+      pendingSeries = null
+      activeResearchKey = null
+      currentResearch.value = null
+      state.value.header = null
+      series.clearSeries()
+      const metadata = await metadataRequest
+      if (disposed || state.value.generation !== generation) return
+      state.value.loading = false
+      if (!metadata.ok) state.value.error = '品种元数据不可用'
+      return
+    }
     // replaceSeries invalidates its previous generation synchronously. Revoke
     // the completed-key cache at the same boundary so A -> B(pending) -> A
     // cannot mistake B's cleared/in-flight source for the completed A source.
