@@ -5,7 +5,7 @@ from app.backtest_center.experiments import ExperimentRequest, validate_experime
 from app.backtest_center.contracts import RunConfig, admission_code
 from app.backtest_center.store import RunStore
 from app.backtest_center.worker import Settings
-from app.research_center.inputs import ResearchError
+from app.research_center.inputs import ResearchError, publication_identity
 
 
 def verified_task(store, task_id, kind):
@@ -85,6 +85,7 @@ def search_input(request, config):
     trial = create_request(base, config.choices[:config.budget], folds, "discovery-check")
     return {
         "source": {"kind": "search", "run_id": config.base_run_id, "run_digest": native["result_digest"],
+                   "publication_identity": publication_identity(native),
                    "run_binding": run_binding(path, native)},
         "policy": {"version": "optuna_finite_delay_grid_v1", "budget": config.budget, "seed": config.seed,
                    "choices": config.choices, "folds": folds, "total_native_run_limit": len(trial.folds) * (config.budget + 1)},
@@ -92,6 +93,15 @@ def search_input(request, config):
         "coverage": {"folds": len(trial.folds), "budget": config.budget},
         "samples": [],
     }
+
+
+def verified_search_owner(request, result):
+    owner = owner_path(request)
+    reader = RunStore.open_reader(owner)
+    source = reader.research_publication(result["source"]["run_id"])
+    if run_binding(owner, source) != result["source"]["run_binding"]:
+        raise ResearchError("RESEARCH_SEARCH_ORIGINAL_RUN_CHANGED")
+    return owner, reader
 
 
 def create_request(base, delays, folds, key):

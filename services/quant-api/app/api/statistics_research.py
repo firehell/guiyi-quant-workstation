@@ -14,7 +14,7 @@ from app.api.backtest_center import get_store as get_backtest_store
 from app.api.local_write import require_workstation_origin
 from app.backtest_center.codec import digest
 from app.backtest_center.contracts import BacktestError, Key, RunConfig
-from app.backtest_center.experiments import FoldConfig, create_experiment
+from app.backtest_center.experiments import FoldConfig, create_experiment, experiment_id_for_request
 from app.backtest_center.store import RunStore
 from app.backtest_center.worker import Settings
 from app.db.session import get_db
@@ -22,8 +22,9 @@ from app.market_data.domain import ContractError
 from app.market_data.market_data_service import MarketDataError
 from app.research_center import VERSION
 from app.research_center.advanced import (
-    create_request, event_input, owner_path, panel_input, run_binding, search_input, verified_task,
+    create_request, event_input, panel_input, search_input, verified_search_owner, verified_task,
 )
+from app.research_center.assistant import assistant_input, check_report, followup_origin, local_model_config
 from app.research_center.inputs import ResearchError, backtest_input, comparison_differences, published_runs
 from app.research_center.journal import fills_input, journal_input
 from app.research_center.market import market_input
@@ -107,10 +108,34 @@ class Search(Input):
         return self
 
 
+class Assistant(Input):
+    kind: Literal["assistant"]
+    question: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=480)]
+    evidence: Annotated[list[UUID], Field(min_length=1, max_length=3)]
+
+    @model_validator(mode="after")
+    def validate_scope(self):
+        if len(self.evidence) != len(set(self.evidence)):
+            raise ValueError("Duplicate evidence")
+        return self
+
+
+class AssistantFollowup(Input):
+    assistant_id: UUID
+    evidence_task_id: UUID
+
+
 class Task(Input):
     id: UUID
-    source: Annotated[Backtest | Case | Market | Fills | Panel | EventTest | Search, Field(discriminator="kind")]
+    source: Annotated[Backtest | Case | Market | Fills | Panel | EventTest | Search | Assistant, Field(discriminator="kind")]
     rerun_of: UUID | None = None
+    followup: AssistantFollowup | None = None
+
+    @model_validator(mode="after")
+    def registered_followup(self):
+        if self.followup and not isinstance(self.source, (Search, EventTest, Panel)):
+            raise ValueError("Unregistered assistant follow-up")
+        return self
 
 
 def authorize(request: Request):
@@ -143,6 +168,7 @@ def sources():
         {"kind": "factor", "status": "EXACT_MARKET_WINDOW_REQUIRED"},
         {"kind": "event", "status": "EXACT_MARKET_WINDOW_REQUIRED"},
         {"kind": "advanced", "status": "EXACT_PUBLISHED_RESEARCH_REQUIRED"},
+        {"kind": "assistant", "status": "AVAILABLE" if local_model_config() else "LOCAL_MODEL_NOT_CONFIGURED"},
         {"kind": "reference", "status": "EXACT_ACCOUNT_SCOPE_REQUIRED"},
         {"kind": "paper", "status": "VERIFIED_ACCOUNT_SETTLEMENT_REQUIRED"},
         {"kind": "simnow", "status": "VERIFIED_ACCOUNT_SETTLEMENT_REQUIRED"},
@@ -222,6 +248,8 @@ def prepare(request, db, source):
         return event_input(Store(db), source)
     if isinstance(source, Search):
         return search_input(request, source)
+    if isinstance(source, Assistant):
+        return assistant_input(Store(db), source)
     return market_input(db, source, source.kind)
 
 
@@ -229,6 +257,8 @@ def prepare(request, db, source):
 def submit(body: Task, db: Database, request: Request):
     store = Store(db)
     config = body.model_dump(mode="json", exclude={"id"})
+    if body.followup is None:
+        config.pop("followup")
     try:
         existing = store.get(body.id)
         if existing is not None:
@@ -241,6 +271,8 @@ def submit(body: Task, db: Database, request: Request):
         frozen = store.frozen_input(previous) if previous and previous["status"] == "SUCCEEDED" else None
         db.rollback()
         payload = frozen if frozen is not None else prepare(request, db, body.source)
+        if body.followup and frozen is None:
+            payload["assistant_origin"] = followup_origin(store, body.followup, body.source, payload)
         needs_worker = body.source.kind not in ("case", "fills")
         revision = worker_revision() if needs_worker else {}
         fingerprint = input_digest({"payload": payload, "worker_revision": revision, "version": VERSION})
@@ -251,6 +283,8 @@ def submit(body: Task, db: Database, request: Request):
             return existing
         try:
             output = compute(payload, lambda: store.active(body.id)) if needs_worker else {}
+            if body.source.kind == "assistant":
+                output = check_report(payload, output)
             if revision and worker_revision() != revision:
                 raise ResearchError("RESEARCH_WORKER_IDENTITY_CHANGED")
         except ResearchError as exc:
@@ -264,20 +298,32 @@ def submit(body: Task, db: Database, request: Request):
         raise fail(exc) from None
 
 
+def experiment_request_key(task):
+    result = task["result"]
+    return "statistics-v02:" + digest([str(task["id"]), task["result_digest"], result["source"]["run_binding"]])
+
+
+@router.get("/tasks/{task_id}/experiment")
+def find_experiment(task_id: UUID, db: Database, request: Request):
+    try:
+        task = verified_task(Store(db), task_id, "search")
+        _, reader = verified_search_owner(request, task["result"])
+        return {"experiment_id": experiment_id_for_request(reader, experiment_request_key(task))}
+    except (*EVIDENCE_ERRORS, sqlite3.Error, SQLAlchemyError, OSError) as exc:
+        raise fail(exc) from None
+
+
 @router.post("/tasks/{task_id}/submit-experiment", dependencies=writes, status_code=202)
 def submit_experiment(task_id: UUID, db: Database, request: Request):
     try:
         task = verified_task(Store(db), task_id, "search")
         result = task["result"]
-        owner = owner_path(request)
-        source = RunStore.open_reader(owner).research_publication(result["source"]["run_id"])
-        if run_binding(owner, source) != result["source"]["run_binding"]:
-            raise ResearchError("RESEARCH_SEARCH_ORIGINAL_RUN_CHANGED")
+        owner, _ = verified_search_owner(request, result)
         delays = result["experiment_plan"]["delays"]
         policy = result["policy"]
         if len(delays) != policy["budget"] or len(set(delays)) != len(delays) or not set(delays) <= set(policy["choices"]):
             raise ResearchError("RESEARCH_SEARCH_PLAN_INVALID")
-        key = "statistics-v02:" + digest([str(task_id), task["result_digest"], result["source"]["run_binding"]])
+        key = experiment_request_key(task)
         config = create_request(RunConfig.model_validate(result["base_config"]), delays, policy["folds"], key)
         backtests = get_backtest_store(request)
         if backtests.path != owner:

@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import platform
+from signal import SIGKILL
 from statistics import mean
 import sys
 from threading import Thread
@@ -12,6 +13,7 @@ from time import sleep
 import tomllib
 
 from advanced import events, panel, search
+from assistant_model import assistant
 
 
 
@@ -60,19 +62,21 @@ def event(payload):
 
 
 ANALYSES = {"backtest": backtest, "factor": factor, "event": event,
-            "panel": panel, "event_test": events, "search": search}
+            "panel": panel, "event_test": events, "search": search, "assistant": assistant}
 
 
 def watch_parent(parent):
     while os.getppid() == parent and parent != 1:
         sleep(0.25)
+    if os.getpgrp() == os.getpid():
+        os.killpg(os.getpid(), SIGKILL)
     os._exit(1)
 
 
 def environment(kind):
     dependencies = {"backtest": ("quantstats", "pandas", "numpy"), "factor": ("scipy", "pandas", "numpy"),
                     "event": (), "panel": ("scipy", "statsmodels", "numpy", "pandas"),
-                    "event_test": ("statsmodels", "numpy", "pandas"), "search": ("optuna", "numpy")}
+                    "event_test": ("statsmodels", "numpy", "pandas"), "search": ("optuna", "numpy"), "assistant": ()}
     lock = tomllib.loads(Path(__file__).with_name("uv.lock").read_text())
     locked = {row["name"]: row["version"] for row in lock["package"]}
     actual = {package: version(package) for package in dependencies[kind]}
@@ -82,7 +86,8 @@ def environment(kind):
 
 
 def main():
-    Thread(target=watch_parent, args=(os.getppid(),), daemon=True).start()
+    Thread(target=watch_parent, args=(int(os.environ.get("GUIYI_RESEARCH_PARENT_PID", os.getppid())),),
+           daemon=True).start()
     payload = json.load(sys.stdin)
     kind = payload["source"]["kind"]
     runtime = environment(kind)
