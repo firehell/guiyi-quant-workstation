@@ -1,0 +1,39 @@
+{
+  "purpose": "10:00 pre-outcome intake, Asia/Shanghai",
+  "research_baseline": "d17d31749bee414c7a95ed460cdee0f8a8bb8e9e",
+  "score_policy": "Score only a forecast with a contemporaneous plan and a verifiable action for the same contract, system version and window. Conditional geometry alone is unscored.",
+  "admitted": 0,
+  "cases": [
+    {
+      "contract": "SH2601",
+      "trading_day": "2025-09-10",
+      "as_of": "2025-09-10T10:00:00+08:00",
+      "plan_sources": [
+        "https://guba.sina.com.cn/?s=thread&bid=63272&tid=540",
+        "https://guba.sina.com.cn/?s=thread&bid=63272&tid=542"
+      ],
+      "admission_missing": ["ACTIVE_PROTECTION_PLAN", "SYSTEM_VERSION", "POSITION_BEFORE"],
+      "forecast": null,
+      "conditional_observation": "The 2557 near edge of the disclosed short target was touched at 21:13 on September 9. If the older protection band 2589–2598 was still active, no price touch or in-band long confirmation was observed in the 1→1, 5→1, 5→5 or 15→15 geometry. The frozen rule does not rule out protection before the band.",
+      "prefix_counts": {"1": 179, "5": 35, "15": 11},
+      "prefix_1m_range": [2553, 2583],
+      "prefix_1m_last_close": 2574,
+      "prefix_1m_sha256": "c5974a91151fcdf9f00bc3ae8ce15cc66c594598b5afef824c2c739f4bfa8b78"
+    },
+    {
+      "contract": "TA2701",
+      "trading_day": "2026-10-20",
+      "as_of": "2026-10-20T10:00:00+08:00",
+      "plan_sources": ["https://weibo.com/ttarticle/p/show?id=2309405355789916438626"],
+      "admission_missing": ["CONTEMPORANEOUS_PLAN_REVISION", "ACTIONABLE_PLAN", "SYSTEM_VERSION", "POSITION_BEFORE"],
+      "forecast": null,
+      "conditional_observation": "The archived TA chapter pauses regular modeling. No price move in the prefix supplies the missing action plan or verifies whether the author traded.",
+      "previous_session_close": 6384,
+      "prefix_1m_open": 6400,
+      "prefix_counts": {"1": 179, "5": 35, "15": 11},
+      "prefix_1m_range": [6368, 6468],
+      "prefix_1m_last_close": 6444,
+      "prefix_1m_sha256": "1d7b5b0a2ff0021ffe304704cead6320f943e2b3b88fcecab732ad85e5986dc3"
+    }
+  ]
+}
