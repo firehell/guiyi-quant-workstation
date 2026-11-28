@@ -1,3 +1,9 @@
+## 2026-11-28 22:08｜个人看盘工作台正式交付
+
+- [工作台交互 v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/workstation-ui/v0.1.0) 独立维护八页导航、图层与观察复访。[应用 v1.16.158](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.158) 通过 [PR #696](https://github.com/firehell/guiyi-quant-workstation/pull/696) 集成，正式 API、Web 均绑定提交 `bf45a936b5e8bf6fb2ce676adb224870f3d602c4`、代次 100。计算使用 [Quant Core 0.4.3](https://github.com/firehell/guiyi-quant-workstation/releases/tag/quant-core/v0.4.3)，图表使用 Quant Chart 0.1.7。
+- 正式 PostgreSQL 已从 `20261028_0054` 升级至 `20261128_0060`。迁移后读回原有 25 张表、新增 13 张表及 27 项索引。正式浏览器验收覆盖八个入口、RB 四周期各 160 根 K 线和 EMA10。11 月 27 日的 RB2701 观察只保存一次，重新打开原图后逐根核验 87 根可见日线，并从复盘页往返当前合约。
+- 本次安装只接管 Web/API。其余九项仍登记在原版本，切换时原运行目录缺失。行情采集、提醒和账户运行状态须以各自现场证据为准。
+
 ## 2026-11-28 08:49｜策略中心正式集成与运行状态
 
 - **发布与运行。** 策略中心 v0.1.0 的目录、只读 API 和 Web 已纳入正式工作站，见 [集成 PR #687](https://github.com/firehell/guiyi-quant-workstation/pull/687)。
