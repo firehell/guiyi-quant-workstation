@@ -30,6 +30,7 @@ const tabs = [
   ['records', '交易记录'], ['performance', '绩效分析'],
 ] as const
 const statuses: Record<string, string> = {
+  REGISTERED: '已登记',
   CONNECTING: '连接中', RECONCILING: '对账中', OBSERVING: '账户观察', DISCONNECTED: '连接中断',
   READBACK_FAILED: '对账失败', OBSERVER_FAILED: '进程故障', STOPPED: '已停止', STALE: '状态过期',
 }

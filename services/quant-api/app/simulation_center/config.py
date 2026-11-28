@@ -1,6 +1,7 @@
 """Separate connection secrets from public deployment metadata."""
 
 from dataclasses import dataclass, field
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -11,6 +12,11 @@ ACCOUNT_ALIAS = r"^[a-z][a-z0-9-]{0,39}$"
 VERSION = r"^[A-Za-z0-9][A-Za-z0-9_.:-]{0,95}$"
 INSTRUMENT = r"^(SHFE|INE|DCE|CZCE|CFFEX|GFEX):[A-Z]{1,8}[0-9]{3,4}$"
 SIMNOW_FIRST_FRONT = "tcp://182.254.243.31:30001"
+
+
+def native_account_key(user: str) -> str:
+    # Additional front addresses for one investor do not create separate SimNow accounts.
+    return sha256(("simnow:9999:" + user).encode()).hexdigest()
 
 
 @dataclass(frozen=True)

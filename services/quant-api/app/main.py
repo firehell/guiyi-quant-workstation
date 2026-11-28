@@ -20,7 +20,8 @@ from app.api.simulation_monitor import router as simulation_monitor_router
 from app.api.alerts import router as alerts_router
 from app.api.market import router as market_router
 from app.api.market_newow import router as market_newow_router
-from app.api.backtest_center import router as backtest_center_router, workstation_lifespan
+from app.api.backtest_center import router as backtest_center_router
+from app.api.workstation_settings import api_lifespan
 from app.api.backtest_experiments import router as backtest_experiments_router
 from app.api.market_messages import router as market_messages_router
 from app.api.market_subing_reference import router as market_subing_reference_router
@@ -59,7 +60,7 @@ def resolve_cors_origins() -> list[str]:
     return origins
 
 
-app = FastAPI(title="归一量化 API", version=APP_VERSION, lifespan=workstation_lifespan)
+app = FastAPI(title="归一量化 API", version=APP_VERSION, lifespan=api_lifespan)
 
 
 @app.exception_handler(ServiceBindingRootUnavailable)

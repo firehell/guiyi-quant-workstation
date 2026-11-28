@@ -44,3 +44,18 @@ test('account selection only renders that account and native read status', async
   await page.getByRole('link', { name: '绩效分析' }).click()
   await expect(page.getByText('暂无权益采样。')).toBeVisible()
 })
+
+test('registered account is selectable before its first native readback', async ({ page }) => {
+  await page.route('**/api/v1/simulations**', route => route.fulfill({ json: {
+    version: '0.1.1', source: 'SIMNOW_CTP', status: 'AVAILABLE', selected: 'registered-only',
+    accounts: [{ alias: 'registered-only', deployment: null, status: 'REGISTERED', status_at: now }],
+    readback: null, equity: [], fills: [], next_fill: null,
+  } }))
+  await page.goto('/simulations')
+  await expect(page.getByRole('combobox', { name: '账户' })).toHaveValue('registered-only')
+  await expect(page.getByText('已登记', { exact: true })).toBeVisible()
+  await expect(page.getByText('尚无完整柜台读回')).toBeVisible()
+  await expect(page.getByRole('region', { name: '账户摘要' }).locator('dd')).toHaveText(['—', '—', '—', '—'])
+  await page.getByRole('link', { name: '交易记录' }).click()
+  await expect(page.getByText('最近完整读回为空仓。')).toHaveCount(0)
+})

@@ -1,4 +1,4 @@
-export const workstationUiVersion = 'workstation-ui/v0.1.1'
+export const workstationUiVersion = 'workstation-ui/v0.1.2'
 
 export const workstationPages = [
   { name: 'market-chart', title: '我的看盘', group: '工作台', icon: 'chart' },

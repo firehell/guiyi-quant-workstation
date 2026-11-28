@@ -1,4 +1,5 @@
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 import json
 import os
 
@@ -10,7 +11,7 @@ from app.api.simulation_center import router
 from app.simulation_center.config import ObserverConfig, SIMNOW_FIRST_FRONT, read_config
 from app.simulation_center.facts import normalize
 from app.simulation_center.readback import ReadbackError
-from app.simulation_center.store import Writer, read_workstation
+from app.simulation_center.store import Writer, connect, read_workstation, register_account
 from guiyi_quant.simnow_execution.credentials import Credentials, fingerprint_for
 from test_facts import sample
 
@@ -22,7 +23,7 @@ def test_api_is_read_only_and_distinguishes_unconfigured(monkeypatch):
     with TestClient(app) as client:
         response = client.get("/api/v1/simulations")
         assert (response.status_code, response.json()["status"]) == (200, "NOT_CONFIGURED")
-        assert response.json()["version"] == "0.1.0"
+        assert response.json()["version"] == "0.1.1"
         assert response.json()["readback"] is None
         assert client.post("/api/v1/simulations", json={}).status_code == 405
         assert client.get("/api/v1/simulations?account=../unsafe").status_code == 422
@@ -72,6 +73,33 @@ def test_observer_reads_matching_first_account_from_keychain(tmp_path, monkeypat
     with pytest.raises(ValueError, match="SIMNOW_CONFIGURATION_INVALID"):
         read_config(config_file)
     assert requested == [account]
+
+
+@pytest.mark.isolated_postgresql
+def test_registered_identity_stays_selectable_without_observation():
+    dsn = os.getenv("GUIYI_SIMULATION_ISOLATED_TEST_DSN")
+    if not dsn:
+        pytest.skip("isolated Simulation Center PostgreSQL required")
+    alias = "registered-only"
+    native_key = sha256(b"simnow:9999:REG").hexdigest()
+    with connect(dsn) as conn:
+        register_account(conn, alias, native_key)
+        first = read_workstation(dsn, alias, None)
+        register_account(conn, alias, native_key)
+        later = read_workstation(dsn, alias, None, now=datetime.now(UTC) + timedelta(days=1))
+        row = next(item for item in later["accounts"] if item["alias"] == alias)
+        assert row == next(item for item in first["accounts"] if item["alias"] == alias)
+        assert row["status"] == "REGISTERED" and row["observed_at"] is None
+        assert later["selected"] == alias and later["readback"] is None
+        assert later["equity"] == later["fills"] == []
+        for pair in [(alias, "1" * 64), ("other-alias", native_key)]:
+            with pytest.raises(ReadbackError, match="ACCOUNT_BINDING_CONFLICT"):
+                register_account(conn, *pair)
+        with Writer.claim(dsn, config(alias, "REG")) as writer:
+            writer.status("OBSERVING")
+            register_account(conn, alias, native_key)
+            active = read_workstation(dsn, alias, None)
+            assert next(item for item in active["accounts"] if item["alias"] == alias)["status"] == "OBSERVING"
 
 
 @pytest.mark.isolated_postgresql
@@ -133,7 +161,7 @@ def test_postgresql_retains_prior_round_and_isolates_accounts(monkeypatch):
     app.include_router(router)
     with TestClient(app) as client:
         result = client.get("/api/v1/simulations?account=case-a").json()
-        assert result["version"] == "0.1.0"
+        assert result["version"] == "0.1.1"
         assert result["source"] == "SIMNOW_CTP"
         assert result["readback"]["account"]["equity"] == "100.01"
         assert "INV" not in str(result) and "fixture-pass" not in str(result)
