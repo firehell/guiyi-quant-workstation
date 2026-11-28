@@ -42,8 +42,8 @@ test('reads the real frozen FU trial from isolated PostgreSQL through the develo
   await expect(panel).toContainText('暂无成功回测结果')
   expect(requests.at(-1).url.searchParams.get('strategy')).toBe('oscillation')
   expect(requests.at(-1).url.searchParams.get('frequency')).toBe('15m')
-  await expect(page.getByRole('tab', { name: '运行台', exact: true })).toBeVisible()
-  await expect(page.getByRole('tab', { name: '研究', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: '运行总览', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: '研究中心', exact: true })).toBeVisible()
 })
 
 test('PC research reads and locates the existing FU result using the isolated read router', async ({ page }) => {

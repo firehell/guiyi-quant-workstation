@@ -74,6 +74,7 @@ export interface ReferencePoint {
 }
 
 export interface MarketAfterCloseReference extends ReferenceWindow {
+  receipt?: string
   cutoff: string
   stream_id: string
   revision_id: string
@@ -120,6 +121,7 @@ export type MarketAfterCloseSection =
   | {
       status: 'ready'
       receipt: string
+      reference?: Pick<MarketAfterCloseReference, 'stream_id' | 'revision_id' | 'seq'>
       chart: NewowProductSectionResponse<'chart'>
       result: NewowProductSectionResponse<'auxiliary' | 'comparator'>
     }

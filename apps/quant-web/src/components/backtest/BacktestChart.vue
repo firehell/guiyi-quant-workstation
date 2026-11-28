@@ -27,15 +27,15 @@ function render() {
   try {
     const chartHost = mountChartHost(canvas.value, {
       autoSize: true,
-      layout: { background: { type: ColorType.Solid, color: '#ffffff' }, textColor: '#526374', fontSize: 12 },
-      grid: { vertLines: { color: '#eff3f6' }, horzLines: { color: '#eff3f6' } },
-      rightPriceScale: { borderColor: '#dfe7ee' },
-      timeScale: { borderColor: '#dfe7ee', timeVisible: series.kind === 'trades', tickMarkFormatter: formatChartAxisTimeInShanghai },
+      layout: { background: { type: ColorType.Solid, color: '#151e29' }, textColor: '#acb9ca', fontSize: 12 },
+      grid: { vertLines: { color: '#263242' }, horzLines: { color: '#263242' } },
+      rightPriceScale: { borderColor: '#36475c' },
+      timeScale: { borderColor: '#36475c', timeVisible: series.kind === 'trades', tickMarkFormatter: formatChartAxisTimeInShanghai },
       localization: { timeFormatter: formatChartTimeInShanghai },
     }, createChart)
     host = chartHost
     if (series.kind === 'equity') {
-      const equity = chartHost.chart.addSeries(LineSeries, { color: '#0c7276', lineWidth: 2, priceLineVisible: false })
+      const equity = chartHost.chart.addSeries(LineSeries, { color: '#6dc3b2', lineWidth: 2, priceLineVisible: false })
       chartHost.own(() => chartHost.chart.removeSeries(equity))
       equity.setData(series.rows.map(row => ({ time: stamp(row.at), value: Number(row.equity) })))
     } else {
@@ -61,7 +61,7 @@ function render() {
           id: marker.native_trade_id,
           time: marker.time,
           shape: entry ? 'arrowUp' as const : exit ? 'arrowDown' as const : 'circle' as const,
-          color: marker.selected ? valuation ? '#345d96' : entry ? '#0c7276' : exit ? '#992e37' : '#74521e' : '#70808c',
+          color: marker.selected ? valuation ? '#345d96' : entry ? '#6dc3b2' : exit ? '#992e37' : '#74521e' : '#70808c',
           text: replayMarkerLabel(marker),
         }
         const value = marker.price == null ? NaN : Number(marker.price)

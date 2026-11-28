@@ -135,6 +135,7 @@ function loadEarlier() { void props.loadEarlier() }
 
 <template>
   <section class="free-workspace" data-detail-workspace="free" :data-range-detector-status="rangeWarmup.status.value" :data-range-detector-visible-from="visibleFrom" :data-range-detector-warmup="rangeState" :data-range-detector-anchor="rangeWarmup.anchorTime.value" :data-range-detector-source-identity="sourceIdentity">
+    <div class="free-workspace__toolbar">
     <div class="free-workspace__indicators" role="group" aria-label="主图指标">
       <span class="free-workspace__indicators-title">指标</span>
       <button
@@ -173,6 +174,8 @@ function loadEarlier() { void props.loadEarlier() }
       <button class="indicator-chip indicator-chip--range" :class="{ 'indicator-chip--active': showDynamicRange }"
         type="button" :aria-pressed="showDynamicRange" @click="showDynamicRange = !showDynamicRange">震荡／趋势 <span v-if="showDynamicRange">✓</span></button>
     </div>
+    <slot name="chart-toolbar" />
+    </div>
     <p v-if="showDynamicRange" class="free-workspace__hint" role="status" data-testid="dynamic-range-status">
       <template v-if="!dynamicRange.supported.value">震荡／趋势研究指标目前支持30分钟、60分钟、日线，请切换周期。</template>
       <template v-else>震荡蓝色／上涨红色／下跌绿色；每根保留当时边界，向左加载不会重算显示起点。仅历史已归档完成K线，实时部分待归档。研究v2：方向连续2根确认，连续3根中性退出；ER仅衡量效率。
@@ -199,7 +202,7 @@ function loadEarlier() { void props.loadEarlier() }
         </tbody>
       </table>
     </details>
-    <div class="free-workspace__chart-surface"><slot name="chart-toolbar" />
+    <div class="free-workspace__chart-surface">
     <FreeChartStage
       :bars="bars"
       :active-bar="activeBar"

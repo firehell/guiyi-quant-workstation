@@ -7,7 +7,8 @@ import {
   type Period, type Plan, type PlanFields, type Rating, type Source, type SummaryFields,
   type TimelineRow, type Workspace,
 } from '@/api/tradeJournal'
-import MarketNavigation from '@/components/market/MarketNavigation.vue'
+import LinkedObservationNotes from './LinkedObservationNotes.vue'
+import JournalObservations from './JournalObservations.vue'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 
 const sources: Record<FilterSource, string> = {
@@ -72,6 +73,7 @@ let caseRequest: AbortController | undefined
 let sourceRequest: AbortController | undefined
 
 const planEditor = ref<{ id: string; version: number; day: string; product: string; content: PlanFields }>()
+const sourceChart = ref('')
 const caseEditor = ref<{ id: string; day: string; title: string; contract: string; direction: Direction; plan: string }>()
 const summary = reactive<SummaryFields>({ environment: '', observations: '', missed: '', execution: '', next_action: '', case_ids: [] })
 const summaryVersion = ref(0)
@@ -257,6 +259,20 @@ function editPlan(plan?: Plan) {
   }
 }
 
+watch(() => route.fullPath, () => {
+  const { compose, product, frequency, day } = route.query
+  if (caseId.value || compose !== 'plan' || typeof product !== 'string' || !/^[A-Za-z]{1,3}$/.test(product)
+    || typeof frequency !== 'string' || !frequencies.includes(frequency) || typeof day !== 'string'
+    || !/^\d{4}-\d{2}-\d{2}$/.test(day) || !Number.isFinite(Date.parse(day))) return
+  selectedDay.value = day
+  editPlan()
+  planEditor.value!.product = product.toUpperCase()
+  planEditor.value!.content.frequencies = [frequency]
+  const origin = window.history.state?.sourceChart
+  if (typeof origin === 'string' && origin.startsWith('/market/chart?')) sourceChart.value = origin
+  void router.replace({ name: 'trade-journal', query: { day } })
+}, { immediate: true })
+
 function savePlan() {
   const plan = planEditor.value
   if (!plan) return
@@ -422,13 +438,14 @@ onScopeDispose(() => {
 
 <template>
   <main class="journal">
-    <MarketNavigation active-tab="trade-journal" />
     <header class="heading">
       <div>
         <RouterLink v-if="caseId" class="back" :to="{ name: 'trade-journal', query: { day: selectedDay } }">← 交易复盘</RouterLink>
         <h1>{{ detail?.case.title ?? '交易日志与复盘中心' }}</h1>
+        <RouterLink v-if="sourceChart" class="back" :to="sourceChart">返回原看盘视窗</RouterLink>
         <div v-if="detail" class="case-meta">
           <span>{{ detail.case.contract }}</span><span>{{ detail.case.direction === 'LONG' ? '多头' : '空头' }}</span>
+          <RouterLink :to="{ name: 'statistics-research', query: { mode: 'case', case: detail.case.id } }">案例统计与研究</RouterLink>
           <span>{{ detail.case.trading_day }}</span><span>{{ detail.case.closed ? '已结案' : '进行中' }}</span>
         </div>
       </div>
@@ -451,6 +468,8 @@ onScopeDispose(() => {
           <button type="button" class="primary" :disabled="!selectedDay || saving" @click="createCase()">新建案例</button>
         </div>
       </section>
+
+      <JournalObservations :anchor="anchor" :period="period" />
 
       <p v-if="overviewError" class="error" role="alert">{{ overviewError }} <button type="button" @click="loadWorkspace()">重试</button></p>
       <p v-if="loading && !workspace" class="quiet" role="status">正在读取交易复盘…</p>
@@ -491,6 +510,7 @@ onScopeDispose(() => {
           <article v-for="plan in workspace.plans" :key="plan.id" class="plan-row">
             <div class="quiet">{{ plan.trading_day }} · {{ plan.product ?? '每日总计划' }} · 第 {{ plan.version }} 版</div>
             <h3>{{ plan.content.title }}</h3>
+            <LinkedObservationNotes kind="plan" :target-id="plan.id" :version="plan.version" />
             <p v-if="plan.content.entry">{{ plan.content.entry }}</p>
             <div class="buttons"><button type="button" @click="editPlan(plan)">查看或编辑</button><button type="button" @click="createCase(plan)">从计划建案例</button></div>
           </article>
@@ -541,11 +561,13 @@ onScopeDispose(() => {
       <p v-if="detailError" class="error" role="alert">{{ detailError }} <button type="button" @click="loadDetail()">重新读取</button></p>
       <p v-if="detailLoading && !detail" class="quiet" role="status">正在读取案例…</p>
       <template v-if="detail">
+        <LinkedObservationNotes kind="case" :target-id="detail.case.id" />
         <div class="overview">
           <section class="panel">
             <h2>事前计划</h2>
             <template v-if="detail.plan">
               <h3>{{ detail.plan.content.title }}</h3>
+              <LinkedObservationNotes kind="plan" :target-id="detail.plan.id" :version="detail.plan.version" />
               <p class="quiet">第 {{ detail.plan.version }} 版 · {{ detail.plan.content.frequencies.join(' / ') || '未填写观察周期' }}</p>
               <dl><template v-for="[key, label] in planFields" :key="key">
                 <template v-if="detail.plan.content[key]"><dt>{{ label }}</dt><dd>{{ detail.plan.content[key] }}</dd></template>
@@ -680,7 +702,7 @@ onScopeDispose(() => {
 </template>
 
 <style scoped>
-.journal { --ink: #17232b; --subtle: #526370; --line: #dce5e9; --accent: #155f55; min-height: 100%; background: #f4f7f8; color: var(--ink); padding: 0 32px 40px; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
+.journal { --ink: var(--gy-text-primary); --subtle: var(--gy-text-secondary); --line: var(--gy-border); --accent: var(--gy-link); min-height: 100%; background: var(--gy-bg-app); color: var(--ink); padding: 0 32px 40px; font-family: Inter, "PingFang SC", "Microsoft YaHei", sans-serif; }
 .heading { display: flex; justify-content: space-between; align-items: flex-end; padding: 27px 0 18px; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
 h1 { font-size: 30px; letter-spacing: -0.025em; line-height: 1.25; margin: 0; }
 h2 { font-size: 17px; margin: 0 0 12px; }
@@ -695,11 +717,11 @@ a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px
 .toolbar-actions { display: flex; gap: 8px; margin-left: auto; }
 .section-heading { justify-content: space-between; gap: 14px; }
 .section-heading h2 { margin: 0; }
-.segments { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: white; }
+.segments { display: flex; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 7px; background: var(--gy-bg-panel); }
 .segments button { border-color: transparent; }
-.segments [aria-pressed="true"] { color: var(--accent); background: #dff0eb; }
+.segments [aria-pressed="true"] { color: var(--accent); background: var(--gy-detail-accent-soft); }
 .overview { display: grid; grid-template-columns: minmax(260px, 0.86fr) minmax(440px, 1.4fr); gap: 16px; }
-.panel { margin: 0 0 16px; min-width: 0; padding: 19px; border: 1px solid var(--line); border-radius: 9px; background: white; }
+.panel { margin: 0 0 16px; min-width: 0; padding: 19px; border: 1px solid var(--line); border-radius: 9px; background: var(--gy-bg-panel); }
 .plan-row { border-top: 1px solid var(--line); padding: 10px 0; }
 .plan-row:last-child { padding-bottom: 0; }
 .plan-row p { margin-bottom: 9px; }
@@ -713,18 +735,18 @@ label { display: grid; gap: 5px; font-size: 13px; color: var(--subtle); min-widt
 label.inline { display: flex; }
 label.finish { align-self: end; margin-bottom: 8px; }
 input, textarea, select, button { font: inherit; color: inherit; }
-input:not([type="checkbox"]), textarea, select { width: 100%; box-sizing: border-box; min-height: 34px; background: white; border: 1px solid #c9d6dc; border-radius: 5px; padding: 6px 8px; color: var(--ink); }
+input:not([type="checkbox"]), textarea, select { width: 100%; box-sizing: border-box; min-height: 34px; background: var(--gy-bg-panel); border: 1px solid var(--gy-border-strong); border-radius: 5px; padding: 6px 8px; color: var(--ink); }
 textarea { resize: vertical; }
-input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid #167d70; outline-offset: 2px; }
-button { width: fit-content; padding: 6px 11px; min-height: 33px; border: 1px solid #c9d6dc; border-radius: 5px; background: white; cursor: pointer; color: var(--ink); }
-button:hover:not(:disabled) { background: #edf5f3; }
+input:focus-visible, textarea:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--gy-border-focus); outline-offset: 2px; }
+button { width: fit-content; padding: 6px 11px; min-height: 33px; border: 1px solid var(--gy-border-strong); border-radius: 5px; background: var(--gy-bg-panel); cursor: pointer; color: var(--ink); }
+button:hover:not(:disabled) { background: var(--gy-bg-hover); }
 button:disabled { cursor: default; opacity: 0.5; }
-button.primary { border-color: var(--accent); background: var(--accent); color: white; }
-button.primary:hover:not(:disabled) { background: #0d5148; }
+button.primary { border-color: var(--accent); background: var(--accent); color: var(--gy-bg-app); }
+button.primary:hover:not(:disabled) { background: var(--gy-accent); }
 .quiet-button { color: var(--subtle); background: transparent; }
 .notice, .error { padding: 8px 12px; border-radius: 5px; }
-.notice { background: #e4f3ed; color: #165447; }
-.error { background: #fcebe9; color: #8e302b; }
+.notice { background: var(--gy-bg-elevated); color: var(--gy-status-ok); }
+.error { background: var(--gy-bg-elevated); color: var(--gy-status-error); }
 .checks { flex-wrap: wrap; padding: 6px 9px 8px; }
 .checks label, .evidence-choice { display: flex; gap: 6px; align-items: center; }
 fieldset { margin: 0; min-width: 0; border: 1px solid var(--line); border-radius: 6px; }
@@ -737,7 +759,7 @@ dl { margin: 0; }
 dt { margin-top: 9px; font-size: 13px; color: var(--subtle); }
 dd { margin: 3px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .timeline { list-style: none; padding: 0; margin: 12px 0 0; }
-.timeline li { border-left: 2px solid #8cbeb5; padding: 6px 0 9px 13px; margin: 0 0 8px; }
+.timeline li { border-left: 2px solid var(--gy-accent); padding: 6px 0 9px 13px; margin: 0 0 8px; }
 .revoked { opacity: 0.7; }
 .review-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(175px, 1fr)); gap: 8px; }
 .review-grid fieldset { display: grid; gap: 8px; padding: 9px; }

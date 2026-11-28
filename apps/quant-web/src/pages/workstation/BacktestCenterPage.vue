@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import MarketNavigation from '@/components/market/MarketNavigation.vue'
 import BacktestWorkbench from '@/components/backtest/BacktestWorkbench.vue'
 import BacktestConfiguration from '@/components/backtest/BacktestConfiguration.vue'
 import BacktestRunDetails from '@/components/backtest/BacktestRunDetails.vue'
@@ -18,7 +17,6 @@ const view = computed(() => views.find(([key]) => key === route.query.view)?.[0]
 
 <template>
   <div class="backtest-shell">
-    <MarketNavigation active-tab="backtests" />
     <main class="backtest-center">
       <div class="bt-heading">
         <h1>回测中心</h1>
@@ -29,7 +27,7 @@ const view = computed(() => views.find(([key]) => key === route.query.view)?.[0]
         <RouterLink v-for="[key, label] in views" :key="key"
           :to="{ name: 'backtests', query: key === 'workbench' ? {} : { view: key } }"
           :aria-current="view === key && !runId ? 'page' : undefined">{{ label }}</RouterLink>
-        <RouterLink class="bt-legacy" :to="{ name: 'research' }">既有 P3/P4 研究结果</RouterLink>
+        <RouterLink class="bt-legacy" :to="{ name: 'research' }">盘后参考研究</RouterLink>
       </nav>
       <BacktestRunDetails v-if="runId" :key="runId" :run-id="runId" />
       <BacktestWorkbench v-else-if="view === 'workbench'" />

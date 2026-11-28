@@ -5,6 +5,10 @@ import { createPriceSeriesWriter } from './priceSeriesWriter.ts'
 import { ExecutionOverlayPrimitive, type ExecutionOverlayPoint } from '../components/kline/executionOverlayPrimitive.ts'
 import { toChartTimeForPeriod } from './barTime.ts'
 import { previewInstant } from './candidatePreviewInstant.ts'
+import { LineSeries, LineStyle } from 'lightweight-charts'
+import { freezeChartOverlays } from './observationOverlay.ts'
+
+export interface ManualChartLevel { contract: string; price: number; at: string }
 
 export const DETAIL_CHART_SESSION = Symbol('detail-chart-session')
 export type DetailChartSession = ReturnType<typeof createDetailChartSession>
@@ -75,6 +79,10 @@ export function createDetailChartSession(dependencies: {
   const pricePoints = new Map<string, any[]>()
   const hiddenPrices = new Set<string>()
   const sharedLayerFacts = new Map<SharedLayerRole, SharedLayerFact>()
+  let annotations: readonly ManualChartLevel[] = []
+  const annotationSeries = new Map<ManualChartLevel, ISeriesApi<'Line'>>()
+  let pickPrice: ((level: ManualChartLevel) => void) | undefined
+  let layerInspector: (() => LayerDiagnostics[]) | undefined
   let volumeInput: readonly DisplayVolumeBar[] = []
   let hasPrices = false
   let ownsViewport = false
@@ -114,6 +122,8 @@ export function createDetailChartSession(dependencies: {
   }
   function setIdentity(next: string) {
     if (next === identity) return
+    setAnnotations([])
+    pickPrice = undefined
     saveViewport(); identity = next; hasPrices = false; ownsViewport = false; cursor = null
     chart?.clearCrosshairPosition?.()
     setExecutions([])
@@ -149,6 +159,7 @@ export function createDetailChartSession(dependencies: {
   function clearPriceWindow() {
     writers.clear(); pricePoints.clear(); volumeInput = []
     sharedLayerFacts.clear()
+    for (const line of annotationSeries.values()) line.setData([])
     for (const [role, series] of prices) {
       try {
         series.setData([])
@@ -202,6 +213,7 @@ export function createDetailChartSession(dependencies: {
       throw error
     }
     pricePoints.set(role, points)
+    if (role === 'candles' && annotations.length) drawAnnotations()
     if (role === 'candles' && executionFrequency !== null) syncExecutionLayers()
   }
   function acquire(container: HTMLElement, options: Parameters<typeof createChart>[1]): IChartApi {
@@ -217,6 +229,8 @@ export function createDetailChartSession(dependencies: {
       chart = dependencies.createChart(surface, options)
       host = createChartHost(chart)
       chart.subscribeCrosshairMove?.(rememberCursor)
+      chart.subscribeClick?.(onPriceClick)
+      host.own(() => chart?.unsubscribeClick?.(onPriceClick))
       host.own(() => chart?.unsubscribeCrosshairMove?.(rememberCursor))
       const viewportSurface = surface
       const claimWheel = () => { if (hasPrices) ownsViewport = true }
@@ -277,7 +291,7 @@ export function createDetailChartSession(dependencies: {
           const previous = pricePoints.get(role) ?? []
           const range = role === 'candles' ? viewport() : null
           const sameFact = (a: any, b: any) => JSON.stringify(a.time) === JSON.stringify(b.time)
-            && (role === 'candles' ? ['open', 'high', 'low', 'close', 'physicalContract'] : ['value']).every(field => Object.is(a[field], b[field]))
+            && (role === 'candles' ? ['open', 'high', 'low', 'close', 'physicalContract', 'sourceBarSha256', 'marketSource', 'calculationSegmentId', 'confirmed', 'volume', 'trading_day'] : ['value']).every(field => Object.is(a[field], b[field]))
           const suffix = role === 'candles' && previous.length > data.length && data.length > 0
             && data.every((point, index) => sameFact(point, previous[previous.length - data.length + index]))
           if (suffix) {
@@ -432,7 +446,76 @@ export function createDetailChartSession(dependencies: {
       })
     }
   }
+  function captureViewport() {
+    if (!chart || !hasPrices || !surface?.isConnected) return null
+    const scale = chart.timeScale()
+    const range = scale.getVisibleRange()
+    if (!range) return null
+    const width = surface.clientWidth
+    const volumes = new Map((hiddenPrices.has('volume') ? [] : pricePoints.get('volume') ?? []).map(p => [timeKey(p.time), p.value]))
+    const gaps: string[] = []
+    const points = knownCandles().flatMap(point => {
+      const x = scale.timeToCoordinate(point.time)
+      if (x === null || x < 0 || x > scale.width()) return []
+      if ([point.open, point.high, point.low, point.close].every(v => v === undefined)) {
+        gaps.push(timeKey(point.time))
+        return []
+      }
+      return [{ time: point.time as Time, x: x / width, open: Number(point.open), high: Number(point.high),
+        low: Number(point.low), close: Number(point.close), contract: point.physicalContract as string | undefined,
+        hash: point.sourceBarSha256, stage: point.marketSource, day: point.trading_day, segment: point.calculationSegmentId,
+        confirmed: point.confirmed !== false, volume: point.volume, drawnVolume: volumes.get(timeKey(point.time)) }]
+    })
+    if (!points.length || !width) return null
+    const priceRanges = chart.panes().map(pane => ({
+      left: pane.priceScale('left').getVisibleRange(), right: pane.priceScale('right').getVisibleRange(),
+    }))
+    return { canvas: chart.takeScreenshot(true, false), overlays: freezeChartOverlays(surface), priceRanges,
+      points, gaps, includesTime(time: Time) {
+        const x = scale.timeToCoordinate(time)
+        return x !== null && x >= 0 && x <= scale.width()
+      }, logical: scale.getVisibleLogicalRange(),
+      heights: chart.panes().map(pane => pane.getHeight()), range }
+  }
   function inspectExecutionLayers() { return host?.diagnostics() ?? [] }
+  function onPriceClick(event: MouseEventParams<Time>) {
+    if (!pickPrice || !event.point || event.time == null || (event.paneIndex ?? 0) !== 0) return
+    const candle = knownCandles()[indexOf(event.time) ?? -1]
+    const price = prices.get('candles')?.coordinateToPrice(event.point.y)
+    if (!candle?.physicalContract || price == null || !Number.isFinite(price)) return
+    const done = pickPrice
+    pickPrice = undefined
+    done({ contract: candle.physicalContract, price: Number(price), at: timeKey(event.time) })
+  }
+  function drawAnnotations() {
+    if (!chart) return
+    for (const [level, series] of annotationSeries) {
+      if (annotations.includes(level)) continue
+      chart.removeSeries(series)
+      annotationSeries.delete(level)
+    }
+    for (const level of annotations) {
+      const series = annotationSeries.get(level) ?? chart.addSeries(LineSeries, {
+        color: '#e4b97b', lineStyle: LineStyle.Dashed, lineWidth: 1, title: '人工水平线',
+        lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false, autoscaleInfoProvider: () => null,
+      })
+      annotationSeries.set(level, series)
+      const candles = knownCandles()
+      const anchor = candles.findIndex(p => timeKey(p.time) === level.at && p.physicalContract === level.contract)
+      if (anchor < 0) { series.setData([]); continue }
+      let from = anchor, through = anchor
+      while (from > 0 && candles[from-1].physicalContract === level.contract) --from
+      while (through+1 < candles.length && candles[through+1].physicalContract === level.contract) ++through
+      series.setData(candles.slice(from, through+1).map(p => ({ time: p.time, value: level.price })))
+    }
+  }
+  function setAnnotations(levels: readonly ManualChartLevel[]) { annotations = levels; drawAnnotations() }
+  function startPricePick(callback?: (level: ManualChartLevel) => void) { pickPrice = callback }
+  function attachInspector(read: () => LayerDiagnostics[]) {
+    layerInspector = read
+    return () => { if (layerInspector === read) layerInspector = undefined }
+  }
+  function inspectDisplayedLayers() { return [...(layerInspector?.() ?? []), ...inspectExecutionLayers()] }
   function restoreInspectionCursor() {
     if (chart) restoreCursor(chart)
   }
@@ -443,6 +526,6 @@ export function createDetailChartSession(dependencies: {
     else sharedLayerFacts.delete(role)
   }
   function readBaseLayer(role: SharedLayerRole) { return sharedLayerFacts.get(role) }
-  const session = { zoom, scrollToLatest, setExecutions, inspectExecutionLayers, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, recordBaseLayer, readBaseLayer, dispose }
+  const session = { zoom, scrollToLatest, captureViewport, setAnnotations, startPricePick, attachInspector, inspectDisplayedLayers, setExecutions, inspectExecutionLayers, restoreInspectionCursor, acquire, setIdentity, viewport, resetWindow, indexOf, length, timeAt, mergeVolumeBars, recordBaseLayer, readBaseLayer, dispose }
   return session
 }

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import MarketNavigation from '@/components/market/MarketNavigation.vue'
+import { readWorkstationHealth } from '@/api/runtime'
+import { componentRows, healthLabel, needsAttention } from '@/utils/workstationHealth'
+import { useWorkstationRead } from '@/composables/useWorkstationRead'
 import { useWorkstationAccounts } from '@/composables/useWorkstationAccounts'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { monitorMoney, observerLabel } from '@/utils/simulationPresentation'
@@ -29,13 +31,34 @@ const source = ref<(typeof sources)[number]['id']>('all')
 const visibleRows = computed(() => rows.value.filter(row => source.value === 'all' || row.source === source.value))
 const tqCurrent = computed(() => tqRead.value === 'ready' && tqAccount.value.verified)
 const subingCurrent = computed(() => modelRead.value === 'ready' && subingAccount.value.verified)
+const { value: health, state: healthState, refresh: refreshHealth } = useWorkstationRead(readWorkstationHealth)
+const exceptions = computed(() => {
+  const list: Array<{ title: string; detail: string; to: string }> = componentRows(health.value).filter(row => needsAttention(row.status))
+    .map(row => ({ title: row.title, detail: [healthLabel(row.status), row.diagnostic].filter(Boolean).join(' · '), to: '/system#runtime' }))
+  if (healthState.value === 'error') list.push({ title: '运行健康', detail: '读取失败', to: '/system#runtime' })
+  if (tqRead.value !== 'loading' && !tqCurrent.value) list.push({ title: '快期模拟账户', detail: tqRead.value === 'error' ? '账户读取失败' : '最近快照待核验', to: '/market?tab=simulation' })
+  if (modelRead.value !== 'loading' && !subingCurrent.value) list.push({ title: '苏冰共享 Paper', detail: modelRead.value === 'error' ? '模型读取失败' : modelState[model.value?.status ?? ''] ?? '尚无可核验运行', to: '/research/subing-decision' })
+  return list
+})
+const checking = computed(() => [healthState.value, tqRead.value, modelRead.value].includes('loading'))
 </script>
 
 <template>
   <div class="operations">
-    <MarketNavigation active-tab="operations" />
     <main>
-      <h1>运行台</h1>
+      <header class="ws-heading"><h1>运行总览</h1><div class="ws-actions"><RouterLink to="/">返回看盘</RouterLink><RouterLink to="/system">查看数据与系统</RouterLink></div></header>
+      <div class="ws-metrics" aria-label="运行读回摘要">
+        <div><small>运行服务</small><strong>{{ health ? healthLabel(health.status) : healthState === 'error' ? '读取失败' : '正在读取' }}</strong></div>
+        <div><small>最近行情 Bar</small><strong>{{ formatBeijingInstant(health?.components.live_market?.last_bar_at) }}</strong></div>
+        <div><small>盘后归档成功日</small><strong>{{ health?.components.after_market?.last_successful_trading_day ?? '—' }}</strong></div>
+        <div><small>已核验模拟来源</small><strong>{{ Number(tqCurrent) + Number(subingCurrent) }} / 2</strong></div>
+      </div>
+      <section class="exceptions" aria-labelledby="exceptions-heading">
+        <header><h2 id="exceptions-heading">需关注事项</h2><button class="ws-button" type="button" :disabled="healthState === 'loading'" @click="refreshHealth">刷新运行健康</button></header>
+        <p v-if="checking" role="status">正在核对运行与账户来源…</p>
+        <p v-if="!checking && !exceptions.length">本次运行与账户读回均未报告异常。</p>
+        <ul v-if="exceptions.length"><li v-for="item in exceptions" :key="item.title"><RouterLink :to="item.to"><strong>{{ item.title }}</strong><span>{{ item.detail }}</span><span aria-hidden="true">→</span></RouterLink></li></ul>
+      </section>
       <section class="accounts" aria-label="账户总览">
         <table>
           <thead><tr><th scope="col">账户来源</th><th scope="col">运行状态</th><th scope="col">核验与估值</th><th scope="col">权益</th><th scope="col">收益</th><th scope="col">详情</th></tr></thead>
@@ -105,6 +128,12 @@ const subingCurrent = computed(() => modelRead.value === 'ready' && subingAccoun
 main { max-width: 1600px; margin: auto; padding: 24px 32px; }
 h1 { margin: 0 0 16px; font-size: 24px; }
 h2 { margin: 0; font-size: 16px; }
+.exceptions { margin: 12px 0; }
+.exceptions ul { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 6px; margin: 10px 0 0; list-style: none; }
+.exceptions li a { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-left: 2px solid #b8894f; background: var(--gy-bg-app); }
+.exceptions li span { color: var(--gy-status-warning); font-size: 12px; overflow-wrap: anywhere; }
+.exceptions li span:last-child { margin-left: auto; }
+.accounts, .activity { overflow-x: auto; }
 .accounts table { margin-top: 0; }
 section { padding: 16px; background: var(--gy-bg-panel); border: 1px solid var(--gy-border); border-radius: var(--gy-radius-md); }
 section header { display: flex; justify-content: space-between; align-items: center; }

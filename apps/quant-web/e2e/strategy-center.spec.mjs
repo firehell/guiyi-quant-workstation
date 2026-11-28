@@ -54,7 +54,7 @@ test('opens the six-strategy directory and preserves domain evidence during part
   })
 
   await page.goto('/workstation')
-  await page.getByRole('tab', { name: '策略', exact: true }).click()
+  await page.getByRole('link', { name: '策略中心', exact: true }).click()
   const directory = page.getByLabel('策略目录')
   await expect(directory.getByRole('link')).toHaveCount(6)
   await expect(directory.getByText('读取失败')).toBeVisible()

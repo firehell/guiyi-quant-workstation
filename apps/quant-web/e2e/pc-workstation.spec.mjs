@@ -80,8 +80,15 @@ async function chartProbe(page) {
         probe.restoredCursor = { time, price };
         return crosshair(price, time, series);
       };
-      const base = executions.setData.bind(executions);
-      executions.setData = points => { probe.executionPoints = points; return base(points); };
+      const projected = new Map();
+      for (const primitive of [tqExecutions, paperExecutions]) {
+        const setData = primitive.setData.bind(primitive);
+        primitive.setData = points => {
+          projected.set(primitive, points);
+          probe.executionPoints = [...projected.values()].flat();
+          return setData(points);
+        };
+      }
       const scale = chart.timeScale();
       const fit = scale.fitContent.bind(scale);
       scale.fitContent = () => { probe.fits++; return fit(); };
@@ -160,8 +167,8 @@ test('research marker diagnostics report the published run and omit mismatched f
 
 test('operations reads two independent accounts, goes directly to the held old contract and restores the watchlist', async ({ page }) => {
   const fixture = await fixtures(page)
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: '运行台' })).toBeVisible()
+  await page.goto('/workstation')
+  await expect(page.getByRole('heading', { name: '运行总览' })).toBeVisible()
   const closing = page.getByRole('row').filter({ hasText: '模型动作 · 待平仓' })
   await expect(closing).toContainText('苏冰独立 Paper 模型账本')
   await expect(closing).toContainText('JM2601')
@@ -188,6 +195,7 @@ test('operations reads two independent accounts, goes directly to the held old c
   await expect(page.getByTestId('kline-shell')).toBeVisible()
   await expect.poll(async () => Number(await page.locator('[data-kline-count]').getAttribute('data-kline-count'))).toBe(180)
   await expect(page.getByRole('checkbox', { name: '委托/成交' })).toBeChecked()
+  await page.getByRole('button', { name: '合约列表', exact: true }).click()
   const strip = page.getByRole('region', { name: '合约列表' })
   const search = strip.getByRole('searchbox')
   await strip.getByRole('button', { name: '持仓/挂单' }).click()
@@ -197,15 +205,16 @@ test('operations reads two independent accounts, goes directly to the held old c
   await expect(strip.getByRole('button', { name: /RB2601\s*螺纹钢/ })).toBeVisible()
   await strip.getByRole('button', { name: '关注 RB2601' }).click()
   await page.reload()
+  await page.getByRole('button', { name: '合约列表', exact: true }).click()
   await strip.getByRole('button', { name: '重点关注', exact: true }).click()
   await expect(strip.getByRole('button', { name: /RB2601\s*螺纹钢/ })).toBeVisible()
   await strip.getByRole('button', { name: '取消关注 RB2601' }).click()
   await expect(strip.getByText('尚未添加关注合约')).toBeVisible()
   fixture.setStale()
-  await page.getByRole('tab', { name: '运行台' }).click()
+  await page.getByRole('link', { name: '运行总览', exact: true }).click()
   await expect(page.getByText('苏冰 · 尚无 run')).toBeVisible()
   await expect(page.getByText(/核验过期或未通过/)).toBeVisible()
-  await page.getByRole('tab', { name: '行情' }).click()
+  await page.getByRole('link', { name: '我的看盘', exact: true }).click()
   await expect(page).toHaveURL(/view=subing.*contract=JM2601/)
 })
 
@@ -338,12 +347,13 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
   await expect.poll(async () => (await reading(page)).points).toEqual([])
   await page.getByRole('checkbox', { name: '委托/成交' }).check()
   await expect.poll(async () => (await reading(page)).points).toEqual(before.points)
+  await page.getByRole('button', { name: '合约列表', exact: true }).click()
   const strip = page.getByRole('region', { name: '合约列表' })
   await strip.getByRole('button', { name: /RB2601\s*螺纹钢/ }).click()
   await expect(page).toHaveURL(/contract=RB2601/)
   await expect.poll(async () => (await reading(page)).points).toEqual([])
   await expect(page.getByRole('region', { name: '只读委托与成交' }).locator('li')).toHaveCount(0)
-  await page.getByRole('tab', { name: '研究' }).click()
+  await page.getByRole('link', { name: '研究中心', exact: true }).click()
   await expect(page.getByRole('heading', { name: '牛哇盘后与固定回测' })).toBeVisible()
   await page.getByRole('combobox', { name: '周期', exact: true }).selectOption('15m')
   const referenceLink = page.getByRole('link', { name: '在行情中查看' })
@@ -357,7 +367,7 @@ test('strategy and indicator changes preserve a panned chart, requests, order co
   await expect(page).toHaveURL(pinnedRoute)
   await expect(page.getByText('该研究 Run 已无法通过当前发布入口核对，行情保留。')).toBeVisible()
   await expect(page.getByTestId('kline-shell')).toHaveAttribute('data-research-marker-count', '0')
-  await page.getByRole('tab', { name: '研究' }).click()
+  await page.getByRole('link', { name: '研究中心', exact: true }).click()
   await page.getByRole('link', { name: '苏冰独立量化回放' }).click()
   await expect(page.getByRole('button', { name: '历史回放' })).toHaveAttribute('aria-pressed', 'true')
 })

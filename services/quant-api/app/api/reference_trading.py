@@ -254,6 +254,8 @@ def newow_after_close_section(request: Request, product: str, strategy: str, fre
                                    section=section, component=component)
             if formal and result["status"] == "ready" and result["receipt"] != reference["receipt"]:
                 return {"status": "pending", "receipt": None, "result": None, "chart": None}
+            if result["status"] == "ready":
+                return {**result, "reference": {key: reference[key] for key in ("stream_id", "revision_id", "seq")}}
             return result
         except (OSError, ValueError):
             raise HTTPException(503, detail={"code": "MARKET_REFERENCE_SECTION_UNAVAILABLE"}) from None
