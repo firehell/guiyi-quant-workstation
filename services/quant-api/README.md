@@ -21,7 +21,8 @@ Canonical、Scope、通知或 Runtime mutation；当前运行事实只看 [STATU
 ## 回测中心
 
 桌面入口为 `/backtests`，研究 API 为 `/api/v1/backtests`。牛哇趋势 FU 单一
-物理合约可提交 5m 信号、1m 执行的试验请求。执行延迟参数为 0–3 分钟，
+物理合约 FU2603 可在已审阅成本数据覆盖内提交 5m 信号、1m 执行的试验。
+执行延迟参数为 0–3 分钟，
 从同 Session 首个严格后继的 1m 开盘起算。配置页列出策略接入资格，
 P3/P4 从原 Newow 试验面读取。
 
@@ -33,6 +34,8 @@ P3/P4 从原 Newow 试验面读取。
   绝对路径。执行时核验 Plus、RQAlpha 和米筐数据模块的配套版本。
 - `GUIYI_BACKTEST_PLUS_BUNDLE` 指向已下载的米筐数据根或其 `bundle` 子目录。
   本机使用 `/Volumes/扩展盘/.rqalpha-plus/bundle`。
+- `GUIYI_BACKTEST_PLUS_COST_PROFILE` 指向本地已核验的 FU2603 逐日成本文件。
+  固定版本覆盖 2025-12-22 至 2026-01-23。Run 记录数据行和原文件摘要。
 - `RQSDK_LICENSE` 由现有安全环境提供。执行器只允许米筐官方期货授权校验，
   且只把固定诊断码返回给工作台。
 - 非 Git 安装通过 `GUIYI_BACKTEST_CODE_REVISION` 指定构建提交。Git 工作区
@@ -42,5 +45,7 @@ P3/P4 从原 Newow 试验面读取。
 核对已提交结果。要再次尝试已结束的配置，在任务详情选择重跑。原输入修订
 必须可复算才能重跑已固化的 Run。
 
-原生运行要求按交易日可核验的手续费和保证金。若 Plus 仅返回无生效日期的
-合约快照，任务会报 `PLUS_POINT_IN_TIME_TRADING_PARAMETERS_UNAVAILABLE`。
+逐日成本来自 RQData `futures.get_trading_parameters`。1 月 5 日起使用新的
+开仓及平昨费率。1 月 15 日结算按下一交易日生效的 10% 一般持仓保证金计算，
+日内仍为 9%。适配器将这些参数交给 Plus 原生费用及账户模块。仅有无日期的
+bundle 费率时，入口报 `PLUS_POINT_IN_TIME_TRADING_PARAMETERS_UNAVAILABLE`。

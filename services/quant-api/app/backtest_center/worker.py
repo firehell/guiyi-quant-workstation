@@ -39,17 +39,20 @@ class Settings:
     python: Path | None
     bundle: Path | None
     revision: str | None = None
+    cost_profile: Path | None = None
 
     @classmethod
     def local(cls):
         default = Path.home() / ".local/state/guiyi/backtest-center/research.sqlite3"
         python = os.getenv("GUIYI_BACKTEST_PLUS_PYTHON")
         bundle = os.getenv("GUIYI_BACKTEST_PLUS_BUNDLE")
+        costs = os.getenv("GUIYI_BACKTEST_PLUS_COST_PROFILE")
         return cls(
             Path(os.getenv("GUIYI_BACKTEST_STORE", str(default))).expanduser(),
             Path(python).expanduser() if python else None,
             Path(bundle).expanduser() if bundle else None,
             os.getenv("GUIYI_BACKTEST_CODE_REVISION"),
+            Path(costs).expanduser() if costs else None,
         )
 
     def code_identity(self) -> dict:
@@ -78,14 +81,17 @@ class Settings:
             return None
         from .plus_inputs import BASE_FILES
 
+        paths = [(name, bundle / name) for name in (*BASE_FILES, f"h5/future/{contract}.h5")]
+        if self.cost_profile:
+            paths.append(("dated_cost_profile", self.cost_profile))
         identities = []
-        for relative in (*BASE_FILES, f"h5/future/{contract}.h5"):
+        for label, path in paths:
             try:
-                record = (bundle / relative).stat()
-                identities.append((relative, record.st_dev, record.st_ino, record.st_size,
+                record = path.stat()
+                identities.append((label, record.st_dev, record.st_ino, record.st_size,
                                    record.st_mtime_ns, record.st_ctime_ns))
             except OSError:
-                identities.append((relative, None))
+                identities.append((label, None))
         return digest(identities)
 
     def submission(self, config: dict) -> dict:
@@ -239,7 +245,8 @@ class Worker:
         with TemporaryDirectory(prefix="plus-", dir=self.store.path.parent) as temp:
             scratch = Path(temp)
             request = {"run_id": run_id, "config": run["config"], "expected": expected, "identity": identity,
-                       "execution_policy": EXECUTION_POLICY, "research_profile_id": RESEARCH_PROFILE}
+                       "execution_policy": EXECUTION_POLICY, "research_profile_id": RESEARCH_PROFILE,
+                       "cost_profile": str(self.settings.cost_profile) if self.settings.cost_profile else None}
             (scratch / "request.json").write_text(encode(request))
             process = subprocess.Popen(
                 [str(python), "-I", "-B", str(_ENTRY), str(scratch), str(bundle.resolve())],

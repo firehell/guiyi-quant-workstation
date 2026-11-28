@@ -2473,7 +2473,8 @@ pnpm -C apps/quant-web exec playwright test -c playwright.config.mjs e2e/backtes
 
 现场验收通过 [回测中心配置](services/quant-api/README.md#回测中心) 启用独立
 研究目录和本机原生 bundle。提交趋势 FU2603 的 5m / 1m 配置时，2025-12-22
-至 2026-01-05 用于预热，2026-01-06 至 2026-01-23 用于评价。检查 Run 的
+至 2026-01-05 用于预热，2026-01-06 至 2026-01-23 用于评价。
+将 `GUIYI_BACKTEST_PLUS_COST_PROFILE` 指向已核验的逐日成本文件。检查 Run 的
 输入摘要、原生授权、订单和成交回调、建模成交时点、逐笔费用及日结权益。
 引擎准入和经济对账以原生运行记录为准。测试中的隔离结果用于验证持久化、
 API、图表和实验边界。

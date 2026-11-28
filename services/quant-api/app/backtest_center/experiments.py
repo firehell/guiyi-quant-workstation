@@ -27,6 +27,8 @@ ENVIRONMENT_FIELDS = (
     "execution_policy",
     "roll_policy_version",
     "data_source",
+    "cost_profile_id",
+    "cost_rows_sha256",
 )
 AXIS_FIELDS = {
     "parameters": {"parameters"},

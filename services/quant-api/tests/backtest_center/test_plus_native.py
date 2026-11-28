@@ -194,10 +194,10 @@ def test_account_binary_tolerance_preserves_exact_fee_and_rejects_real_discrepan
 
 
 
-def test_pinned_offline_future_info_does_not_qualify_historical_fee_basis(monkeypatch):
+def test_pinned_offline_future_info_requires_a_verified_dated_profile(monkeypatch):
     monkeypatch.setenv("RQSDK_LICENSE", "placeholder-not-a-license")
     monkeypatch.setattr(native_plus, "preflight", lambda *_: SimpleNamespace(
-        compatibility={"rqalpha-mod-ricequant-data": "2.6.3"},
+        days={JAN5: None},
     ))
     config = {
         "strategy_id": "newow_trend", "formula_version": NEWOW_TREND_D1_PAGE_V2.trend_band_formula,
@@ -209,3 +209,17 @@ def test_pinned_offline_future_info_does_not_qualify_historical_fee_basis(monkey
     }
     with pytest.raises(BacktestError, match="PLUS_POINT_IN_TIME_TRADING_PARAMETERS_UNAVAILABLE"):
         native_plus.execute(config, "run", Path("unused"), None, lambda *_: pytest.fail("Unexpected admission"))
+
+
+def test_native_ambient_decimal_precision_does_not_affect_settlement():
+    from decimal import localcontext
+
+    from app.backtest_center.plus_reconcile import money
+
+    run = NativeRun.__new__(NativeRun)
+    with localcontext() as vendor_context:
+        vendor_context.prec = 10
+        amount = DEC("100000.00000000")
+        assert money(amount) == amount
+        assert run.checked(lambda: DEC(1000000000) + DEC("0.00012345"))() == DEC("1000000000.00012345")
+        assert vendor_context.prec == 10

@@ -9,9 +9,9 @@ from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
 from app.strategy_center.catalog import CATALOG
 
 from .errors import BacktestError as BacktestError
+from .plus_costs import RESEARCH_PROFILE
 
 TREND = NEWOW_TREND_D1_PAGE_V2
-RESEARCH_PROFILE = "newow_trend_fu_5m_rqalpha_plus_trial_v1"
 EXECUTION_POLICY = "single_physical_long_next_same_session_1m_v1"
 DELAY_PARAMETER = "execution_delay_minutes"
 

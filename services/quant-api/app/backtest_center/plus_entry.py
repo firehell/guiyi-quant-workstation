@@ -52,7 +52,9 @@ def main(scratch: Path, bundle: Path) -> None:
             raise BacktestError("BACKTEST_ENGINE_CODE_IDENTITY_MISMATCH")
         from app.backtest_center.native_plus import execute
 
-        result = execute(request["config"], request["run_id"], bundle, request["expected"], admit)
+        profile_path = Path(request["cost_profile"]) if request.get("cost_profile") else None
+        result = execute(request["config"], request["run_id"], bundle, request["expected"], admit,
+                         cost_profile=profile_path)
         if snapshot is None:
             raise BacktestError("PLUS_ADMISSION_NOT_CONFIRMED")
         if code_digest() != request["identity"]["code_sha256"]:

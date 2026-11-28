@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from decimal import Decimal, ROUND_HALF_EVEN
+from decimal import Context, Decimal, ROUND_HALF_EVEN, localcontext
 from math import isfinite
 
 from .errors import BacktestError
@@ -11,6 +11,7 @@ from .plus_inputs import Day, Minute, finite
 ZERO = Decimal(0)
 QUANTUM = Decimal("0.00000001")
 ACCOUNT_BINARY_TOLERANCE = Decimal("0.00001")
+MONEY_CONTEXT = Context(prec=38, rounding=ROUND_HALF_EVEN)
 MONEY_POLICY = "cny_8_half_even_plus_account_binary_tolerance_v1"
 
 
@@ -21,7 +22,8 @@ def text(value: Decimal) -> str:
 def money(value: Decimal) -> Decimal:
     if not value.is_finite() or abs(value) >= Decimal("1e20"):
         raise BacktestError("PLUS_AMOUNT_OUT_OF_RANGE")
-    return value.quantize(QUANTUM, rounding=ROUND_HALF_EVEN)
+    with localcontext(MONEY_CONTEXT):
+        return value.quantize(QUANTUM)
 
 
 def raw_money(expected: Decimal, actual: float, *, account: bool = False) -> dict:

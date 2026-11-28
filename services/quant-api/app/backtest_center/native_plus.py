@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from contextlib import contextmanager
 from datetime import datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, localcontext
 from math import isfinite
 import os
 from pathlib import Path
@@ -24,10 +24,13 @@ from guiyi_quant.newow.product_contracts import ActionKind, ProductBar, ProductF
 from guiyi_quant.newow.profile import NEWOW_TREND_D1_PAGE_V2
 from guiyi_quant.reference_trading.adapters import strategy_input_fingerprint
 
+from .codec import digest
 from .errors import BacktestError
+from .plus_costs import DatedCostDataSource, DatedCosts
 from .plus_inputs import DAY_SESSIONS, MINUTE, InputSlice, Minute, NativeConfig, finite, local, preflight
 from .plus_reconcile import (
     ACCOUNT_BINARY_TOLERANCE,
+    MONEY_CONTEXT,
     MONEY_POLICY,
     ZERO,
     AccountWitness,
@@ -195,14 +198,19 @@ def _config(native: NativeConfig, packet: InputSlice):
     return cfg
 
 
+def _input_identity(packet: InputSlice, costs: DatedCosts) -> str:
+    return digest({"market_slice": packet.slice_hash, "cost_rows": costs.rows_sha256})
+
+
 class NativeRun:
     def __init__(self, packet: InputSlice, config: NativeConfig, run_id: str, admit: Callable[[dict], None],
-                 license_channel: LicenseChannel):
+                 license_channel: LicenseChannel, costs: DatedCosts):
         self.packet = packet
         self.config = config
         self.run_id = run_id
         self.admit = admit
         self.license_channel = license_channel
+        self.costs = costs
         self.contract = config.contract
         self.state = seed_decision_state()
         self.rows: list[Minute] = []
@@ -228,7 +236,9 @@ class NativeRun:
     def checked(self, callback):
         def invoke(*args):
             try:
-                return callback(*args)
+                # Installed Plus imports stock APIs which set the ambient precision to 10.
+                with localcontext(MONEY_CONTEXT):
+                    return callback(*args)
             except BacktestError as exc:
                 self.error = exc.code
                 raise
@@ -275,6 +285,10 @@ class NativeRun:
         if any(price % self.tick for row in self.packet.minutes.values()
                for price in (row.open, row.high, row.low, row.close)):
             raise BacktestError("PLUS_INPUT_PRICE_OFF_TICK_GRID")
+        self.instrument = ins
+        self.cost_data_source = DatedCostDataSource(env.data_source, self.costs)
+        env.set_data_source(self.cost_data_source)
+        env.data_proxy._data_source = self.cost_data_source
         self.rates = {
             day: parse_rates(env.data_proxy.get_futures_trading_parameters(self.contract, datetime.combine(day, datetime.min.time())))
             for day in self.packet.days
@@ -293,6 +307,9 @@ class NativeRun:
         env.event_bus.add_listener(EVENT.POST_SETTLEMENT, self.checked(self.post_settlement))
         api.subscribe(self.contract)
         snapshot = self.packet.snapshot()
+        snapshot.update(self.costs.snapshot())
+        snapshot["data_files"]["dated_cost_profile.json"] = self.costs.artifact_sha256
+        snapshot["input_sha256"] = _input_identity(self.packet, self.costs)
         snapshot.update({
             "evaluation_trading_days": self.evaluation_days,
             "physical_contract": self.contract, "tick_size": text(self.tick), "contract_multiplier": self.multiplier,
@@ -489,6 +506,7 @@ class NativeRun:
             raise BacktestError("PLUS_SETTLEMENT_WITH_LIVE_ORDER")
         self.pre_settlement_account, _ = self.witness.account(self.account, day, facts.last_close,
                                                               self.rates[day]["margin"], settled=False)
+        self.cost_data_source.begin_settlement(day, self.instrument)
 
     def post_settlement(self, _) -> None:
         day = self.env.trading_dt.date()
@@ -497,9 +515,10 @@ class NativeRun:
         if (clock.date() != day or clock.time() < time(15)
                 or self.pre_settlement_account is None):
             raise BacktestError("PLUS_NATIVE_SETTLEMENT_CLOCK_MISMATCH")
-        raw, equity = self.witness.account(self.account, day, facts.settlement, self.rates[day]["margin"], settled=True)
+        settlement_margin = self.costs.settlement_long_margin(day)
+        raw, equity = self.witness.account(self.account, day, facts.settlement, settlement_margin, settled=True)
         self.settlements.append({"at": clock.isoformat(), "trading_day": day.isoformat(),
-                                 "settlement_price": text(facts.settlement),
+                                 "settlement_price": text(facts.settlement), "settlement_long_margin": text(settlement_margin),
                                  "before": self.pre_settlement_account, "after": raw})
         self.pre_settlement_account = None
         if day >= self.config.start:
@@ -562,23 +581,15 @@ class NativeRun:
                 "native_analysis_scope": "configured_warmup_and_evaluation", "availability_policy": AVAILABILITY_POLICY,
                 "money_policy": MONEY_POLICY, "account_binary_tolerance_cny": text(ACCOUNT_BINARY_TOLERANCE),
                 "input_minute_count": len(self.packet.minutes),
+                "dated_cost_profile": self.costs.snapshot(),
                 "execution_delay_minutes": self.config.execution_delay_minutes,
             },
         }
         return output
 
 
-def _require_point_in_time_costs(compatibility: dict[str, str]) -> None:
-    # The pinned proprietary BundleDataSource falls through to FutureInfoStore
-    # without RQData connectivity. That source returns undated contract terms,
-    # even with the timeseries flag set. It does not prove historical fees or
-    # margin. No licensed startup is needed to reject this known local path.
-    if compatibility["rqalpha-mod-ricequant-data"] == "2.6.3":
-        raise BacktestError("PLUS_POINT_IN_TIME_TRADING_PARAMETERS_UNAVAILABLE")
-
-
 def execute(config: dict, run_id: str, bundle: Path, expected_snapshot: dict | None,
-            admit: Callable[[dict], None]) -> dict:
+            admit: Callable[[dict], None], *, cost_profile: Path | None = None) -> dict:
     """Authorize, freeze local inputs, and execute through the pinned Plus engine."""
     if (
         config["formula_version"] != NEWOW_TREND_D1_PAGE_V2.trend_band_formula
@@ -587,14 +598,15 @@ def execute(config: dict, run_id: str, bundle: Path, expected_snapshot: dict | N
         raise BacktestError("STRATEGY_FORMULA_OR_PROFILE_UNVERIFIED")
     native = NativeConfig.from_effective(config)
     packet = preflight(native, bundle)
+    costs = DatedCosts.load(cost_profile, native.contract, packet.days)
     if expected_snapshot is not None and (
         expected_snapshot.get("data_revision") != packet.dataset_revision
-        or expected_snapshot.get("input_sha256") != packet.slice_hash
+        or expected_snapshot.get("input_sha256") != _input_identity(packet, costs)
+        or expected_snapshot.get("cost_artifact_sha256") != costs.artifact_sha256
     ):
         raise BacktestError("PLUS_ORIGINAL_INPUT_UNREPRODUCIBLE")
     if not os.environ.get("RQSDK_LICENSE"):
         raise BacktestError("PLUS_LICENSE_NOT_CONFIGURED")
-    _require_point_in_time_costs(packet.compatibility)
 
     # Importing Plus binds the installed Plus config and modules. No public user
     # config or alternate engine/backend is loaded.
@@ -605,7 +617,7 @@ def execute(config: dict, run_id: str, bundle: Path, expected_snapshot: dict | N
     if rqalpha_plus.__version__ != packet.compatibility["rqalpha-plus"]:
         raise BacktestError("PLUS_ENGINE_VERSION_UNVERIFIED")
     channel = LicenseChannel()
-    run = NativeRun(packet, native, run_id, admit, channel)
+    run = NativeRun(packet, native, run_id, admit, channel, costs)
 
     cfg = _config(native, packet)
     clear_all_cached_functions()
@@ -627,4 +639,6 @@ def execute(config: dict, run_id: str, bundle: Path, expected_snapshot: dict | N
             raise BacktestError("PLUS_LICENSE_OR_NATIVE_ADMISSION_UNVERIFIED") from None
         raise BacktestError("PLUS_NATIVE_EXECUTION_FAILED") from None
     packet.verify_unchanged()
-    return run.result(result)
+    costs.verify_unchanged()
+    with localcontext(MONEY_CONTEXT):
+        return run.result(result)

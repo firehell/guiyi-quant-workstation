@@ -11,8 +11,8 @@ import re
 from zoneinfo import ZoneInfo
 
 from .errors import BacktestError
+from .plus_costs import RESEARCH_PROFILE
 
-RESEARCH_PROFILE = "newow_trend_fu_5m_rqalpha_plus_trial_v1"
 SHANGHAI = ZoneInfo("Asia/Shanghai")
 MINUTE = timedelta(minutes=1)
 ENGINE_DEPENDENCIES = {"rqalpha-plus": "4.5.0", "rqalpha": "6.3.0", "rqalpha-mod-ricequant-data": "2.6.3"}
