@@ -143,17 +143,17 @@ test('submits fixed OOS windows and reads the selected fold and member Run', asy
     { template_id: 'base', name: '原始成本', config },
     { template_id: 'delayed', name: '延迟两分钟', config: { ...config, parameters: { execution_delay_minutes: '2' } } },
   ]
-  const experiment = { experiment_id: 'oos-test', kind: 'oos', status: 'SUCCEEDED', created_at: '2026-11-28T11:00:00+08:00' }
+  const experiment = { experiment_id: 'a'.repeat(32), kind: 'oos', status: 'SUCCEEDED', created_at: '2026-11-28T11:00:00+08:00' }
   let submitted
   await page.route('**/api/v1/backtests/**', async route => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1/backtests', '')
     if (path === '/templates') return route.fulfill({ json: { items: definition } })
     if (path === '/experiments' && route.request().method() === 'POST') {
       submitted = route.request().postDataJSON()
-      return route.fulfill({ json: experiment })
+      return route.fulfill({ status: 202, json: experiment })
     }
     if (path === '/experiments') return route.fulfill({ json: { items: submitted ? [experiment] : [], total: Number(Boolean(submitted)) } })
-    if (path === '/experiments/oos-test') return route.fulfill({ json: {
+    if (path === `/experiments/${experiment.experiment_id}`) return route.fulfill({ json: {
       ...experiment, definition: submitted,
       members: [{
         member_id: 'member-test', run_id: 'oos-run', phase: 'test', fold: 1,
@@ -165,7 +165,7 @@ test('submits fixed OOS windows and reads the selected fold and member Run', asy
         status: 'SUCCEEDED', boundary_policy: 'settlement_mark_then_flat_start_v1', test_initial_position: 'FLAT', test_initial_equity: '100000',
       }],
     } })
-    if (path === '/experiments/oos-test/evidence') return route.fulfill({ json: {
+    if (path === `/experiments/${experiment.experiment_id}/evidence`) return route.fulfill({ json: {
       ...experiment, metrics: { net_return: '0.029', max_drawdown: '0.004' }, run_ids: ['oos-run'], missing_folds: [],
     } })
     if (path === '/runs/oos-run/events') return route.fulfill({ json: { run_id: 'oos-run', items: [] } })
@@ -192,19 +192,24 @@ test('submits fixed OOS windows and reads the selected fold and member Run', asy
 
 test('compares execution delays using two templates with the same formula', async ({ page }) => {
   const configs = [config, { ...config, parameters: { execution_delay_minutes: '2' } }]
-  const experiment = { experiment_id: 'delay-test', kind: 'comparison', status: 'SUCCEEDED', created_at: '2026-11-28T11:00:00+08:00' }
+  const experiment = { experiment_id: 'b'.repeat(32), kind: 'comparison', status: 'SUCCEEDED', created_at: '2026-11-28T11:00:00+08:00' }
   let submitted
+  let lostKey
   await page.route('**/api/v1/backtests/**', async route => {
     const path = new URL(route.request().url()).pathname.replace('/api/v1/backtests', '')
     if (path === '/templates') return route.fulfill({ json: {
       items: configs.map((row, index) => ({ template_id: `delay-${index}`, name: index ? '延迟模板' : '基准模板', config: row })),
     } })
     if (path === '/experiments' && route.request().method() === 'POST') {
+      if (!lostKey) {
+        lostKey = route.request().postDataJSON().request_key
+        return route.abort('failed')
+      }
       submitted = route.request().postDataJSON()
-      return route.fulfill({ json: experiment })
+      return route.fulfill({ status: 202, json: experiment })
     }
     if (path === '/experiments') return route.fulfill({ json: { items: submitted ? [experiment] : [], total: Number(Boolean(submitted)) } })
-    if (path === '/experiments/delay-test') return route.fulfill({ json: {
+    if (path === `/experiments/${experiment.experiment_id}`) return route.fulfill({ json: {
       ...experiment, definition: submitted,
       comparison: { comparable: true, metric: 'net_return', ranked_member_ids: ['delay-1', 'delay-0'] },
       members: configs.map((row, index) => ({
@@ -214,15 +219,22 @@ test('compares execution delays using two templates with the same formula', asyn
     return route.fulfill({ status: 404, json: { detail: { code: 'NOT_FOUND' } } })
   })
   await page.goto('/backtests?view=experiments')
-  await page.getByLabel('执行参数', { exact: true }).check()
-  await page.getByLabel('基准模板').check()
-  await page.getByLabel('延迟模板').check()
-  await page.getByRole('button', { name: '冻结定义并提交' }).click()
+  async function submit() {
+    await page.getByLabel('执行参数', { exact: true }).check()
+    await page.getByLabel('基准模板').check()
+    await page.getByLabel('延迟模板').check()
+    await page.getByRole('button', { name: '冻结定义并提交' }).click()
+  }
+  await submit()
+  await expect(page.getByText('实验提交未确认。再次提交相同定义将沿用原请求。')).toBeVisible()
+  await page.reload()
+  await submit()
   await expect(page.getByText('同口径比较', { exact: true })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: 'delay-0' }).getByRole('cell', { name: '0 分钟' })).toBeVisible()
   await expect(page.getByRole('row').filter({ hasText: 'delay-1' }).getByRole('cell', { name: '2 分钟' })).toBeVisible()
   expect(submitted).toMatchObject({ kind: 'comparison', axes: ['parameters'], configs })
   expect(submitted.folds).toBeUndefined()
+  expect(submitted.request_key).toBe(lostKey)
 })
 
 test('shows a failed Plus preflight without a report or admission snapshot', async ({ page }) => {

@@ -307,8 +307,16 @@ export const readReport = (id: string, signal: AbortSignal) =>
 export const readExperiments = (signal: AbortSignal) =>
   request.get<unknown, Rows<Experiment>>(`${root}/experiments`, { signal })
 
-export const submitExperiment = (definition: ExperimentConfig) =>
-  request.post<unknown, Experiment>(`${root}/experiments`, definition)
+export async function submitExperiment(definition: ExperimentConfig) {
+  const response = await request.post<unknown, AxiosResponse<Experiment>>(
+    `${root}/experiments`, definition, { preserveResponse: true } as ConditionalRequestConfig,
+  )
+  const id = response.data?.experiment_id
+  if (response.status !== 202 || typeof id !== 'string' || !/^[a-f0-9]{32}$/.test(id)) {
+    throw new Error('BACKTEST_SUBMISSION_UNCONFIRMED')
+  }
+  return response.data
+}
 
 export const readExperiment = (id: string, signal: AbortSignal) =>
   request.get<unknown, Experiment>(experimentPath(id), { signal })

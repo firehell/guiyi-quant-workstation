@@ -9,7 +9,7 @@ function canonicalBody(body: unknown) {
 }
 
 /** Store a digest of the submitted body and the key until the server acknowledges it. */
-export async function pendingRunRequest(action: 'submit' | 'rerun', body: unknown) {
+export async function pendingRunRequest(action: 'submit' | 'rerun' | 'experiment', body: unknown) {
   const encoded = new TextEncoder().encode(canonicalBody(body))
   const digest = await crypto.subtle.digest('SHA-256', encoded)
   const hex = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('')

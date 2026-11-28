@@ -70,6 +70,9 @@ def publish(
     include_future=False,
     trades=(),
     terminal_position=None,
+    effective_days=None,
+    snapshot_days=True,
+    native_settlement_repr=None,
 ):
     run = store.claim()
     assert run is not None
@@ -79,7 +82,7 @@ def publish(
         return run
     start, end = date.fromisoformat(config["start"]), date.fromisoformat(config["end"])
     opening = opening or f"{start - timedelta(days=1)}T21:00:00+08:00"
-    days = [start.isoformat(), end.isoformat()]
+    days = effective_days or [start.isoformat(), end.isoformat()]
     store.admit(
         run_id,
         {
@@ -91,11 +94,17 @@ def publish(
             "data_files": {config["contract"] + ".h5": physical_digest},
             "engine": "test-engine",
             "qualification": "TRIAL",
+            **({"evaluation_trading_days": days} if snapshot_days else {}),
         },
     )
     valuations = [
         {"at": f"{day}T{valuation_hour}:00:00+08:00", "equity": equity, "trading_day": day}
         for day, equity in zip(days, ("100", last_equity), strict=True)
+    ]
+    settlements = [
+        {"at": row["at"], "trading_day": row["trading_day"],
+         "after": {"native_equity": {"repr": native_settlement_repr or row["equity"]}}}
+        for row in valuations
     ]
     if include_future:
         future = end + timedelta(days=1)
@@ -110,6 +119,7 @@ def publish(
                 "evaluation_initial_equity": "100",
                 "first_evaluation_session_open": opening,
                 "terminal_position": terminal_position,
+                "native_settlements": settlements,
             },
             "equity": valuations,
             "trades": list(trades),
@@ -323,3 +333,54 @@ def test_oos_retains_test_run_when_minute_file_revision_changed(tmp_path):
     assert test["run_id"] in evidence["run_ids"]
     assert evidence["curve"] == []
     assert evidence["folds"][0]["diagnostic"] == "EXPERIMENT_TRAIN_TEST_INPUT_DRIFT"
+
+
+@pytest.mark.parametrize("bad_terms", [{"valuation_hour": "09"}, {"snapshot_days": False},
+                                       {"native_settlement_repr": "1000"}])
+def test_b4_requires_a_frozen_native_settlement_match(tmp_path, bad_terms):
+    store = RunStore(tmp_path / "results.sqlite3")
+    chosen = create_experiment(store, request())
+    advance_experiments(store)
+    invalid = publish(store, "105", **bad_terms)["run_id"]
+    publish(store, "104")
+    advance_experiments(store)
+    result = read_experiment(store, chosen["experiment_id"])
+    assert result["comparison"]["ranked_member_ids"] == []
+    assert result["members"][0]["status"] == "INSUFFICIENT"
+    assert result["evidence"]["status"] == "INSUFFICIENT"
+    assert invalid in result["evidence"]["run_ids"]
+
+
+def test_comparison_rejects_different_effective_days_within_the_same_requested_window(tmp_path):
+    store = RunStore(tmp_path / "results.sqlite3")
+    base = {**BASE, "end": "2026-02-05"}
+    chosen = create_experiment(store, request(configs=[base, {**base, "commission_multiplier": "2"}]))
+    advance_experiments(store)
+    publish(store, "106", effective_days=["2026-02-02", "2026-02-05"])
+    publish(store, "104", effective_days=["2026-02-03", "2026-02-05"])
+    advance_experiments(store)
+    result = read_experiment(store, chosen["experiment_id"])
+    assert result["comparison"]["condition_differences"] == ["evaluation_trading_days"]
+    assert result["evidence"]["comparison"]["ranked_member_ids"] == []
+
+
+def test_legacy_comparison_gets_strict_evidence_without_rewriting_its_record(tmp_path):
+    import json
+
+    from app.backtest_center.codec import encode
+
+    store = RunStore(tmp_path / "results.sqlite3")
+    chosen = create_experiment(store, request())
+    advance_experiments(store)
+    publish(store, "108")
+    publish(store, "104")
+    advance_experiments(store)
+    current = read_experiment(store, chosen["experiment_id"])
+    legacy = {**current, "evidence": None}
+    path = store.path.with_name(store.path.name + ".experiments.sqlite3")
+    with sqlite3.connect(path) as db:
+        db.execute("UPDATE experiments SET state=?", (encode(legacy),))
+    result = read_experiment(store, chosen["experiment_id"])
+    assert result["evidence"] == current["evidence"]
+    with sqlite3.connect(path) as db:
+        assert json.loads(db.execute("SELECT state FROM experiments").fetchone()[0])["evidence"] is None

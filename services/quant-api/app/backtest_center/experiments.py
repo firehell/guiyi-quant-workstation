@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.backtest_center.codec import encode
 from app.backtest_center.contracts import BacktestError, RunConfig
+from app.backtest_center.plus_reconcile import ACCOUNT_BINARY_TOLERANCE
 
 Axis = Literal["parameters", "strategy", "product", "frequency", "commission", "slippage"]
 Metric = Literal["net_return", "max_drawdown"]
@@ -237,7 +238,17 @@ def read_experiment(store, experiment_id: str) -> dict | None:
         return None
     with closing(_connect(path, readonly=True)) as db:
         row = db.execute("SELECT state FROM experiments WHERE experiment_id = ?", (experiment_id,)).fetchone()
-    return json.loads(row["state"]) if row else None
+    if not row:
+        return None
+    state = json.loads(row["state"])
+    if state["kind"] == "comparison" and state["comparison"] and state["evidence"] is None:
+        # Legacy comparisons have only their published member Runs. Apply the
+        # settlement and coverage checks before exposing comparison evidence.
+        for member in state["members"]:
+            if member["status"] == "SUCCEEDED":
+                _observe(store, member)
+        _compare(state)
+    return state
 
 
 def list_experiments(store, *, kind: str | None, limit: int, offset: int) -> dict:
@@ -270,11 +281,13 @@ def _curve(run: dict, result: dict) -> list[dict]:
     expected = report["evaluation_trading_days"]
     snapshot_days = run["snapshot"].get("evaluation_trading_days")
     rows = result["equity"]
+    evaluation_days = set(expected)
+    settlements = [row for row in report["native_settlements"] if row["trading_day"] in evaluation_days]
     if (
         not expected
-        or snapshot_days is not None
-        and snapshot_days != expected
+        or snapshot_days != expected
         or [row["trading_day"] for row in rows] != expected
+        or [row["trading_day"] for row in settlements] != expected
     ):
         raise ValueError("EVALUATION_COVERAGE_UNPROVEN")
     curve = []
@@ -289,19 +302,25 @@ def _curve(run: dict, result: dict) -> list[dict]:
     opening = datetime.fromisoformat(report["first_evaluation_session_open"])
     if opening.utcoffset() is None:
         raise ValueError("EVALUATION_SESSION_CLOCK_INVALID")
-    for row in rows:
+    for row, settlement in zip(rows, settlements, strict=True):
         day = date.fromisoformat(row["trading_day"])
         valuation = datetime.fromisoformat(row["at"])
+        native_at = datetime.fromisoformat(settlement["at"])
         if (
             not start <= day <= end
             or previous_day is not None
             and day <= previous_day
             or valuation.utcoffset() is None
             or valuation.astimezone(SHANGHAI).date() != day
+            or valuation.astimezone(SHANGHAI).time() < time(15)
             or valuation <= opening
+            or native_at != valuation
         ):
             raise ValueError("EVALUATION_VALUATION_OUTSIDE_WINDOW")
         equity = _decimal(row["equity"])
+        native_equity = _decimal(settlement["after"]["native_equity"]["repr"])
+        if abs(equity - native_equity) > ACCOUNT_BINARY_TOLERANCE:
+            raise ValueError("EVALUATION_SETTLEMENT_EQUITY_MISMATCH")
         curve.append(
             {"trading_day": day.isoformat(), "valuation_at": valuation.isoformat(), "wealth": equity / initial}
         )
@@ -399,6 +418,8 @@ def _differences(members: list[dict], axes: list[Axis]) -> list[str]:
         conflicts.append("input_sha256")
     if any(len(values) != 1 for values in versions.values()):
         conflicts.append("physical_contract_data")
+    if len({tuple(member["snapshot"]["evaluation_trading_days"]) for member in successful}) > 1:
+        conflicts.append("evaluation_trading_days")
     return conflicts
 
 
@@ -446,6 +467,17 @@ def _select(state: dict):
         )
 
 
+def _comparison_evidence(state: dict) -> dict:
+    return {
+        "experiment_id": state["experiment_id"],
+        "kind": "comparison",
+        "status": state["status"],
+        "scope": "historical_research",
+        "comparison": state["comparison"],
+        "run_ids": [member["run_id"] for member in state["members"] if member["run_id"]],
+    }
+
+
 def _compare(state):
     members, definition = state["members"], state["definition"]
     if any(member["status"] not in TERMINAL for member in members):
@@ -461,6 +493,7 @@ def _compare(state):
         "failed_members": len(members) - len(successful),
     }
     state["status"] = "SUCCEEDED" if comparable else "INSUFFICIENT"
+    state["evidence"] = _comparison_evidence(state)
 
 
 def _validation(store, state):

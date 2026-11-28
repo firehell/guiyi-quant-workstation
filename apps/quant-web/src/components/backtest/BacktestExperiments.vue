@@ -8,6 +8,7 @@ import {
 } from '@/api/backtestCenter'
 import { formatBeijingInstant } from '@/utils/marketDisplay'
 import { displayValue, metricLabels, metricValue, statusLabel } from './backtestDisplay'
+import { pendingRunRequest } from './backtestSubmission'
 
 const props = defineProps<{ validation: boolean }>()
 const route = useRoute()
@@ -29,7 +30,6 @@ const listError = ref('')
 const formError = ref('')
 const evidenceError = ref('')
 const evidence = shallowRef<EvidenceFields>()
-let latestSubmit: { body: string; key: string } | undefined
 const axisOptions: Array<{ id: ExperimentAxis; label: string }> = [
   { id: 'parameters', label: '执行参数' }, { id: 'strategy', label: '策略' }, { id: 'product', label: '品种与合约' },
   { id: 'frequency', label: '信号周期' }, { id: 'commission', label: '手续费' }, { id: 'slippage', label: '滑点' },
@@ -131,12 +131,12 @@ async function submit() {
     formError.value = '核对训练与测试的先后顺序、折间测试区间与 48 个成员 Run 的上限。'
     return
   }
-  const body = JSON.stringify(definition)
-  if (latestSubmit?.body !== body) latestSubmit = { body, key: crypto.randomUUID() }
   pending.value = true
   try {
-    const result = await submitExperiment({ ...definition, request_key: latestSubmit.key })
-    latestSubmit = undefined
+    const submission = await pendingRunRequest('experiment', definition)
+    if (alive.signal.aborted) return
+    const result = await submitExperiment({ ...definition, request_key: submission.key })
+    submission.accepted()
     if (!alive.signal.aborted) {
       await router.push({ name: 'backtests', query: { view: props.validation ? 'validation' : 'experiments', experiment: result.experiment_id } })
       void refreshList()
@@ -224,7 +224,7 @@ function json(value: unknown) {
     <details v-if="current.comparison" class="bt-evidence"><summary>比较条件与失败成员</summary><pre>{{ json(current.comparison) }}</pre></details>
     <div v-if="current.members?.length" class="bt-table-scroll">
       <table class="bt-table">
-        <thead><tr><th>成员 / Run</th><th>阶段</th><th>合约 / 周期</th><th>执行延迟</th><th>评价区间</th><th>状态</th><th>净累计收益</th><th>最大回撤</th><th>交易数</th></tr></thead>
+        <thead><tr><th>成员 / Run</th><th>阶段</th><th>合约 / 周期</th><th>执行延迟</th><th>手续费倍率 / 滑点</th><th>评价区间</th><th>状态</th><th>净累计收益</th><th>最大回撤</th><th>交易数</th></tr></thead>
         <tbody><tr v-for="member in current.members" :key="member.member_id">
           <td>
             <RouterLink v-if="member.run_id" :to="{ name: 'backtests', params: { runId: member.run_id } }">{{ member.member_id }}</RouterLink>
@@ -233,6 +233,7 @@ function json(value: unknown) {
           <td>{{ statusLabel(member.phase) }} <small v-if="member.fold != null">折 {{ member.fold }}</small></td>
           <td>{{ member.research_config.contract }} / {{ member.research_config.signal_frequency }}</td>
           <td>{{ member.research_config.parameters?.execution_delay_minutes ?? 0 }} 分钟</td>
+          <td>{{ member.research_config.commission_multiplier ?? '—' }} / {{ member.research_config.slippage_ticks ?? '—' }} 跳</td>
           <td>{{ member.research_config.start }} 至 {{ member.research_config.end }}</td>
           <td>{{ statusLabel(member.status) }} <small v-if="member.diagnostic">{{ member.diagnostic }}</small></td>
           <td>{{ metricValue('net_return', member.metrics?.net_return) }}</td>
@@ -255,11 +256,11 @@ function json(value: unknown) {
     <details v-if="current.definition" class="bt-evidence"><summary>冻结的比较条件、训练窗口和选择规则</summary><pre>{{ json(current.definition) }}</pre></details>
     <p v-if="evidenceError" class="bt-note" role="status">{{ evidenceError }}</p>
     <template v-if="evidence">
-      <h3>样本外证据 · {{ statusLabel(displayValue(evidence.status)) }}</h3>
+      <h3>{{ props.validation ? '样本外证据' : '对比证据' }} · {{ statusLabel(displayValue(evidence.status)) }}</h3>
       <dl class="bt-metrics" v-if="evidence.metrics">
         <div v-for="(value, key) in values(evidence.metrics)" :key="key"><dt>{{ metricLabels[key] ?? key }}</dt><dd>{{ metricValue(key, value) }}</dd></div>
       </dl>
-      <details class="bt-evidence"><summary>证据标识、成员、缺失折与合并口径</summary><pre>{{ json(evidence) }}</pre></details>
+      <details class="bt-evidence"><summary>{{ props.validation ? '证据标识、成员、缺失折与合并口径' : '证据标识与成员 Run' }}</summary><pre>{{ json(evidence) }}</pre></details>
     </template>
   </section>
 </template>

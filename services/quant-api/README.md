@@ -46,6 +46,8 @@ P3/P4 从原 Newow 试验面读取。
 必须可复算才能重跑已固化的 Run。
 任务明细从 `/api/v1/backtests/runs/{run_id}/events` 读取阶段记录，失败任务仍可查阅。
 逐笔图窗使用同一 Run 归档数据与原生成交身份。无法核验图窗时，保留已归档的交易明细。
+实验、OOS 和 Walk-forward 通过 `/api/v1/backtests/experiments/{experiment_id}/evidence`
+读回成员 Run 与证据。评价日需匹配冻结的日期、原生结算时钟和结算权益。
 
 逐日成本来自 RQData `futures.get_trading_parameters`。1 月 5 日起使用新的
 开仓及平昨费率。1 月 15 日结算按下一交易日生效的 10% 一般持仓保证金计算，
