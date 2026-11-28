@@ -230,6 +230,13 @@ manage/trade实现有各自执行限制，不能由observe运行推导交易开�
 `app.simnow_portfolio_market` 与既有MDS/Calendar/Session入口，原生盘口不写Historical Canonical。
 当前启用模式、exact版本和自然验收以 `STATUS.md` 为准；合同见 [SIMNOW_EXECUTION](SIMNOW_EXECUTION.md#全品种持续宿主simnow_continuous_v1)。
 
+## 模拟交易中心
+
+`app.simulation_center` 从专用 PostgreSQL 读取柜台证据。独立 `services/newow-vnpy/simulation_observer.py`
+复用 VeighNa EventEngine、MainEngine 和锁定版 CTP TD 接口。每个 SimNow 账户对应一个原生目录和账户写入者。
+市场事实、回测及旧模拟归档沿用各自入口。当前候选为账户观察，执行和迁移条件见
+[模拟交易中心设计](../openspec/changes/add-simulation-center/design.md)。
+
 ## 快期模拟执行与监控
 
 `guiyi_quant.tq_simulation` 复用 HTDY 账户 reducer，独立 provider 身份隔离旧账本。API 环境的 `app.tq_simulation_market` 通过私有 stdio 复用既有 PortfolioMarket/MDS，SDK 独立环境只构造 TqKq。发送意图、native 身份与不可变原始快照持久化在源码树外；唯一 worker 持续更新并对账。具体合同见 [TQ_SIMULATION](TQ_SIMULATION.md)。

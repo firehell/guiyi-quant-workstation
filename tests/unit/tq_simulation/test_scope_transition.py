@@ -1,7 +1,6 @@
 """Offline old-account transition, preserving owned orders and native reconciliation."""
 from dataclasses import replace
 from datetime import timedelta
-from pathlib import Path
 from guiyi_quant.htdy_execution import OrderReport
 from guiyi_quant.htdy_account_execution import model as m, codec
 from guiyi_quant.htdy_account_execution.reducer import start
@@ -11,7 +10,11 @@ from guiyi_quant.trading_universe import TRADING_PRODUCTS, TRADING_SCOPE_VERSION
 from test_execution import A, T, rb, fact
 
 ALLOWED = tuple(p.upper() for p in TRADING_PRODUCTS)
-BASELINE = tuple(p.upper() for p in (Path(__file__).parents[3] / 'data/universe/operational_products.txt').read_text().split())
+# Original account universe from v1.16.139:data/universe/operational_products.txt.
+BASELINE = tuple((
+    'A AG AL AO AP AU B BU BZ C CF CJ CU EB EC EG FG FU HC I J JD JM L LC LH M MA NI OI '
+    'P PB PD PF PG PK PL PP PR PS PT PX RB RM RS RU SA SC SF SH SI SM SN SR SS TA UR V Y ZN'
+).split())
 
 
 def input_for(product, at, *, can_trade=True):

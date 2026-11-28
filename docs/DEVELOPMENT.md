@@ -57,12 +57,13 @@ owner 控制任务、架构与节奏，Codex 负责定位、实现、必要验�
   | Quant Core | 通用指标、Compute Registry 和计算执行。API 由发行记录与消费锁选择精确 wheel。策略专属公式继续各自管理语义版本。 | [Core 包版本](../packages/quant-core/pyproject.toml) · [API 消费锁](../services/quant-api/quant-core-release.toml) |
   | Strategy Center | 策略目录、领域只读适配和策略工作台。组件 tag 记录精确源码，工作站随正常应用构建集成。 | [组件版本](../services/quant-api/app/strategy_center/catalog.py) |
   | Backtest Center | Plus 历史研究 Run、增量续跑、逐笔回放及实验。组件 tag 记录精确源码，工作站随应用构建集成。 | [组件版本](../services/quant-api/app/backtest_center/__init__.py) |
+  | Simulation Center | SimNow 账户只读证据、模拟交易工作台、隔离的火天大有执行验收。组件 tag 记录精确源码，工作站随应用构建集成。 | [组件版本](../services/quant-api/app/simulation_center/__init__.py) |
   | Quant Chart | 图层、Renderer、Pane 和 Indicator Catalog。Web 构建使用锁定的 Chart 包。 | [Chart 包版本](../packages/quant-chart/package.json) · [Web 锁文件](../apps/quant-web/pnpm-lock.yaml) |
 
 - 应用 API、Python 应用包和 Web 共用 `APP_VERSION`。各组件按自身变更维护版本。应用发版记录本次选用的组件版本，
   组件发版后由消费端更新锁并按实际绑定核对。编号、tag/commit 和构建检查由发布流程处理。
   改应用版本时运行版本一致性检查、`uv lock --check --offline --project services/quant-api` 和受影响构建。
-- 策略中心使用 `strategy-center/vX.Y.Z`，回测中心使用 `backtest-center/vX.Y.Z` 独立 tag 和 GitHub Release。
+- 策略中心使用 `strategy-center/vX.Y.Z`，回测中心使用 `backtest-center/vX.Y.Z`，模拟交易中心使用 `simulation-center/vX.Y.Z` 独立 tag 和 GitHub Release。
   工作站在同仓精确源码构建中采用组件，应用启用和运行身份按应用发布流程确认。
 - 现役组件合同见 [策略中心](../openspec/specs/strategy-center/spec.md)、[量化计算](../openspec/specs/quant-compute-core/spec.md)、[图表](../openspec/specs/chart-indicator-system/spec.md) 和 [独立发布](../openspec/specs/independent-package-release/spec.md)。
 - 不移动已发布 tag、不将 dirty 源码冒充原版本。运行代码保留可核对的 commit；公式、数据和账户历史所需身份继续保留，

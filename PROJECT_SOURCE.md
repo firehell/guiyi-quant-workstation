@@ -32,6 +32,10 @@ Web 产品支持范围仅为 PC 浏览器；显示与交互验收遵循 [开发�
 
 `/backtests` 提供 RQAlpha Plus 历史研究、增量 Run、逐笔回放与实验验证。按策略和数据组合显示研究资格，历史账户结果绑定独立 Run 与原生输入身份。详见 [回测中心合同](openspec/specs/backtest-center/spec.md)。
 
+## 模拟交易中心
+
+`/simulations` 与 `/api/v1/simulations` 提供账户、策略登记、原生读回和权益采样查询。独立 SimNow 观察宿主沿用 VeighNa CTP，火天大有执行链可在隔离环境验收。见 [模拟交易中心合同](openspec/specs/simulation-center/spec.md)与 [执行启用设计](openspec/changes/add-simulation-center/design.md)。
+
 ## 苏冰独立量化与 L.M.S 研究
 
 苏冰量化的唯一策略是16品种共享资金 Paper。`/research/subing-decision`
