@@ -1,3 +1,9 @@
+## 2026-11-28 13:49｜本机快期仿真执行退役
+
+- `com.guiyi.quant-tqkq-simulation` 已禁用、卸载，账户进程及辅助进程已退出。原启动、预检和控制文件已归档，账户与调度 SQLite 账本经停机前后 SHA-256 核对保持一致。
+- 本次停用通过宿主进程控制完成；无柜台查询、报撤单或清仓。最后保留的位置投影含 9 手昨仓，账户仍为未核验。旧账户状态和历史独立保留。
+- 后续火天大有只使用目标 SimNow 的新账户基线。11 月 30 日 09:10 的单次只读验收仍待执行。执行启用与当前应用部署另行验收。见 [模拟交易中心 OpenSpec](openspec/changes/add-simulation-center/design.md)。
+
 ## 2026-11-28｜回测中心独立发布
 
 - [Backtest Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/backtest-center/v0.1.0)
