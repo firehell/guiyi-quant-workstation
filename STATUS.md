@@ -1,18 +1,18 @@
-## 2026-11-28｜57 品种保留旧流切换
+## 2026-11-28 08:10｜57 品种正式切换
 
-- 应用 v1.16.154、Market Foundation 0.1.4 提供同 Redis 的 58→57 切换入口。旧 source、completed、索引及游标留在原处。
-  切换前要求旧范围盘后归档和清理凭证、已消费源游标、下一交易日 57 个合法主力。切后只读回正式 API 及 RS 退役状态。
-- 11/30 交易日的现役 v1.16.152 原件只读扫过 source 3,450 条、completed 4,370 条。新入口现场预检为
-  `MARKET_SCOPE_CUTOVER_ARCHIVE_UNPROVEN`，正式 58 品种仍在运行。沿用已有自然验收。
-- 切换命令及恢复边界见 [部署说明](deploy/README.md#v2-直接首启)。
-
-## 2026-11-28｜57 品种发布准备
-
-- 应用 v1.16.153 集成 Market Foundation 0.1.3；Quant Core 0.4.1 和 Quant Chart 0.1.7 继续由原锁文件提供。
-  RS 已按退役合同移出新版数据、计算和 Web 目录，候选研究与运行名单均为 57 品种。
-- 现役为 v1.16.152 / 代次 96。11/30 交易日现役订阅共 58 品种（含 RS），Live 的源游标已到尾。
-  首份 58 品种盘后归档与清理凭证未生成。保留旧订阅、流、游标及归档状态，待盘后核验。
-- 保留原有自然验收。正式范围变更须核对旧归档和消费水位，以及适用的切换控制器。应用制品发布与正式范围生效分别读回。
+- **发布。** [应用 v1.16.155](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.155) 与
+  [Market Foundation 0.1.5](https://github.com/firehell/guiyi-quant-workstation/releases/tag/market-foundation/v0.1.5)
+  发布于精确提交 `e630fd2d05ad86730b1be90d9bbf0bfcea3073c9`，见
+  [PR #685](https://github.com/firehell/guiyi-quant-workstation/pull/685)。Quant Core 0.4.1 和 Quant Chart 0.1.7 沿用现有锁定制品。
+- **正式运行。** 11/30 交易日在周末休市窗口切至代次 97，API、Web、Feed、Live、Reference 和盘后任务完成绑定。
+  正式 API 目录和 Redis 订阅读回一致，均为 57 品种。RS 行情和指标端点返回 `409 PRODUCT_RETIRED`，RB 行情和指标读回正常。
+  切换前的 58 品种订阅快照已保留，3,450 条源流、4,370 条完成流及其索引摘要一致，Live 游标保持在原尾端。
+- **数据。** 11/30 交易日 57/57 主力映射、五家交易所日历和 57/57 交易时段已读回。
+  11/27 最近完成交易日从 Canonical 读回 57 品种 × 七周期，均与 Catalog 主力及交易日一致。
+  休市时供应商通道为零，下一时段为北京时间 11/30 09:00。11/30 完整 Canonical 与 Live 对账由收盘后的 57 品种任务产出，
+  Reference 等待相应归档凭证。沿用已有自然验收。
+- **切换入口。** v1.16.154 / Market Foundation 0.1.4 保留下一交易日的已归档范围切换入口。
+  本次使用 [同交易日休市切换入口](deploy/README.md#v2-直接首启) 保留此前观察原件。
 
 ## 2026-11-27 23:23｜V2 正式运行
 
