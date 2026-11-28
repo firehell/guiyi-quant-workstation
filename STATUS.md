@@ -1,3 +1,9 @@
+## 2026-11-28 23:36｜正式工作台回测提交与模拟账户选择
+
+- 正式 Web、API 为 [v1.16.162](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.162)，提交 `25c0a11c55ba0cf343d6ac180cce046087fe28f7`、代次 102。与 [工作台 v0.1.2](https://github.com/firehell/guiyi-quant-workstation/releases/tag/workstation-ui/v0.1.2) 和 [模拟中心 v0.1.1](https://github.com/firehell/guiyi-quant-workstation/releases/tag/simulation-center/v0.1.1) 配套。行情、提醒、参考计算及盘后六项仍使用 v1.16.159、代次 101。
+- 正式回测记录库已初始化。从 5173 表单提交的唯一 Run `0883d4ff996a4323a40b6578ecc30a01` 已达 SUCCEEDED/PUBLISHED。牛哇趋势 FU2603 使用 5m 信号、1m 执行，2025-12-22 开始预热，2026-01-06 至 01-23 评价。RQAlpha Plus 4.5.0、手续费倍率 1、滑点 0 跳，初始 100,000 元，期末 100,520.3375 元。14 个评价日、157 笔原生成交、78 笔已平仓交易、1 笔未平仓。正式浏览器刷新后核对了资金曲线、交易明细和报告。
+- 原正式 API 未配置模拟中心只读来源，原登记仅存于独立验收库。正式实例新增专用模拟中心数据库，其只读角色可查询已保存的账户证据。1 个已有 SimNow 身份已登记，经过账户状态过期阈值后仍可选择。这次没有柜台登录或委托；正式库没有完整读回、权益或成交。五个视图、明确选择、深链接及刷新均已从正式端口验证。
+
 ## 2026-11-28 23:09｜正式看盘、行情与提醒恢复
 
 - 正式 Web、API、Market Feed、Live、Reference Worker、Alert、盘后及晚到重试共同绑定 [应用 v1.16.159](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.159)，提交 `209a32b679014d511c8b182680c495fce4f4e5e0`、代次 101。[工作台交互 v0.1.1](https://github.com/firehell/guiyi-quant-workstation/releases/tag/workstation-ui/v0.1.1) 独立维护。经 v1.16.160 控制器完成切换，旧 API/Web 卸载后的异步停驻已核实。
