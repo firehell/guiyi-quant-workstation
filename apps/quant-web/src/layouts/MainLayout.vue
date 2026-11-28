@@ -66,7 +66,7 @@ const activeKey = computed(() => {
   const name = route.name as string
   return CHILD_ROUTE_MENU_KEY[name] || name
 })
-const isFullscreenMarketRoute = computed(() => ['operations', 'market', 'market-chart', 'research', 'subing-decision'].includes(String(route.name)))
+const isFullscreenMarketRoute = computed(() => ['operations', 'market', 'market-chart', 'research', 'subing-decision', 'strategies'].includes(String(route.name)))
 const showSidebarTrigger = computed(() => !isFullscreenMarketRoute.value)
 
 const breadcrumbItems = computed(() => {
