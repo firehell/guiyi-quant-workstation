@@ -9,6 +9,7 @@ const routes: RouteRecordRaw[] = [
     children: [
       { path: 'workstation', name: 'operations', component: () => import('@/pages/workstation/OperationsPage.vue'), meta: { title: '运行台' } },
       { path: 'strategies/:strategyId?', name: 'strategies', component: () => import('@/pages/workstation/StrategyCenterPage.vue'), meta: { title: '策略中心' } },
+      { path: 'backtests/:runId?', name: 'backtests', component: () => import('@/pages/workstation/BacktestCenterPage.vue'), meta: { title: '回测中心' } },
       { path: 'research', name: 'research', component: () => import('@/pages/workstation/ResearchPage.vue'), meta: { title: '研究' } },
       {
         path: 'market',

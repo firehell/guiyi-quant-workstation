@@ -1,0 +1,270 @@
+import request from './request'
+
+export type RunStatus = 'QUEUED' | 'RUNNING' | 'CANCELING' | 'SUCCEEDED' | 'FAILED' | 'CANCELED'
+export type Amount = string | number
+export type EvidenceFields = Record<string, unknown>
+
+export interface RunConfig {
+  strategy_id: string
+  formula_version?: string
+  profile_id?: string
+  product: string
+  contract: string
+  signal_frequency: string
+  warmup_start: string
+  start: string
+  end: string
+  initial_capital: string
+  commission_multiplier?: string
+  slippage_ticks?: number
+  parameters?: { execution_delay_minutes?: Amount }
+  benchmark?: 'cash'
+  sample_type?: 'historical' | 'experiment' | 'train' | 'oos'
+}
+
+export interface Metric {
+  value: Amount | null
+  definition?: string
+  reason?: string | null
+  unit?: string
+  source?: string
+}
+
+export interface Summary extends EvidenceFields {
+  metrics?: Record<string, Metric>
+  source?: string
+  sample_type?: string
+  cost_basis?: string
+  pairing_basis?: string
+}
+
+export interface Run {
+  run_id: string
+  status: RunStatus
+  config: RunConfig & EvidenceFields
+  created_at: string
+  updated_at: string
+  phase?: string
+  diagnostic?: string | null
+  source_run_id?: string | null
+  qualification?: string | null
+  summary?: Summary | null
+  snapshot?: EvidenceFields | null
+}
+
+export interface RunFilters {
+  strategy_id: string
+  product: string
+  signal_frequency: string
+  start: string
+  end: string
+  status: string
+  sort?: string
+}
+
+export interface RunPage {
+  items: Run[]
+  total: number
+  counts: Partial<Record<RunStatus, number>>
+  latest_attempt: Run | string | null
+  latest_success: Run | string | null
+}
+
+export interface Eligibility {
+  strategy_id: string
+  label: string
+  status: string
+  reason: string
+  formula_version?: string | null
+  profile_id?: string | null
+  product?: string | null
+  signal_frequency?: string | null
+  execution_frequency?: string | null
+  links?: Record<string, string>
+  research_parameters?: { execution_delay_minutes?: { min: number; max: number; default: number } }
+}
+
+export interface Template {
+  template_id: string
+  name: string
+  config: RunConfig
+}
+
+export interface Rows<T> {
+  items: T[]
+  total: number
+}
+
+export interface Trade extends EvidenceFields {
+  trade_id: string
+  contract: string
+  direction: string
+  quantity: Amount
+  entry_at?: string | null
+  exit_at?: string | null
+  entry_price?: Amount | null
+  exit_price?: Amount | null
+  fees?: Amount | null
+  net_pnl?: Amount | null
+  unrealized_pnl?: Amount | null
+  status: string
+}
+
+export interface Equity {
+  at: string
+  equity: Amount
+  drawdown?: Amount | null
+}
+
+export interface ReplayBar {
+  at: string
+  open: Amount
+  high: Amount
+  low: Amount
+  close: Amount
+  in_position?: boolean
+}
+
+export interface ReplayMarker {
+  at: string
+  kind: string
+  trade_id?: string
+  signal_id?: string
+  price?: Amount | null
+  label?: string | null
+  event_at?: string
+  position_end_at?: string
+}
+
+export interface Replay {
+  run_id: string
+  available: boolean
+  reason?: string | null
+  contract?: string
+  frequency?: string
+  revision?: string
+  bars?: ReplayBar[]
+  markers?: ReplayMarker[]
+  trade?: Trade
+  native_fills?: EvidenceFields[]
+  attempts?: EvidenceFields[]
+}
+
+export type ExperimentKind = 'comparison' | 'oos' | 'walk_forward'
+export type ExperimentAxis = 'parameters' | 'strategy' | 'product' | 'frequency' | 'commission' | 'slippage'
+export type SelectionMetric = 'net_return' | 'max_drawdown'
+export interface FoldConfig {
+  train_warmup_start: string
+  train_start: string
+  train_end: string
+  test_warmup_start: string
+  test_start: string
+  test_end: string
+}
+
+export interface ExperimentConfig {
+  request_key: string
+  kind: ExperimentKind
+  axes: ExperimentAxis[]
+  configs: RunConfig[]
+  metric: SelectionMetric
+  folds?: FoldConfig[]
+}
+
+export interface ExperimentMember {
+  member_id: string
+  fold?: number | null
+  phase: string
+  research_config: RunConfig
+  run_id?: string | null
+  status: string
+  diagnostic?: string | null
+  metrics?: Record<string, Metric | Amount | null>
+}
+
+export interface ExperimentFold extends EvidenceFields {
+  fold: number
+  selection_cutoff?: string
+  selected_member_id?: string | null
+  test_member_id?: string | null
+  status: string
+  diagnostic?: string | null
+}
+
+export interface Experiment {
+  experiment_id: string
+  kind: ExperimentKind
+  status: string
+  created_at: string
+  updated_at: string
+  definition?: EvidenceFields
+  members?: ExperimentMember[]
+  folds?: ExperimentFold[]
+  comparison?: EvidenceFields
+  evidence?: EvidenceFields
+}
+
+const root = '/backtests'
+const runPath = (id: string) => `${root}/runs/${encodeURIComponent(id)}`
+const experimentPath = (id: string) => `${root}/experiments/${encodeURIComponent(id)}`
+const activePhases = new Set(['QUEUED', 'RUNNING', 'CANCELING'])
+
+export function runInProgress(status?: string) {
+  return status !== undefined && activePhases.has(status)
+}
+
+export function diagnosticCode(error: unknown): string | undefined {
+  const response = (error as { response?: { status?: number; data?: { detail?: { code?: unknown } } } })?.response
+  const value = response?.data?.detail?.code
+  if (typeof value === 'string' && /^[A-Z0-9_]{1,96}$/.test(value)) return value
+  return response?.status === 422 ? 'INPUT_VALIDATION_FAILED' : undefined
+}
+
+export const readEligibility = (signal: AbortSignal) =>
+  request.get<unknown, { items: Eligibility[] }>(`${root}/eligibility`, { signal })
+
+export const readTemplates = (signal: AbortSignal) =>
+  request.get<unknown, { items: Template[] }>(`${root}/templates`, { signal })
+
+export const saveTemplate = (id: string, name: string, config: RunConfig) =>
+  request.put<unknown, Template>(`${root}/templates/${encodeURIComponent(id)}`, { name, config })
+
+export const readRuns = (filters: RunFilters, offset: number, limit: number, signal: AbortSignal) =>
+  request.get<unknown, RunPage>(`${root}/runs`, {
+    params: { ...Object.fromEntries(Object.entries(filters).filter(([, value]) => value)), offset, limit }, signal,
+  })
+
+export const submitRun = (request_key: string, config: RunConfig) =>
+  request.post<unknown, Run>(`${root}/runs`, { request_key, config })
+
+export const readRun = (id: string, signal: AbortSignal) =>
+  request.get<unknown, Run>(runPath(id), { signal })
+
+export const cancelRun = (id: string) => request.post<unknown, Run>(`${runPath(id)}/cancel`)
+
+export const rerun = (id: string, request_key: string) =>
+  request.post<unknown, Run>(`${runPath(id)}/rerun`, { request_key })
+
+export const readTrades = (id: string, offset: number, limit: number, signal: AbortSignal) =>
+  request.get<unknown, Rows<Trade>>(`${runPath(id)}/trades`, { signal, params: { offset, limit } })
+
+export const readEquity = (id: string, offset: number, limit: number, signal: AbortSignal) =>
+  request.get<unknown, Rows<Equity>>(`${runPath(id)}/equity`, { signal, params: { offset, limit } })
+
+export const readReplay = (id: string, trade: string, signal: AbortSignal) =>
+  request.get<unknown, Replay>(`${runPath(id)}/replay/${encodeURIComponent(trade)}`, { signal })
+
+export const readReport = (id: string, signal: AbortSignal) =>
+  request.get<unknown, EvidenceFields>(`${runPath(id)}/report`, { signal })
+
+export const readExperiments = (signal: AbortSignal) =>
+  request.get<unknown, Rows<Experiment>>(`${root}/experiments`, { signal })
+
+export const submitExperiment = (definition: ExperimentConfig) =>
+  request.post<unknown, Experiment>(`${root}/experiments`, definition)
+
+export const readExperiment = (id: string, signal: AbortSignal) =>
+  request.get<unknown, Experiment>(experimentPath(id), { signal })
+
+export const readExperimentEvidence = (id: string, signal: AbortSignal) =>
+  request.get<unknown, EvidenceFields>(`${experimentPath(id)}/evidence`, { signal })

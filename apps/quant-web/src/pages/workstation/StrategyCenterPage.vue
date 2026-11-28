@@ -51,6 +51,16 @@ const references = computed(() => [
   ...(detail.value?.references ?? []),
   ...(Array.isArray(bindings.value?.references) ? bindings.value.references as VersionReference[] : []),
 ])
+const backtestQuery = computed(() => {
+  function uniqueReference(kind: string) {
+    const versions = new Set(references.value.filter(item => item.kind === kind).map(item => item.value))
+    return versions.size === 1 ? versions.values().next().value : undefined
+  }
+  return {
+    view: 'config', strategy: selected.value?.strategy_id,
+    formula_version: uniqueReference('formula'), profile_id: uniqueReference('profile'),
+  }
+})
 const selection = computed(() => selected.value?.domain === 'newow' && product.value && frequency.value
   ? { product: product.value, frequency: frequency.value } : undefined)
 const lifecycle = computed(() => selected.value?.lifecycle === 'ACTIVE' ? '现役目录' : selected.value?.lifecycle)
@@ -189,7 +199,10 @@ const newowFacts = computed(() => [
         <article v-if="selected" aria-label="策略详情">
           <header class="detail-heading">
             <div><h2>{{ selected.name }}</h2><p>{{ selected.description }}</p></div>
-            <span>{{ lifecycle }}</span>
+            <div class="strategy-links">
+              <span>{{ lifecycle }}</span>
+              <RouterLink :to="{ name: 'backtests', query: backtestQuery }">查看回测资格与配置</RouterLink>
+            </div>
           </header>
           <p v-if="detailError" role="alert">策略详情读取失败</p>
           <section v-else-if="detail">
@@ -312,6 +325,7 @@ const newowFacts = computed(() => [
 </template>
 
 <style scoped>
+.strategy-links { display: grid; gap: 7px; justify-items: end; }
 .strategy-center { min-height: 100%; background: var(--gy-bg-app); }
 main { max-width: 1550px; margin: auto; padding: 24px 32px; }
 .heading, .detail-heading, .domain header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }

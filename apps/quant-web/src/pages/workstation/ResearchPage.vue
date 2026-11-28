@@ -46,7 +46,8 @@ const referenceChartLink = computed(() => {
     <MarketNavigation active-tab="research" />
     <main>
       <h1>研究</h1>
-      <nav aria-label="苏冰研究结果">
+      <nav aria-label="研究入口">
+        <RouterLink to="/backtests">回测中心</RouterLink>
         <RouterLink to="/research/subing-decision?mode=history">苏冰独立量化回放</RouterLink>
       </nav>
       <section aria-labelledby="newow-research-heading">

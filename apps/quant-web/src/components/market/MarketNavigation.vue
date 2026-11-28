@@ -4,7 +4,7 @@ import { lastWorkstationChart } from '@/utils/workstationRoutes'
 
 const router = useRouter()
 withDefaults(defineProps<{
-  activeTab?: 'operations' | 'market' | 'research' | 'messages' | 'simulation' | 'subing-decision' | 'strategies' | null
+  activeTab?: 'operations' | 'market' | 'research' | 'messages' | 'simulation' | 'subing-decision' | 'strategies' | 'backtests' | null
 }>(), { activeTab: null })
 </script>
 
@@ -15,6 +15,7 @@ withDefaults(defineProps<{
       <RouterLink to="/workstation" role="tab" :aria-selected="activeTab === 'operations'" :aria-current="activeTab === 'operations' ? 'page' : undefined">运行台</RouterLink>
       <button type="button" role="tab" :aria-selected="activeTab === 'market'" :aria-current="activeTab === 'market' ? 'page' : undefined" @click="router.push(lastWorkstationChart())">行情</button>
       <RouterLink to="/strategies" role="tab" :aria-selected="activeTab === 'strategies'" :aria-current="activeTab === 'strategies' ? 'page' : undefined">策略</RouterLink>
+      <RouterLink to="/backtests" role="tab" :aria-selected="activeTab === 'backtests'" :aria-current="activeTab === 'backtests' ? 'page' : undefined">回测</RouterLink>
       <RouterLink to="/research" role="tab" :aria-selected="activeTab === 'research' || activeTab === 'subing-decision'" :aria-current="activeTab === 'research' || activeTab === 'subing-decision' ? 'page' : undefined">研究</RouterLink>
       <RouterLink to="/market?tab=messages" :aria-current="activeTab === 'messages' ? 'page' : undefined">消息</RouterLink>
     </nav>
@@ -38,7 +39,8 @@ withDefaults(defineProps<{
 @media (max-width: 720px) {
   .market-navigation { grid-template-columns: auto 1fr auto; gap: 6px; min-height: auto; padding: 6px 12px 8px; }
   .market-navigation__brand { font-size: var(--gy-font-size-md) !important; }
-  .market-navigation__tabs { justify-self: end; }
+  .market-navigation__tabs { min-width: 0; overflow-x: auto; }
+  .market-navigation__tabs > * { flex: 0 0 auto; }
   .market-navigation__tabs :is(button, a) { min-width: 44px; min-height: 44px; padding: 0 8px; }
   .market-navigation__search { grid-column: 1 / -1; grid-row: 2; }
   .market-navigation__actions { grid-column: 3; grid-row: 1; }

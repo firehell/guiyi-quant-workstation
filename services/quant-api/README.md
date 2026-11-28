@@ -17,3 +17,30 @@ Newow、苏冰历史参考与 AlertEvent 分别保留身份，不创建账户、
 
 验证命令统一见 [TESTING.md](../../TESTING.md)。隔离测试不授权生产 PostgreSQL、Redis、
 Canonical、Scope、通知或 Runtime mutation；当前运行事实只看 [STATUS.md](../../STATUS.md)。
+
+## 回测中心
+
+桌面入口为 `/backtests`，研究 API 为 `/api/v1/backtests`。牛哇趋势 FU 单一
+物理合约可提交 5m 信号、1m 执行的试验请求。执行延迟参数为 0–3 分钟，
+从同 Session 首个严格后继的 1m 开盘起算。配置页列出策略接入资格，
+P3/P4 从原 Newow 试验面读取。
+
+本机 API 进程读取以下本地配置：
+
+- `GUIYI_BACKTEST_STORE` 是独立 SQLite 文件，默认
+  `~/.local/state/guiyi/backtest-center/research.sqlite3`。
+- `GUIYI_BACKTEST_PLUS_PYTHON` 指向安装了 RQAlpha Plus 4.5.0 的独立 Python
+  绝对路径。执行时核验 Plus、RQAlpha 和米筐数据模块的配套版本。
+- `GUIYI_BACKTEST_PLUS_BUNDLE` 指向已下载的米筐数据根或其 `bundle` 子目录。
+  本机使用 `/Volumes/扩展盘/.rqalpha-plus/bundle`。
+- `RQSDK_LICENSE` 由现有安全环境提供。执行器只允许米筐官方期货授权校验，
+  且只把固定诊断码返回给工作台。
+- 非 Git 安装通过 `GUIYI_BACKTEST_CODE_REVISION` 指定构建提交。Git 工作区
+  读取当前提交，两边的执行器均验证实际载入的策略源码摘要。
+
+执行队列由 API 进程监管，原生引擎在独立进程运行。关闭或重启后从持久化状态
+核对已提交结果。要再次尝试已结束的配置，在任务详情选择重跑。原输入修订
+必须可复算才能重跑已固化的 Run。
+
+原生运行要求按交易日可核验的手续费和保证金。若 Plus 仅返回无生效日期的
+合约快照，任务会报 `PLUS_POINT_IN_TIME_TRADING_PARAMETERS_UNAVAILABLE`。

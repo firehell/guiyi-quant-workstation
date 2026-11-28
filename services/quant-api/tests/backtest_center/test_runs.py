@@ -1,0 +1,276 @@
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
+import sqlite3
+import sys
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+import pytest
+
+from app.api.backtest_center import router
+from app.backtest_center.contracts import BacktestError
+from app.backtest_center.store import RunStore
+from app.backtest_center.worker import Settings, Worker
+
+
+CONFIG = {
+    "product": "fu",
+    "contract": "FU2603",
+    "warmup_start": "2025-10-09",
+    "start": "2026-01-06",
+    "end": "2026-01-08",
+    "initial_capital": "100000",
+}
+SNAPSHOT = {
+    "data_revision": "a" * 64, "input_sha256": "b" * 64,
+    "engine": {"name": "rqalpha-plus", "version": "test-double"}, "qualification": "TRIAL",
+}
+VALUATION = "2026-01-06T15:00:00+08:00"
+TRADE = {
+    "trade_id": "fill_a", "contract": "FU2603", "entry_at": "2026-01-06T09:06:00+08:00",
+    "marked_at": "2026-01-06T15:30:00+08:00", "entry_price": "2701", "direction": "LONG", "status": "OPEN",
+}
+RESULT = {
+    "summary": {"metrics": {}}, "report": {"source": "test-double"},
+    "trades": [TRADE], "equity": [{"at": VALUATION, "trading_day": "2026-01-06", "equity": "100001"}],
+    "bars": [
+        {"at": "2026-01-06T09:05:00+08:00", "open": "2700", "high": "2703", "low": "2698", "close": "2700"},
+        {"at": "2026-01-06T09:10:00+08:00", "open": "2700", "high": "2703", "low": "2698", "close": "2702"},
+        {"at": VALUATION, "open": "2700", "high": "2703", "low": "2698", "close": "2702"},
+    ],
+    "markers": [{"at": "2026-01-06T09:05:00+08:00", "kind": "BUILD"}],
+}
+
+
+@pytest.fixture
+def store(tmp_path):
+    return RunStore(tmp_path / "runs.db")
+
+
+@pytest.fixture
+def client(store):
+    app = FastAPI()
+    app.include_router(router)
+    app.state.backtest_store = store
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_concurrent_duplicate_and_rerun(store):
+    with ThreadPoolExecutor(8) as pool:
+        runs = list(pool.map(lambda _: store.submit("same-request", CONFIG), range(16)))
+    original = runs[0]["run_id"]
+    assert {row["run_id"] for row in runs} == {original}
+    with pytest.raises(BacktestError, match="BACKTEST_REQUEST_KEY_CONFLICT"):
+        store.submit("same-request", {**CONFIG, "slippage_ticks": 1})
+    assert store.claim()["run_id"] == original
+    assert store.claim() is None
+    assert store.admit(original, SNAPSHOT)
+    assert store.publish(original, RESULT)
+    after = store.rerun(original, "repeat-run")
+    assert after["run_id"] != original and after["source_run_id"] == original
+    assert store.rerun(original, "repeat-run")["run_id"] == after["run_id"]
+
+
+def test_cancel_publish_and_restart_readback(store):
+    first = store.submit("first", CONFIG)["run_id"]
+    second = store.submit("after", CONFIG)["run_id"]
+    store.claim()
+    store.admit(first, SNAPSHOT)
+    first_terminal = store.cancel(first)
+    assert first_terminal["status"] == "CANCELING"
+    assert not store.publish(first, RESULT)
+    assert store.result(first) is None
+    assert store.claim()["run_id"] == second
+    store.admit(second, SNAPSHOT)
+    assert store.publish(second, RESULT)
+
+    reopened = RunStore(store.path)
+    reopened.recover()
+    assert reopened.get(first)["status"] == "CANCELED"
+    assert reopened.get(second)["status"] == "SUCCEEDED"
+    assert reopened.result(second)["trades"] == [TRADE]
+    assert reopened.cancel(second)["status"] == "SUCCEEDED"
+    assert reopened.claim() is None
+
+
+def test_publication_is_all_or_nothing_and_no_redispatch_after_unknown(store, monkeypatch):
+    run_id = store.submit("publish", CONFIG)["run_id"]
+    store.claim()
+    store.admit(run_id, SNAPSHOT)
+    with pytest.raises(sqlite3.IntegrityError):
+        store.publish(run_id, {**RESULT, "trades": [TRADE, TRADE]})
+    assert store.get(run_id)["status"] == "RUNNING"
+    with store.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM bt_rows").fetchone()[0] == 0
+    real_publish = store.publish
+
+    def commit_then_disconnect(identifier, result):
+        assert real_publish(identifier, result)
+        raise sqlite3.OperationalError("test unknown outcome")
+
+    monkeypatch.setattr(store, "publish", commit_then_disconnect)
+    Worker(Settings(store.path, None, None), store)._publish(run_id, RESULT)
+    store.recover()
+    assert store.get(run_id)["status"] == "SUCCEEDED"
+    assert store.claim() is None
+
+
+def test_workspace_api_keeps_template_snapshot_and_result_identity(client, store):
+    assert len(client.get("/api/v1/backtests/eligibility").json()["items"]) == 6
+    assert client.put("/api/v1/backtests/templates/fu", json={"name": "原", "config": CONFIG},
+                      headers={"Origin": "http://127.0.0.1:5175"}).status_code == 200
+    original = client.post("/api/v1/backtests/runs", json={"config": CONFIG, "request_key": "first"}).json()
+    a = original["run_id"]
+    assert client.put("/api/v1/backtests/templates/fu", json={
+        "name": "新", "config": {**CONFIG, "initial_capital": "200000"}
+    }).status_code == 200
+    assert client.get(f"/api/v1/backtests/runs/{a}").json()["config"]["initial_capital"] == "100000"
+    assert client.post("/api/v1/backtests/runs", json={
+        "config": {**CONFIG, "rqdatac_uri": "disabled"}, "request_key": "invalid"
+    }).status_code == 422
+    assert client.post(f"/api/v1/backtests/runs/{a}/cancel", headers={
+        "origin": "https://unrelated.example",
+    }).status_code == 403
+    store.claim()
+    store.admit(a, SNAPSHOT)
+    store.publish(a, RESULT)
+    b = store.submit("second", CONFIG)["run_id"]
+    store.claim()
+    store.admit(b, SNAPSHOT)
+    store.publish(b, {**RESULT, "trades": []})
+    assert client.get("/api/v1/backtests/runs?product=FU&status=SUCCEEDED").json()["latest_success"]["run_id"] == b
+    assert client.get(f"/api/v1/backtests/runs/{a}/trades?offset=0&limit=1").json()["items"] == [TRADE]
+    assert client.get(f"/api/v1/backtests/runs/{a}/trades?offset=1&limit=1").json()["items"] == []
+    replay = client.get(f"/api/v1/backtests/runs/{a}/replay/fill_a").json()
+    assert replay["available"] and replay["revision"] == "a" * 64
+    assert [marker["kind"] for marker in replay["markers"]] == ["BUILD", "ENTRY"]
+    assert replay["markers"][1]["event_at"] == TRADE["entry_at"]
+    assert replay["bars"][-1]["in_position"] is True
+    assert client.get(f"/api/v1/backtests/runs/{b}/replay/fill_a").status_code == 404
+
+
+def test_queue_limit_and_superseded_publication(store, monkeypatch):
+    monkeypatch.setattr("app.backtest_center.store.QUEUE_LIMIT", 2)
+    old = store.submit("old", CONFIG)["run_id"]
+    new = store.submit("new", CONFIG)["run_id"]
+    with pytest.raises(BacktestError, match="BACKTEST_QUEUE_FULL"):
+        store.submit("over-budget", CONFIG)
+    store.claim()
+    store.claim()
+    for run_id in (old, new):
+        store.admit(run_id, SNAPSHOT)
+    assert store.publish(new, RESULT)
+    assert store.publish(old, RESULT)
+    assert store.list(offset=0, limit=10)["latest_success"]["run_id"] == new
+
+
+def test_worker_reports_missing_engine_without_market_or_alternative(store):
+    run = store.submit("missing", CONFIG)
+    worker = Worker(Settings(store.path, None, None), store)
+    assert store.claim()["run_id"] == run["run_id"]
+    with pytest.raises(BacktestError, match="PLUS_PYTHON_UNAVAILABLE"):
+        worker._execute(run, -1)
+
+
+def test_isolated_process_admission_is_committed_before_publication(store, monkeypatch, tmp_path):
+    entry = tmp_path / "entry.py"
+    entry.write_text(f"""
+import hashlib, json, pathlib, sys, time
+out = pathlib.Path(sys.argv[1])
+req = json.loads((out / "request.json").read_text())
+identity = req["identity"]
+snapshot = {{**{SNAPSHOT!r}, **identity}}
+(out / "admission.tmp").write_text(json.dumps(snapshot))
+(out / "admission.tmp").rename(out / "admission.json")
+while not (out / "admission.ok").exists():
+    time.sleep(.01)
+serialized = json.dumps(snapshot, sort_keys=True, separators=(",", ":"))
+(out / "result.json").write_text(json.dumps({{
+    "run_id": req["run_id"], "snapshot_sha256": hashlib.sha256(serialized.encode()).hexdigest(),
+    "result": {RESULT!r},
+}}))
+""")
+    monkeypatch.setattr("app.backtest_center.worker._ENTRY", entry)
+    monkeypatch.setattr(Settings, "code_identity", lambda _: {"code_revision": "c" * 40, "code_sha256": "d" * 64})
+    worker = Worker(Settings(store.path, Path(sys.executable), tmp_path), store)
+    store.submit("process", CONFIG)
+    run = store.claim()
+    with (tmp_path / "worker-test.lock").open("wb") as fd:
+        worker._execute(run, fd.fileno())
+    saved = store.get(run["run_id"])
+    assert saved["status"] == "SUCCEEDED"
+    assert saved["snapshot"]["input_sha256"] == SNAPSHOT["input_sha256"]
+
+
+def test_delay_parameter_is_named_and_bounded(client, store):
+    from app.backtest_center.contracts import RunConfig, admission_code
+
+    wrong_delay = client.post("/api/v1/backtests/runs", json={
+        "request_key": "fractional", "config": {**CONFIG, "parameters": {"execution_delay_minutes": 1.1}},
+    })
+    assert wrong_delay.status_code == 422
+    run = client.post("/api/v1/backtests/runs", json={
+        "request_key": "delay", "config": {**CONFIG, "parameters": {"execution_delay_minutes": 2}},
+    }).json()
+    assert store.get(run["run_id"])["config"]["parameters"] == {"execution_delay_minutes": "2"}
+    assert admission_code(RunConfig.model_validate(run["config"])) is None
+    unsupported = RunConfig.model_validate({**CONFIG, "parameters": {"unreviewed_formula_parameter": 1}})
+    assert admission_code(unsupported) == "STRATEGY_PARAMETERS_UNSUPPORTED"
+
+
+def test_performance_filter_orders_exact_positive_returns_with_closed_trades(store):
+    for index, (net, count) in enumerate((
+        ("0.100000000000000000001", 1), ("0.100000000000000000002", 2),
+        ("0.9", 0), ("-0.3", 3), ("0", 1),
+    )):
+        run_id = store.submit(f"sort-{index}", CONFIG)["run_id"]
+        store.claim()
+        store.admit(run_id, SNAPSHOT)
+        store.publish(run_id, {**RESULT, "summary": {"metrics": {
+            "net_return": {"value": net}, "trade_count": {"value": count},
+        }}})
+    page = store.list(offset=0, limit=10, sort="net_return")
+    assert page["total"] == 2 and page["counts"]["SUCCEEDED"] == 5
+    assert [row["summary"]["metrics"]["trade_count"]["value"] for row in page["items"]] == [2, 1]
+
+
+def test_changed_submitted_bundle_is_fenced_before_starting_a_process(tmp_path, monkeypatch):
+    settings = Settings(tmp_path / "ledger.db", Path(sys.executable), tmp_path)
+    monkeypatch.setattr(Settings, "code_identity", lambda _: {"code_revision": "c" * 40, "code_sha256": "d" * 64})
+    store = RunStore(settings.path, settings.submission)
+    store.submit("before-updated-bundle", CONFIG)
+    (tmp_path / "trading_dates.npy").touch()
+    with pytest.raises(BacktestError, match="BACKTEST_SUBMITTED_DATA_CHANGED"):
+        Worker(settings, store)._execute(store.claim(), -1)
+
+
+def test_running_cancel_waits_for_the_isolated_process_to_exit(store, monkeypatch, tmp_path):
+    from time import monotonic, sleep
+
+    entry = tmp_path / "blocked_engine.py"
+    entry.write_text("""
+import pathlib, sys, time
+out = pathlib.Path(sys.argv[1])
+(out / "engine-started").touch()
+while True:
+    time.sleep(.05)
+""")
+    monkeypatch.setattr("app.backtest_center.worker._ENTRY", entry)
+    monkeypatch.setattr(Settings, "code_identity", lambda _: {"code_revision": "c" * 40, "code_sha256": "d" * 64})
+    worker = Worker(Settings(store.path, Path(sys.executable), tmp_path), store)
+    identifier = store.submit("cancel-real-subprocess", CONFIG)["run_id"]
+    worker.start()
+    try:
+        end = monotonic() + 5
+        while not list(tmp_path.glob("plus-*/engine-started")) and monotonic() < end:
+            sleep(.02)
+        assert list(tmp_path.glob("plus-*/engine-started"))
+        assert store.cancel(identifier)["status"] == "CANCELING"
+        while store.get(identifier)["status"] == "CANCELING" and monotonic() < end:
+            sleep(.02)
+        assert store.get(identifier)["status"] == "CANCELED"
+        assert not list(tmp_path.glob("plus-*/engine-started"))
+        assert store.result(identifier) is None
+    finally:
+        worker.close()
