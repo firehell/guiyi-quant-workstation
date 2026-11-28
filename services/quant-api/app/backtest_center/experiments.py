@@ -144,7 +144,17 @@ def _windows(config: dict, fold: dict, phase: str) -> dict:
     }
 
 
+def validate_experiment_windows(request: ExperimentRequest) -> None:
+    """Validate the actual per-fold Run configurations before any experiment allocation."""
+    definition = request.model_dump(mode="json", exclude={"request_key"})
+    for fold in definition["folds"]:
+        for config in definition["configs"]:
+            RunConfig.model_validate(_windows(config, fold, "train"))
+            RunConfig.model_validate(_windows(config, fold, "test"))
+
+
 def _initial(request: ExperimentRequest) -> dict:
+    validate_experiment_windows(request)
     definition = request.model_dump(mode="json", exclude={"request_key"})
     definition["tie_break"] = "submitted_candidate_order"
     experiment_id = uuid4().hex
@@ -164,9 +174,6 @@ def _initial(request: ExperimentRequest) -> dict:
             # The same candidate must mean different settings inside the actual evaluation window.
             if len({encode(member["research_config"]) for member in fold_members}) != len(fold_members):
                 raise BacktestError("EXPERIMENT_DUPLICATE_FOLD_CONFIG")
-            for member in fold_members:
-                RunConfig.model_validate(member["research_config"])
-                RunConfig.model_validate(_windows(member["research_config"], fold, "test"))
             members.extend(fold_members)
             folds.append(
                 {

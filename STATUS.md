@@ -1,3 +1,9 @@
+## 2026-11-28｜统计与研究中心 V0.1 独立发布
+
+- [Statistics and Research Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/statistics-research-center/v0.1.0) 经 [PR #692](https://github.com/firehell/guiyi-quant-workstation/pull/692) 合入 `develop`，绑定 `e6f2687d2f182d60da06d1fa5e01c2d5fdc1c9fd`。
+- 浏览器验证用真实 FU2603 Run 完成统计、月份结算、逐笔下钻与原始 Run 跳转。76 项定向回归、API wheel、Web 构建和 OpenSpec 变更校验通过。
+- 工作站部署使用迁移 `20261128_0058` 与锁定研究环境。组件 Release 已发布，工作站正式部署与盘中并行负载验收另行执行。
+
 ## 2026-11-28 14:41｜交易日志与复盘中心独立发布
 
 - [Trade Journal & Review Center v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/trade-journal-center/v0.1.0)
