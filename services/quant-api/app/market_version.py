@@ -1,3 +1,3 @@
 """Release version for the Market Foundation component."""
 
-MARKET_RELEASE_VERSION = "0.1.4"
+MARKET_RELEASE_VERSION = "0.1.5"
