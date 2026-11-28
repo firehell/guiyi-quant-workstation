@@ -1,0 +1,37 @@
+{
+  "purpose": "Pre-outcome holdout intake, Asia/Shanghai",
+  "research_baseline": "7107e35062ec3d51c3e9884ea1af9f7a0c98f669",
+  "score_policy": "Score only an action forecast whose contemporaneous plan, contract, system version and action can be verified. Market observations alone are unscored.",
+  "admitted": 0,
+  "cases": [
+    {
+      "contract": "JD2612",
+      "trading_day": "2026-11-17",
+      "as_of": "2026-11-17T10:00:00+08:00",
+      "plan_source": "https://www.sina.cn/news/detail/5365839727167650.html",
+      "plan_observation": "The 11:22 note on November 16 gives downside defense at 3551–3570, a lower reference at 3532–3549 and a bullish hurdle at 3619–3646. The post gives no specific trade trigger or old-leg identity.",
+      "admission_missing": ["DATASET_OR_PARTITION_MISSING", "ACTION_PERMISSION", "SYSTEM_VERSION_FOR_THIS_PLAN", "POSITION_BEFORE"],
+      "market_prefix_sha256": null,
+      "forecast": null
+    },
+    {
+      "contract": "M2701",
+      "trading_day": "2026-08-19",
+      "as_of": "2026-08-19T10:00:00+08:00",
+      "plan_source": "https://www.sina.cn/news/detail/5333205490336757.html",
+      "plan_observation": "The 10:05 note on August 18 gives 3253–3280 as the next upside reference, 3199–3224 as downside inertia support and a break below 3177–3199 as an M risk. It describes choosing a weak-side node and looking for a nearby or higher bearish V+ to lock.",
+      "admission_missing": ["HISTORICAL_PLAN_REVISION", "SPECIFIC_PROTECTION_NODE_AND_PERMISSION", "SYSTEM_VERSION", "POSITION_BEFORE"],
+      "market_prefix_counts": {"1": 179, "5": 35, "15": 11},
+      "market_prefix_sha256": {
+        "1": "c5b5dfe2643faa0be750d79ac436bd66e4202824d36533c0d77e2532ed27d36d",
+        "5": "df87b88816a532e400a2f0da1162224ba83ed86577831564326614576503fc17",
+        "15": "c7ad9aafbaebd014f4dfbe593ecc02bbf381b08197ff55d2e68baa421e89afc5"
+      },
+      "prefix_1m_range": [3229, 3257],
+      "prefix_1m_open": 3242,
+      "prefix_1m_last_close": 3248,
+      "conditional_observation": "The first observed contact with 3253 was August 18 at 21:51, outbound edge 3280 was not touched, and the whole visible prefix stayed above 3224. None of the four fixed geometry pairings confirmed within 3199–3224. This leaves above-band protection untested as an author action.",
+      "forecast": null
+    }
+  ]
+}

@@ -1,0 +1,220 @@
+{
+  "purpose": "第四批留出，在查阅两个目标日的后续披露前封存",
+  "research_baseline": "5a3d396896d08480abd5596b0979613f6f85b63d",
+  "admitted": 0,
+  "score_policy": "只对同实月、当时可知计划、系统子版本与独立动作可核验的预先判断评分。",
+  "cases": [
+    {
+      "contract": "AO2509",
+      "trading_day": "2025-05-22",
+      "as_of": "2025-05-22T10:00:00+08:00",
+      "plan_source": "https://guba.sina.com.cn/?s=thread&bid=63272&tid=483",
+      "plan_published_at": "2025-05-21T21:31:00+08:00",
+      "published_conditions": "突破并站稳3224–3271后才向上跟踪3287。向下破位并压制3224–3271后观察空方优势，破3188–3199为原多趋势中断及M。",
+      "missing": [
+        "HISTORICAL_PLAN_REVISION",
+        "SYSTEM_VERSION",
+        "POSITION_BEFORE",
+        "STABILITY_DEFINITION",
+        "ACTION_PERMISSION"
+      ],
+      "conditional_observation": "发布边界后最低3206、最高3257。区内出现多向几何，但未达到3271，向上规则中突破远沿的条件未成。向下没有进入3188–3199。原仓动作不判定。",
+      "market": {
+        "market_prefix_sha256": {
+          "1": "4bf28374a3f3f50999f9d1d8545801e7950a5bdf990a8699cb4bd4f53b32eeca",
+          "5": "e6b45650a463e099d5e6da4f8ed1dc39caffaf0e35d2192b670badaee12a9b11",
+          "15": "5818ed3d4b28f8d020557ff45911b4edf25bb302afd79eeca49ac44a70420c09"
+        },
+        "counts": {
+          "1": 299,
+          "5": 59,
+          "15": 19
+        },
+        "post_plan_start": "2025-05-21T21:32",
+        "post_plan_n": 267,
+        "post_plan_range": [
+          "3206",
+          "3257"
+        ],
+        "post_plan_open": "3233",
+        "last_close": "3.23E+3",
+        "first": "2025-05-21T21:33:00+08:00",
+        "end": "2025-05-22T09:59:00+08:00",
+        "contacts": {
+          "3188": {
+            "touch": null,
+            "above": null,
+            "below": null
+          },
+          "3199": {
+            "touch": null,
+            "above": null,
+            "below": null
+          },
+          "3224": {
+            "touch": "2025-05-21T21:34:00+08:00",
+            "above": "2025-05-22T09:38:00+08:00",
+            "below": "2025-05-22T09:16:00+08:00"
+          },
+          "3271": {
+            "touch": null,
+            "above": null,
+            "below": null
+          },
+          "3287": {
+            "touch": null,
+            "above": null,
+            "below": null
+          }
+        },
+        "geometry": {
+          "3224-3271 LONG": {
+            "1->1": [
+              {
+                "at": "2025-05-21T22:09:00.000001+08:00",
+                "close": "3236"
+              },
+              {
+                "at": "2025-05-21T22:14:00.000001+08:00",
+                "close": "3235"
+              },
+              {
+                "at": "2025-05-21T23:07:00.000001+08:00",
+                "close": "3242"
+              },
+              {
+                "at": "2025-05-22T09:55:00.000001+08:00",
+                "close": "3225"
+              }
+            ],
+            "5->1": [
+              {
+                "at": "2025-05-21T21:43:00.000001+08:00",
+                "close": "3236"
+              },
+              {
+                "at": "2025-05-21T22:06:00.000001+08:00",
+                "close": "3235"
+              },
+              {
+                "at": "2025-05-21T23:24:00.000001+08:00",
+                "close": "3242"
+              },
+              {
+                "at": "2025-05-22T09:38:00.000001+08:00",
+                "close": "3226"
+              }
+            ],
+            "5->5": [
+              {
+                "at": "2025-05-21T21:45:00.000001+08:00",
+                "close": "3235"
+              },
+              {
+                "at": "2025-05-21T22:10:00.000001+08:00",
+                "close": "3235"
+              },
+              {
+                "at": "2025-05-22T09:40:00.000001+08:00",
+                "close": "3224"
+              }
+            ],
+            "15->15": []
+          },
+          "3188-3199 SHORT": {
+            "1->1": [],
+            "5->1": [],
+            "5->5": [],
+            "15->15": []
+          }
+        }
+      },
+      "forecast": null
+    },
+    {
+      "contract": "J2509",
+      "trading_day": "2025-07-21",
+      "as_of": "2025-07-21T10:00:00+08:00",
+      "plan_source": "https://guba.sina.com.cn/?s=thread&bid=63272&tid=514",
+      "plan_published_at": "2025-07-18T21:25:00+08:00",
+      "published_conditions": "1529–1534破位为回调中断，1502.5–1507.5为趋势失效带。1548.5–1554为上行目标。作者提出夜盘利用V+试多及跟踪消耗K低点。",
+      "missing": [
+        "HISTORICAL_PLAN_REVISION",
+        "SYSTEM_VERSION",
+        "POSITION_BEFORE",
+        "AUTHOR_SIGNAL_BAR",
+        "ACTION_PERMISSION"
+      ],
+      "conditional_observation": "发布边界后最低1543.5，两个弱侧区均未到。上行两沿已覆盖，22:01严格收过1554。完成STEP未提供任何作者动作判断。",
+      "market": {
+        "market_prefix_sha256": {
+          "1": "5b1a39b2b5d83306dcb54b25fe9d9fa4b67e269dcae0932b15569df4760814db",
+          "5": "00356d6af9a26e2740a29a24942780275b0a355e00f6baae8ac95c5ec12a1a76",
+          "15": "a711869c58c9d21b6a82f1bd1336d2151e20e6bcccd18f2729b6aaeedd40e2e9"
+        },
+        "counts": {
+          "1": 179,
+          "5": 35,
+          "15": 11
+        },
+        "post_plan_start": "2025-07-18T21:26",
+        "post_plan_n": 153,
+        "post_plan_range": [
+          "1543.5",
+          "1575"
+        ],
+        "post_plan_open": "1544.5",
+        "last_close": "1569.5",
+        "first": "2025-07-18T21:27:00+08:00",
+        "end": "2025-07-21T09:59:00+08:00",
+        "contacts": {
+          "1502.5": {
+            "touch": null,
+            "above": null,
+            "below": null
+          },
+          "1507.5": {
+            "touch": null,
+            "above": null,
+            "below": null
+          },
+          "1529": {
+            "touch": null,
+            "above": null,
+            "below": null
+          },
+          "1534": {
+            "touch": null,
+            "above": null,
+            "below": null
+          },
+          "1548.5": {
+            "touch": "2025-07-18T21:42:00+08:00",
+            "above": "2025-07-18T21:42:00+08:00",
+            "below": null
+          },
+          "1554": {
+            "touch": "2025-07-18T21:52:00+08:00",
+            "above": "2025-07-18T22:01:00+08:00",
+            "below": "2025-07-18T21:55:00+08:00"
+          }
+        },
+        "geometry": {
+          "1529-1534 LONG": {
+            "1->1": [],
+            "5->1": [],
+            "5->5": [],
+            "15->15": []
+          },
+          "1529-1534 SHORT": {
+            "1->1": [],
+            "5->1": [],
+            "5->5": [],
+            "15->15": []
+          }
+        }
+      },
+      "forecast": null
+    }
+  ]
+}
