@@ -61,3 +61,11 @@ POLARS_MAX_THREADS=2 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 \
 57 品种选用 2026-10-12 至 2026-10-30 的冻结窗口，共 6,045 条有效样本，多次输入指纹一致，无失败成员。常规两次运行耗时 25.0 和 26.7 秒，主进程及子进程各自峰值 RSS 均约 187–192 MiB。任务使用单个 Alpha 子进程、两个 Polars 线程和单线程 BLAS。
 
 每组 8 次同窗口只读 MDS 查询，批量任务并行时中位数从 35.37 ms 升至 44.96 ms。样本只测单机历史读面。正式工作站 API 当时未运行，因此盘中行情、模拟与工作台并行性能仍需验收。
+
+## 工作台部署与回查
+
+工作站安装同一组件提交的 API 与 Web 后，使用 `/research/statistics`。应用部署时使用对应 Alembic revision `20261128_0058`，为研究进程执行上方锁定安装命令。源码运行默认从 `services/research-worker` 找到脚本和锁。安装 wheel 的部署可将 `GUIYI_RESEARCH_WORKER_ROOT` 和 `GUIYI_RESEARCH_WORKER_PYTHON` 指向同一受验的 worker 目录与环境。样本 Parquet 默认保存在 `~/.local/state/guiyi/statistics-research`，可由 `GUIYI_RESEARCH_ARTIFACT_ROOT` 指定本地研究目录。PostgreSQL 索引与样本文件须一起备份。
+
+从工作台选择已发布 Run 后运行分析。点击月份定位日结算，点击方向与时段单元定位闭合交易，原始 Run 链接进入原逐笔回放。跨 Run 对照分别列出样本和收益，差异字段标明不可比原因。因子与事件使用显式物理合约窗口、已完成 Bar 和研究用价格标签。带有确认条件的样本显示确认后才可知的时点。由已发布结果重跑时，先验证原 Parquet 和输入摘要，再用留存样本复算。
+
+一次计算最多 30 秒，输入上限 8 MiB，同一工作台只接纳一个运行中的计算任务。取消请求保留占用直至工作进程退出。异常退出后，过期任务在只读接口显示失败，新任务受理时核对并清理该任务未提交的文件。已提交和已核验的结果保留原始身份。

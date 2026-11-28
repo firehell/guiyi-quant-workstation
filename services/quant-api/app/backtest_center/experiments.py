@@ -273,7 +273,7 @@ def _decimal(value) -> Decimal:
     return amount
 
 
-def _curve(run: dict, result: dict) -> list[dict]:
+def evaluation_settlements(run: dict, result: dict) -> list[dict]:
     """Validate the native daily sequence itself instead of trusting its aggregate metrics."""
     config = run["config"]
     start, end = date.fromisoformat(config["start"]), date.fromisoformat(config["end"])
@@ -322,12 +322,21 @@ def _curve(run: dict, result: dict) -> list[dict]:
         if abs(equity - native_equity) > ACCOUNT_BINARY_TOLERANCE:
             raise ValueError("EVALUATION_SETTLEMENT_EQUITY_MISMATCH")
         curve.append(
-            {"trading_day": day.isoformat(), "valuation_at": valuation.isoformat(), "wealth": equity / initial}
+            {"trading_day": day.isoformat(), "at": valuation.isoformat(), "equity": str(equity),
+             "native_equity": str(native_equity), "settlement_price": settlement.get("settlement_price")}
         )
         previous_day = day
     if not curve:
         raise ValueError("EVALUATION_COVERAGE_UNPROVEN")
     return curve
+
+
+def _curve(run: dict, result: dict) -> list[dict]:
+    initial = _decimal(run["config"]["initial_capital"])
+    return [
+        {"trading_day": row["trading_day"], "valuation_at": row["at"], "wealth": _decimal(row["equity"]) / initial}
+        for row in evaluation_settlements(run, result)
+    ]
 
 
 def _statistics(curve: list[dict]) -> dict:

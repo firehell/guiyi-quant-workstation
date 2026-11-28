@@ -12,6 +12,7 @@ const routes: RouteRecordRaw[] = [
       { path: 'backtests/:runId?', name: 'backtests', component: () => import('@/pages/workstation/BacktestCenterPage.vue'), meta: { title: '回测中心' } },
       { path: 'simulations', name: 'simulations', component: () => import('@/pages/workstation/SimulationCenterPage.vue'), meta: { title: '模拟交易中心' } },
       { path: 'trade-journal/:caseId?', name: 'trade-journal', component: () => import('@/pages/workstation/TradeJournalPage.vue'), meta: { title: '交易日志与复盘中心' } },
+      { path: 'research/statistics/:taskId?', name: 'statistics-research', component: () => import('@/pages/workstation/StatisticsResearchPage.vue'), meta: { title: '统计与研究中心' } },
       { path: 'research', name: 'research', component: () => import('@/pages/workstation/ResearchPage.vue'), meta: { title: '研究' } },
       {
         path: 'market',
