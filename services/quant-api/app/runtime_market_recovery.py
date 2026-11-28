@@ -403,7 +403,12 @@ class RecoveryHost(WorkstationHost):
 
     def prove_running(self, item, *, wait=False):
         budget = 240 if item.service == "alert" else 50
-        until = time.monotonic() + (budget if wait else 0)
+        # Feed and Live clear ready during every poll. A matching live owner can
+        # be sampled repeatedly without changing any service or accepting stale proof.
+        observe_poll = not wait and item.service in {"market-feed", "live"}
+        until = time.monotonic() + (budget if wait else 8 if observe_poll else 0)
+        sampled_pid = None
+        suffix = item.service.upper().replace("-", "_")
         while True:
             out = read_launchd_service(item.label, root=Path(item.root))
             if out:
@@ -412,17 +417,51 @@ class RecoveryHost(WorkstationHost):
                     self.verify_calendar(item)
                     return
                 state = read_service_state(item.service, runtime_dir=self.directory) or {}
-                if (
+                same_owner = (
                     state.get("phase") == "active"
-                    and state.get("ready") is True
                     and state.get("generation") == item.generation
                     and owner_process_matches(state, item)
                     and 0 <= (self.now() - datetime.fromisoformat(state["at"])).total_seconds() <= 30
+                )
+                if observe_poll:
+                    require(
+                        same_owner and not self.free(item.service), "MARKET_POLL_OWNER_UNPROVEN_" + suffix
+                    )
+                    pid = state["pid"]
+                    require(sampled_pid in (None, pid), "MARKET_POLL_OWNER_CHANGED_" + suffix)
+                    sampled_pid = pid
+                if (
+                    same_owner
+                    and state.get("ready") is True
                     and (item.service not in PAIR or self.owns_http(item, state["pid"]))
                 ):
-                    return
-            if time.monotonic() >= until:
-                raise CohortError("MARKET_OWNER_NOT_READY_" + item.service.upper().replace("-", "_"))
+                    if observe_poll:
+                        proof = state.get("proof")
+                        require(
+                            isinstance(proof, dict)
+                            and "failure_code" not in proof
+                            and (
+                                proof.get("cycle_ok") is True
+                                or item.service == "market-feed"
+                                and isinstance(proof.get("closed_cleaned"), dict)
+                                and proof["closed_cleaned"].get("status") == "CLOSED_CLEANED"
+                                or item.service == "live"
+                                and {"input_read_frontier", "trading_day"} <= proof.keys()
+                            ),
+                            "MARKET_POLL_SUCCESS_UNPROVEN_" + suffix,
+                        )
+                    return {"pid": state["pid"], "ready_at": state["at"]}
+                if observe_poll:
+                    require(
+                        state.get("ready") is False and state.get("proof") == {},
+                        "MARKET_POLL_FAILURE_" + suffix,
+                    )
+            elif sampled_pid is not None:
+                raise CohortError("MARKET_POLL_OWNER_CHANGED_" + suffix)
+            if not out and not wait or time.monotonic() >= until:
+                if sampled_pid is not None:
+                    raise CohortError("MARKET_COMPLETED_POLL_UNPROVEN_" + suffix)
+                raise CohortError("MARKET_OWNER_NOT_READY_" + suffix)
             time.sleep(0.25)
 
     def start_selected(self, targets):
@@ -535,9 +574,12 @@ def readback(host, plan):
 def verify_switched(host, old, targets, plan):
     root = Path(targets["api"].root)
     peers(host, old, root, plan)
+    completed_polls = {}
     for item in targets.values():
         require(host.bytes(host.path(item)) == host._plist(item), "MARKET_INSTALLED_DEFINITION_DRIFT")
-        host.prove_running(item)
+        proof = host.prove_running(item)
+        if item.service in {"market-feed", "live"}:
+            completed_polls[item.service] = proof
     settings, config = host.settings()
     require(
         config == plan["boundary"]["config"] and host.notification() == plan["boundary"]["notification"],
@@ -566,6 +608,7 @@ def verify_switched(host, old, targets, plan):
         "services": list(START_ORDER),
         "notification": host.notification()["transport"],
         "alert_day": observed_day.isoformat(),
+        "completed_polls": completed_polls,
     }
 
 

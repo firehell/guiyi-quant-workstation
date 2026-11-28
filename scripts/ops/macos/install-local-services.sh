@@ -22,6 +22,10 @@ ALERT_NOTIFICATION_CONFIG_PATH="${GUIYI_ALERT_NOTIFICATION_CONFIG_PATH:-}"
 
 # These entrypoints do not render files or mutate a service until an apply mode.
 case "$MODE" in
+  --read-switched-market-recovery)
+    shift
+    exec "$PYTHON_BIN" -I -B -m app.runtime_market_recovery_control read "$@"
+    ;;
   --verify-pending-market-recovery|--resume-pending-market-recovery)
     operation="${MODE#--}"
     shift

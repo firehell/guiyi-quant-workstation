@@ -1,3 +1,10 @@
+## 2026-11-28 23:09｜正式看盘、行情与提醒恢复
+
+- 正式 Web、API、Market Feed、Live、Reference Worker、Alert、盘后及晚到重试共同绑定 [应用 v1.16.159](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.159)，提交 `209a32b679014d511c8b182680c495fce4f4e5e0`、代次 101。[工作台交互 v0.1.1](https://github.com/firehell/guiyi-quant-workstation/releases/tag/workstation-ui/v0.1.1) 独立维护。经 v1.16.160 控制器完成切换，旧 API/Web 卸载后的异步停驻已核实。
+- 57 品种闭市，Feed 和 Live 各自的原生心跳持续可用，采样期间无进程退出。已有源流 3,450 条、完成流 4,370 条，Live 游标和新 Alert 游标均在相应流尾。沿用 HTDY 57 路及苏冰 342 路，外发 transport 为 disabled。现有提醒事件 11,092 条。下一次自然开盘采集、站内新事件、18:05 盘后归档及四副图回执待业务发生。
+- 正式 5173 验证 RB 日线 11/27、11/06 各 500 根，主力照妖镜、涨跌动能、主力控盘、趋势转折均可逐根查看。来源为显式 Canonical 历史复算，11/27 周线 200 根、趋势转折仍在当前合约段预热。正式归档模式读取同一张收盘回执。真实观察 `0fb1230c-a5b6-54bb-bc65-5f6e28d1bf8a` 已保存和复访，90 根可见 K 线和冻结原图核对通过。
+- Chrome 1366×768、WebKit 1920×1080 各验 15 个页面状态、57 次二级交互，含研究模式、复盘周切换及返回、策略图表和回测跳转。正式回测记录库尚未初始化，相关页面显示来源状态。SimNow 当前无可选账户。
+
 ## 2026-11-28 22:08｜个人看盘工作台正式交付
 
 - [工作台交互 v0.1.0](https://github.com/firehell/guiyi-quant-workstation/releases/tag/workstation-ui/v0.1.0) 独立维护八页导航、图层与观察复访。[应用 v1.16.158](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.158) 通过 [PR #696](https://github.com/firehell/guiyi-quant-workstation/pull/696) 集成，正式 API、Web 均绑定提交 `bf45a936b5e8bf6fb2ce676adb224870f3d602c4`、代次 100。计算使用 [Quant Core 0.4.3](https://github.com/firehell/guiyi-quant-workstation/releases/tag/quant-core/v0.4.3)，图表使用 Quant Chart 0.1.7。

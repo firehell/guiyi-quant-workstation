@@ -17,7 +17,7 @@ from app.runtime_cohort import _require_forward_application_release, require
 from app.runtime_deployment import assert_no_unknown_deployment
 from app.runtime_handover import _read
 from app.runtime_identity import file_snapshot, read_command
-from app.runtime_market_recovery import RecoveryHost, apply, inspect, peers
+from app.runtime_market_recovery import RecoveryHost, apply, inspect, peers, readback
 from app.version import APP_VERSION
 
 # Runs in the candidate's isolated interpreter. All candidate dependencies, source
@@ -110,22 +110,26 @@ class ReleasedController(RecoveryHost):
         return targets, native["component"], native["schema"]
 
 
-def verify_pending(host, plan):
+def verify_pending(host, plan, *, switched=False):
     host.verify_control()
     authority, old, targets, attempt = inspect(host, plan)
     progress = _read(host.directory / "market-recovery.json") or {}
     require(
         progress.get("plan_sha256") == plan["plan_sha256"]
         and progress.get("phase")
-        in {
-            "parking",
-            "cas_intent",
-            "installing",
-            "alert_intent",
-            "starting",
-            "stop_unknown",
-            "start_failed",
-        },
+        in (
+            {"switched"}
+            if switched
+            else {
+                "parking",
+                "cas_intent",
+                "installing",
+                "alert_intent",
+                "starting",
+                "stop_unknown",
+                "start_failed",
+            }
+        ),
         "MARKET_RECOVERY_NO_PENDING_PLAN",
     )
     assert_no_unknown_deployment(market_recovery_sha256=plan["plan_sha256"])
@@ -157,7 +161,7 @@ def verify_pending(host, plan):
 
 def main(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("operation", choices=("verify", "resume"))
+    parser.add_argument("operation", choices=("verify", "resume", "read"))
     for key in ("controller-tag", "controller-commit"):
         parser.add_argument("--" + key, required=True)
     parser.add_argument("--plan", type=Path, required=True)
@@ -165,8 +169,12 @@ def main(argv=None):
     try:
         host = ReleasedController(args.controller_tag, args.controller_commit)
         plan = json.loads(file_snapshot(args.plan, private=True)[0])
-        proof = verify_pending(host, plan)
-        if args.operation == "resume":
+        proof = verify_pending(host, plan, switched=args.operation == "read")
+        if args.operation == "read":
+            result = readback(host, plan)
+            require(result["authority"] == "new" and result["phase"] == "switched", "MARKET_REGISTRY_DRIFT")
+            proof.update(result)
+        elif args.operation == "resume":
             proof.update(apply(host, plan, resume=True))
         print(json.dumps(proof, sort_keys=True))
         return 0
