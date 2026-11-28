@@ -1,3 +1,16 @@
+## 2026-11-28 08:49｜策略中心正式集成与运行状态
+
+- **发布与运行。** 策略中心 v0.1.0 的目录、只读 API 和 Web 已纳入正式工作站，见 [集成 PR #687](https://github.com/firehell/guiyi-quant-workstation/pull/687)。
+  [应用 v1.16.157](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.157) 的 API、Web 运行代次为 99，
+  精确提交 `618f05ef25d16f87cb9f6aceeb456e31a4d36ff4`。已核对 Quant Core 0.4.1、Quant Chart 0.1.7 和浏览器六策略详情。
+  Market Feed、Live、Reference 与盘后仍按 v1.16.155 代次 97 运行，57 品种范围和 C6 订阅读回一致。
+- **Newow。** 趋势、震荡、主升浪、双融合共用正式 Reference 代次 97，心跳持续，状态为 `waiting_archive`。60m 历史证据可读。
+  RB、CU 部分旧主升浪日线缺少受证的结束交易日，保留 `MARKET_REFERENCE_RESULT_INVALID`。见 [证据诊断 PR #688](https://github.com/firehell/guiyi-quant-workstation/pull/688)。
+- **HTDY/TQKQ。** v1.16.139 旧监控心跳可读，原生读回 `unverified`，范围为 `FLATTEN_PENDING`，可执行品种为 0。
+  11/26 15:00 的日志信号柱可读，正式输入消费水位待核验。
+- **苏冰。** 16 品种共享 Paper 的正式投影为 `STALE_OR_STOPPED`。最近心跳是北京时间 11/27 20:22，
+  已提交水位停在 11/26 15:00，Journal 序号 776。页面保留原 Run、账本和阻断码。
+
 ## 2026-11-28 08:10｜57 品种正式切换
 
 - **发布。** [应用 v1.16.155](https://github.com/firehell/guiyi-quant-workstation/releases/tag/v1.16.155) 与
