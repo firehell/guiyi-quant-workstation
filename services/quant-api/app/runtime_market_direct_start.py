@@ -684,6 +684,7 @@ def main(argv=None):
     mode = plan_parser.add_mutually_exclusive_group()
     mode.add_argument("--active-session", action="store_true")
     mode.add_argument("--preserve-tick-journal", action="store_true")
+    mode.add_argument("--retire-rs-in-quiet-window", action="store_true")
     apply_parser = sub.add_parser("apply")
     apply_parser.add_argument("--plan", required=True, type=Path)
     apply_parser.add_argument("--resume", action="store_true")
@@ -700,6 +701,10 @@ def main(argv=None):
                 from app.runtime_market_scope_cutover import JournalPreservingMarketStartHost
 
                 host = JournalPreservingMarketStartHost()
+            if args.retire_rs_in_quiet_window:
+                from app.runtime_market_scope_cutover import QuietWindowMarketStartHost
+
+                host = QuietWindowMarketStartHost()
             result = freeze_market_direct_start(host, root=args.candidate_root, tag=args.tag,
                                                 commit=args.commit, day=args.trading_day, active_session=args.active_session)
         else:
@@ -707,9 +712,9 @@ def main(argv=None):
             _validate_plan(plan)
             retained = plan["authority"].get("retained_tick")
             if retained is not None:
-                from app.runtime_market_scope_cutover import JournalPreservingMarketStartHost
+                from app.runtime_market_scope_cutover import JournalPreservingMarketStartHost, QuietWindowMarketStartHost
 
-                host = JournalPreservingMarketStartHost(retained)
+                host = QuietWindowMarketStartHost(retained) if retained.get("quiet_window") else JournalPreservingMarketStartHost(retained)
             if args.mode == "read":
                 result = read_market_direct_start(host, plan)
                 if retained is not None and result["phase"] == "switched":

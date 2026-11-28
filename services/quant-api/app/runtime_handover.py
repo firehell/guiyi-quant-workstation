@@ -12,6 +12,7 @@ import fcntl
 import json
 import os
 from pathlib import Path
+import re
 import stat
 import tempfile
 from time import sleep
@@ -95,10 +96,14 @@ def read_service_state(service: str, *, runtime_dir: Path | None = None) -> dict
 
 
 def request_drain(service: str, *, generation: int, runtime_dir: Path | None = None,
-                  before_install: Callable[[str], None] | None = None) -> str:
+                  before_install: Callable[[str], None] | None = None,
+                  request_id: str | None = None) -> str:
     if type(generation) is not int or generation < 1:
         raise HandoverError('RUNTIME_CONTROL_INVALID')
-    request_id = uuid4().hex
+    if request_id is None:
+        request_id = uuid4().hex
+    elif not isinstance(request_id, str) or re.fullmatch(r'[0-9a-f]{32}', request_id) is None:
+        raise HandoverError('RUNTIME_CONTROL_INVALID')
     path = _path(runtime_dir or runtime_directory(), service, 'handover.json')
     if before_install is not None:
         before_install(request_id)

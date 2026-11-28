@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime
+import json
 import os
 from types import SimpleNamespace
 
@@ -85,3 +86,62 @@ def test_old_tick_journal_and_cursor_are_preserved(scope_archive, tmp_path):
                 proof()
         finally:
             client.delete(*keys)
+
+
+
+def test_same_day_selection_cas_preserves_journals_and_handles_interrupted_stage():
+    from redis import Redis
+    from app.market_data.live_market import RedisLiveStore
+    from app.market_data.observation_stream import ObservationEnvelope, ObservationStream
+
+    port = os.environ.get("GUIYI_TEST_REDIS_PORT")
+    if not port:
+        pytest.skip("requires dedicated test Redis")
+    assert int(port) >= 1024 and int(port) != 6379
+    reduced = {"rb": "RB2701"}
+    original = json.dumps(SUBSCRIPTIONS)
+    active_key = RedisLiveStore._subscription_key(DAY)
+    retained_key = cutover._retained_subscription_key(DAY)
+    with Redis(host="127.0.0.1", port=int(port)) as client:
+        assert client.dbsize() == 0
+        source = ObservationStream(client, kind="source")
+        completed = ObservationStream(client, kind="completed")
+        cursor = source.cursor_key("live", DAY)
+        registration = source.registration_key("live")
+        journal_keys = (source.key(DAY), source.identity_key(DAY),
+                        completed.key(DAY), completed.identity_key(DAY), cursor, registration)
+        try:
+            for stream in (source, completed):
+                data = {"contract": "RB2701"}
+                if stream is source:
+                    data["subscription_snapshot"] = SUBSCRIPTIONS
+                event = ObservationEnvelope("original", DAY, NOW, "live:bar:rb:1m", data, True,
+                    raw_received_at=NOW, confirmed_at=NOW if stream is completed else None,
+                    source_generation="rqdata-tick:" + "a" * 32 + ":1")
+                stream.append(event)
+            client.set(registration, DAY.isoformat())
+            client.set(cursor, source.tail(DAY))
+            client.set(active_key, original, ex=60)
+            before = [client.dump(key) for key in journal_keys]
+            deadline = client.pexpiretime(active_key)
+            proof, raw, staged = cutover._same_day_tick_proof(client, DAY, reduced)
+            assert raw == original and staged is False
+
+            client.set(cursor, "0-0")
+            with pytest.raises(CohortError, match="MARKET_SOURCE_OLD_BACKLOG"):
+                cutover._commit_same_day_selection(client, DAY, reduced, proof, may_exist=False)
+            assert client.get(active_key) == original.encode() and not client.exists(retained_key)
+            client.set(cursor, source.tail(DAY))
+
+            cutover._commit_same_day_selection(client, DAY, reduced, proof, may_exist=False)
+            assert client.get(retained_key) == original.encode()
+            assert RedisLiveStore(client).subscriptions(DAY) == reduced
+            assert client.pexpiretime(active_key) == deadline
+            assert [client.dump(key) for key in journal_keys] == before
+            assert cutover._same_day_tick_proof(client, DAY, reduced) == (proof, original, True)
+            cutover._commit_same_day_selection(client, DAY, reduced, proof, may_exist=True)
+            with pytest.raises(CohortError, match="MARKET_SCOPE_CUTOVER_JOURNAL_UNPROVEN"):
+                cutover._commit_same_day_selection(client, DAY, reduced, proof, may_exist=False)
+            assert [client.dump(key) for key in journal_keys] == before
+        finally:
+            client.delete(*journal_keys, active_key, retained_key)
